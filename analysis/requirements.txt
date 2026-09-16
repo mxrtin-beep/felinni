@@ -1,0 +1,6 @@
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+# Optional, only needed for felinni.geocode / mapping:
+geopy>=2.4
+folium>=0.15

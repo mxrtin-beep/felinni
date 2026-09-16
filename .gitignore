@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+*.xcodeproj
+.swiftpm/
+__pycache__/
+*.pyc
+.pytest_cache/
+events.json
+data/geocode_cache.json
