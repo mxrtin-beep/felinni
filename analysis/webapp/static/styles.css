@@ -10,6 +10,12 @@
   --border:         rgba(11, 11, 11, 0.10);
   --success:        #006300;
 
+  /* Status colors: reserved for state (never reused for a data series),
+     mode-invariant - same steps clear 3:1 on both the light and dark surface. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+
   --series-1: #2a78d6; /* blue */
   --series-2: #eb6834; /* orange */
   --series-3: #1baf7a; /* aqua */
@@ -253,6 +259,9 @@ td.num, th.num {
 }
 .badge.packed { background: rgba(235, 104, 52, 0.15); color: var(--series-2); }
 .badge.empty { background: rgba(27, 175, 122, 0.15); color: var(--series-3); }
+.badge.active { background: rgba(12, 163, 12, 0.15); color: var(--status-good); }
+.badge.slowing-down { background: rgba(250, 178, 25, 0.20); color: #9a6b00; }
+.badge.stopped { background: rgba(208, 59, 59, 0.15); color: var(--status-critical); }
 
 button {
   font: inherit;

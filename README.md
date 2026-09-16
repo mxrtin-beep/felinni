@@ -158,6 +158,7 @@ are a thin JSON wrapper over the same functions.
 | Map every place, cluster by neighborhood, radius of life over time, places you stopped going to | `felinni.location` | Neighborhood clustering and radius-of-life need geocoded coordinates (`felinni.geocode`, opt-in, uses OpenStreetMap Nominatim, cached to disk) |
 | Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
+| Repeating events falling off pace (Book Club, Poker Night, ...) | `felinni.recurring` | Auto-detects every named recurring series from Calendar's own repeat rule (`is_recurring`) - no need to pick one, unlike `felinni.habits` above. Flags each as active/slowing down/stopped relative to its own historical cadence |
 | Travel timeline, places visited | `felinni.travel` | Collapses consecutive same-destination events into one trip |
 | Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented; all-day events are excluded since they don't carry a real duration |
 | Seasonality by month/season | `felinni.seasonality` | Only counts timed events — all-day entries (birthdays, holidays, vacations) are excluded |
@@ -191,7 +192,7 @@ analysis/
     ingest.py                events.json -> pandas DataFrame
     geocode.py                optional Nominatim geocoding, disk-cached
     location.py, social.py, habits.py, travel.py, spending.py,
-    seasonality.py, anomalies.py, breaks.py, dating_link.py
+    seasonality.py, anomalies.py, breaks.py, recurring.py, dating_link.py
   webapp/
     server.py                 Flask API wrapping felinni's analysis functions
     serialize.py               DataFrame -> JSON-safe records

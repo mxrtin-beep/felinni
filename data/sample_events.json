@@ -1252,6 +1252,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1039",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-06-01T09:00:00Z",
+    "endDate": "2021-06-01T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-70",
     "title": "Gym",
     "notes": null,
@@ -1297,6 +1312,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1040",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-06-08T09:00:00Z",
+    "endDate": "2021-06-08T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-73",
     "title": "Gym",
     "notes": null,
@@ -1338,6 +1368,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1041",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-06-15T09:00:00Z",
+    "endDate": "2021-06-15T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -1404,6 +1449,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1042",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-06-22T09:00:00Z",
+    "endDate": "2021-06-22T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-80",
     "title": "Gym",
     "notes": null,
@@ -1447,6 +1507,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1043",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-06-29T09:00:00Z",
+    "endDate": "2021-06-29T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -1513,6 +1588,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1044",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-07-06T09:00:00Z",
+    "endDate": "2021-07-06T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-87",
     "title": "Gym",
     "notes": null,
@@ -1558,6 +1648,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1045",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-07-13T09:00:00Z",
+    "endDate": "2021-07-13T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-90",
     "title": "Gym",
     "notes": null,
@@ -1599,6 +1704,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1046",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-07-20T09:00:00Z",
+    "endDate": "2021-07-20T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -1678,6 +1798,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1047",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-07-27T09:00:00Z",
+    "endDate": "2021-07-27T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-95",
     "title": "Gym",
     "notes": null,
@@ -1738,6 +1873,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1048",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-08-03T09:00:00Z",
+    "endDate": "2021-08-03T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-99",
     "title": "Dinner with Carla",
     "notes": null,
@@ -1781,6 +1931,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1049",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-08-10T09:00:00Z",
+    "endDate": "2021-08-10T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -1832,6 +1997,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1050",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-08-17T09:00:00Z",
+    "endDate": "2021-08-17T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-105",
     "title": "Gym",
     "notes": null,
@@ -1858,6 +2038,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1051",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-08-24T09:00:00Z",
+    "endDate": "2021-08-24T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -1907,6 +2102,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1052",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-08-31T09:00:00Z",
+    "endDate": "2021-08-31T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-110",
     "title": "Gym",
     "notes": null,
@@ -1948,6 +2158,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1053",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-09-07T09:00:00Z",
+    "endDate": "2021-09-07T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2059,6 +2284,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1054",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-09-14T09:00:00Z",
+    "endDate": "2021-09-14T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-119",
     "title": "Gym",
     "notes": null,
@@ -2119,6 +2359,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1055",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-09-21T09:00:00Z",
+    "endDate": "2021-09-21T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-123",
     "title": "Drinks with Alice",
     "notes": null,
@@ -2147,6 +2402,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1056",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-09-28T09:00:00Z",
+    "endDate": "2021-09-28T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2194,6 +2464,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1057",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-10-05T09:00:00Z",
+    "endDate": "2021-10-05T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2260,6 +2545,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1058",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-10-12T09:00:00Z",
+    "endDate": "2021-10-12T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-132",
     "title": "Gym",
     "notes": null,
@@ -2320,6 +2620,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1059",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-10-19T09:00:00Z",
+    "endDate": "2021-10-19T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-136",
     "title": "Dinner with Diego",
     "notes": null,
@@ -2367,6 +2682,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1060",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-10-26T09:00:00Z",
+    "endDate": "2021-10-26T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-139",
     "title": "Gym",
     "notes": null,
@@ -2393,6 +2723,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1061",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-11-02T09:00:00Z",
+    "endDate": "2021-11-02T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2457,6 +2802,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1062",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-11-09T09:00:00Z",
+    "endDate": "2021-11-09T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-145",
     "title": "Gym",
     "notes": null,
@@ -2483,6 +2843,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1063",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-11-16T09:00:00Z",
+    "endDate": "2021-11-16T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2543,6 +2918,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1064",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-11-23T09:00:00Z",
+    "endDate": "2021-11-23T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2639,6 +3029,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1065",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-11-30T09:00:00Z",
+    "endDate": "2021-11-30T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-157",
     "title": "Gym",
     "notes": null,
@@ -2716,6 +3121,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1066",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-12-07T09:00:00Z",
+    "endDate": "2021-12-07T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-162",
     "title": "Gym",
     "notes": null,
@@ -2757,6 +3177,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1067",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-12-14T09:00:00Z",
+    "endDate": "2021-12-14T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2821,6 +3256,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1068",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-12-21T09:00:00Z",
+    "endDate": "2021-12-21T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-169",
     "title": "Gym",
     "notes": null,
@@ -2881,6 +3331,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1069",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2021-12-28T09:00:00Z",
+    "endDate": "2021-12-28T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-173",
     "title": "Gym",
     "notes": null,
@@ -2907,6 +3372,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1070",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-01-04T09:00:00Z",
+    "endDate": "2022-01-04T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -2973,6 +3453,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1071",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-01-11T09:00:00Z",
+    "endDate": "2022-01-11T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-179",
     "title": "Gym",
     "notes": null,
@@ -3014,6 +3509,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1072",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-01-18T09:00:00Z",
+    "endDate": "2022-01-18T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -3061,6 +3571,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1073",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-01-25T09:00:00Z",
+    "endDate": "2022-01-25T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -3142,6 +3667,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1074",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-02-01T09:00:00Z",
+    "endDate": "2022-02-01T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-190",
     "title": "Gym",
     "notes": null,
@@ -3183,6 +3723,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1075",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-02-08T09:00:00Z",
+    "endDate": "2022-02-08T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -3249,6 +3804,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1076",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-02-15T09:00:00Z",
+    "endDate": "2022-02-15T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-197",
     "title": "Gym",
     "notes": null,
@@ -3305,6 +3875,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1077",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-02-22T09:00:00Z",
+    "endDate": "2022-02-22T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -3367,6 +3952,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1078",
+    "title": "Standup",
+    "notes": null,
+    "location": null,
+    "startDate": "2022-03-01T09:00:00Z",
+    "endDate": "2022-03-01T09:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Work",
+    "calendarColorHex": "#00897B",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -8727,6 +9327,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1009",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-04-16T20:00:00Z",
+    "endDate": "2024-04-16T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-551",
     "title": "Dinner with Emi",
     "notes": null,
@@ -8804,6 +9419,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1010",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-04-30T20:00:00Z",
+    "endDate": "2024-04-30T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-556",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -8862,6 +9492,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1011",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-05-14T20:00:00Z",
+    "endDate": "2024-05-14T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -8977,6 +9622,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1012",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-05-28T20:00:00Z",
+    "endDate": "2024-05-28T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-567",
     "title": "Game night with Alice, Bob, Carla, and Diego",
     "notes": null,
@@ -9069,6 +9729,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1013",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-06-11T20:00:00Z",
+    "endDate": "2024-06-11T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-573",
     "title": "Dinner with Alice",
     "notes": null,
@@ -9133,6 +9808,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1014",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-06-25T20:00:00Z",
+    "endDate": "2024-06-25T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-577",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -9174,6 +9864,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1015",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-07-09T20:00:00Z",
+    "endDate": "2024-07-09T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -9279,6 +9984,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1016",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-07-30T20:00:00Z",
+    "endDate": "2024-07-30T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -9452,6 +10172,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1017",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-08-20T20:00:00Z",
+    "endDate": "2024-08-20T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-598",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -9570,6 +10305,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1018",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-09-10T20:00:00Z",
+    "endDate": "2024-09-10T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -9724,6 +10474,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1019",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-10-01T20:00:00Z",
+    "endDate": "2024-10-01T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -10043,6 +10808,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1020",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-10-22T20:00:00Z",
+    "endDate": "2024-10-22T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -10394,6 +11174,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1021",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-11-12T20:00:00Z",
+    "endDate": "2024-11-12T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-660",
     "title": "Work crunch",
     "notes": null,
@@ -10657,6 +11452,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1022",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2024-12-10T20:00:00Z",
+    "endDate": "2024-12-10T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-677",
     "title": "Dinner with Emi",
     "notes": null,
@@ -10796,6 +11606,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1023",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-01-07T20:00:00Z",
+    "endDate": "2025-01-07T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-686",
     "title": "Dinner with Carla",
     "notes": null,
@@ -10914,6 +11739,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1024",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-02-04T20:00:00Z",
+    "endDate": "2025-02-04T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -11151,6 +11991,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1025",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-03-04T20:00:00Z",
+    "endDate": "2025-03-04T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-709",
     "title": "Gym",
     "notes": null,
@@ -11301,6 +12156,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1026",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-04-01T20:00:00Z",
+    "endDate": "2025-04-01T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -11525,6 +12395,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1027",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-04-29T20:00:00Z",
+    "endDate": "2025-04-29T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-733",
     "title": "Gym",
     "notes": null,
@@ -11741,6 +12626,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1028",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-06-03T20:00:00Z",
+    "endDate": "2025-06-03T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-747",
     "title": "Gym",
     "notes": null,
@@ -11925,6 +12825,36 @@
     "noteTags": {}
   },
   {
+    "id": "evt-949",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-07-08T19:00:00Z",
+    "endDate": "2025-07-08T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1029",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-07-08T20:00:00Z",
+    "endDate": "2025-07-08T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-759",
     "title": "Dinner with Carla",
     "notes": null,
@@ -11957,6 +12887,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-950",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-07-15T19:00:00Z",
+    "endDate": "2025-07-15T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-761",
     "title": "Potluck with Emi, Carla, and Sean O\u2019Brien",
     "notes": null,
@@ -11983,6 +12928,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-951",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-07-22T19:00:00Z",
+    "endDate": "2025-07-22T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12049,6 +13009,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-952",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-07-29T19:00:00Z",
+    "endDate": "2025-07-29T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-767",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -12060,6 +13035,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-953",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-08-05T19:00:00Z",
+    "endDate": "2025-08-05T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12128,6 +13118,36 @@
     "noteTags": {}
   },
   {
+    "id": "evt-954",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-08-12T19:00:00Z",
+    "endDate": "2025-08-12T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1030",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-08-12T20:00:00Z",
+    "endDate": "2025-08-12T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-772",
     "title": "Gym",
     "notes": null,
@@ -12169,6 +13189,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-955",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-08-19T19:00:00Z",
+    "endDate": "2025-08-19T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12233,6 +13268,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-956",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-08-26T19:00:00Z",
+    "endDate": "2025-08-26T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-779",
     "title": "Drinks with Alice",
     "notes": null,
@@ -12261,6 +13311,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-957",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-09-02T19:00:00Z",
+    "endDate": "2025-09-02T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12308,6 +13373,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-958",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-09-09T19:00:00Z",
+    "endDate": "2025-09-09T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12374,6 +13454,36 @@
     "noteTags": {}
   },
   {
+    "id": "evt-959",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-09-16T19:00:00Z",
+    "endDate": "2025-09-16T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1031",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-09-16T20:00:00Z",
+    "endDate": "2025-09-16T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-788",
     "title": "Dinner with Bob",
     "notes": null,
@@ -12417,6 +13527,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-960",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-09-23T19:00:00Z",
+    "endDate": "2025-09-23T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12483,6 +13608,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-961",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-09-30T19:00:00Z",
+    "endDate": "2025-09-30T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-795",
     "title": "Gym",
     "notes": null,
@@ -12513,6 +13653,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-962",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-10-07T19:00:00Z",
+    "endDate": "2025-10-07T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-797",
     "title": "Gym",
     "notes": null,
@@ -12539,6 +13694,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-963",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-10-14T19:00:00Z",
+    "endDate": "2025-10-14T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12575,6 +13745,36 @@
     "noteTags": {}
   },
   {
+    "id": "evt-964",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-10-21T19:00:00Z",
+    "endDate": "2025-10-21T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1032",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-10-21T20:00:00Z",
+    "endDate": "2025-10-21T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-801",
     "title": "Gym",
     "notes": null,
@@ -12605,6 +13805,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-965",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-10-28T19:00:00Z",
+    "endDate": "2025-10-28T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-803",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -12616,6 +13831,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-966",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-11-04T19:00:00Z",
+    "endDate": "2025-11-04T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12682,6 +13912,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-967",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-11-11T19:00:00Z",
+    "endDate": "2025-11-11T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-808",
     "title": "Dinner with Carla",
     "notes": null,
@@ -12710,6 +13955,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-968",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-11-18T19:00:00Z",
+    "endDate": "2025-11-18T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12761,6 +14021,36 @@
     "noteTags": {}
   },
   {
+    "id": "evt-969",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-11-25T19:00:00Z",
+    "endDate": "2025-11-25T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1033",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2025-11-25T20:00:00Z",
+    "endDate": "2025-11-25T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-813",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -12772,6 +14062,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-970",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-12-02T19:00:00Z",
+    "endDate": "2025-12-02T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12838,6 +14143,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-971",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-12-09T19:00:00Z",
+    "endDate": "2025-12-09T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-818",
     "title": "Gym",
     "notes": null,
@@ -12881,6 +14201,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-972",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-12-16T19:00:00Z",
+    "endDate": "2025-12-16T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12930,6 +14265,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-973",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-12-23T19:00:00Z",
+    "endDate": "2025-12-23T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-824",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -12941,6 +14291,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-974",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2025-12-30T19:00:00Z",
+    "endDate": "2025-12-30T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -12971,6 +14336,36 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-975",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-01-06T19:00:00Z",
+    "endDate": "2026-01-06T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1034",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2026-01-06T20:00:00Z",
+    "endDate": "2026-01-06T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13035,6 +14430,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-976",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-01-13T19:00:00Z",
+    "endDate": "2026-01-13T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-831",
     "title": "Gym",
     "notes": null,
@@ -13082,6 +14492,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-977",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-01-20T19:00:00Z",
+    "endDate": "2026-01-20T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-834",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -13093,6 +14518,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-978",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-01-27T19:00:00Z",
+    "endDate": "2026-01-27T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13123,6 +14563,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-979",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-02-03T19:00:00Z",
+    "endDate": "2026-02-03T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13204,6 +14659,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-980",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-02-10T19:00:00Z",
+    "endDate": "2026-02-10T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-842",
     "title": "Game night with Alice, Bob, Carla, and Diego",
     "notes": null,
@@ -13230,6 +14700,36 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-981",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-02-17T19:00:00Z",
+    "endDate": "2026-02-17T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1035",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2026-02-17T20:00:00Z",
+    "endDate": "2026-02-17T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13296,6 +14796,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-982",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-02-24T19:00:00Z",
+    "endDate": "2026-02-24T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-848",
     "title": "Gym",
     "notes": null,
@@ -13337,6 +14852,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-983",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-03-03T19:00:00Z",
+    "endDate": "2026-03-03T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13388,6 +14918,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-984",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-03-10T19:00:00Z",
+    "endDate": "2026-03-10T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-854",
     "title": "Gym",
     "notes": null,
@@ -13433,6 +14978,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-985",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-03-17T19:00:00Z",
+    "endDate": "2026-03-17T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-857",
     "title": "Gym",
     "notes": null,
@@ -13459,6 +15019,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-986",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-03-24T19:00:00Z",
+    "endDate": "2026-03-24T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13504,6 +15079,36 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-987",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-03-31T19:00:00Z",
+    "endDate": "2026-03-31T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1036",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2026-03-31T20:00:00Z",
+    "endDate": "2026-03-31T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13572,6 +15177,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-988",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-04-07T19:00:00Z",
+    "endDate": "2026-04-07T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-866",
     "title": "Gym",
     "notes": null,
@@ -13613,6 +15233,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-989",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-04-14T19:00:00Z",
+    "endDate": "2026-04-14T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13679,6 +15314,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-990",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-04-21T19:00:00Z",
+    "endDate": "2026-04-21T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-873",
     "title": "Gym",
     "notes": null,
@@ -13705,6 +15355,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-991",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-04-28T19:00:00Z",
+    "endDate": "2026-04-28T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13769,6 +15434,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-992",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-05-05T19:00:00Z",
+    "endDate": "2026-05-05T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-879",
     "title": "Gym",
     "notes": null,
@@ -13795,6 +15475,36 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-993",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-05-12T19:00:00Z",
+    "endDate": "2026-05-12T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1037",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2026-05-12T20:00:00Z",
+    "endDate": "2026-05-12T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13848,6 +15558,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-994",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-05-19T19:00:00Z",
+    "endDate": "2026-05-19T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-884",
     "title": "Gym",
     "notes": null,
@@ -13893,6 +15618,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-995",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-05-26T19:00:00Z",
+    "endDate": "2026-05-26T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-887",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -13904,6 +15644,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-996",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-06-02T19:00:00Z",
+    "endDate": "2026-06-02T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -13953,6 +15708,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-997",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-06-09T19:00:00Z",
+    "endDate": "2026-06-09T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-891",
     "title": "Gym",
     "notes": null,
@@ -13979,6 +15749,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-998",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-06-16T19:00:00Z",
+    "endDate": "2026-06-16T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -14045,6 +15830,36 @@
     "noteTags": {}
   },
   {
+    "id": "evt-999",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-06-23T19:00:00Z",
+    "endDate": "2026-06-23T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1038",
+    "title": "Poker Night",
+    "notes": null,
+    "location": "The Alembic",
+    "startDate": "2026-06-23T20:00:00Z",
+    "endDate": "2026-06-23T22:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-897",
     "title": "Gym",
     "notes": null,
@@ -14071,6 +15886,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1000",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-06-30T19:00:00Z",
+    "endDate": "2026-06-30T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -14120,6 +15950,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1001",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-07-07T19:00:00Z",
+    "endDate": "2026-07-07T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-902",
     "title": "Gym",
     "notes": null,
@@ -14165,6 +16010,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1002",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-07-14T19:00:00Z",
+    "endDate": "2026-07-14T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-905",
     "title": "Gym",
     "notes": null,
@@ -14191,6 +16051,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1003",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-07-21T19:00:00Z",
+    "endDate": "2026-07-21T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -14225,6 +16100,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1004",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-07-28T19:00:00Z",
+    "endDate": "2026-07-28T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-909",
     "title": "Gym",
     "notes": null,
@@ -14251,6 +16141,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1005",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-08-04T19:00:00Z",
+    "endDate": "2026-08-04T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -14332,6 +16237,21 @@
     "noteTags": {}
   },
   {
+    "id": "evt-1006",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-08-11T19:00:00Z",
+    "endDate": "2026-08-11T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
+    "url": null,
+    "noteTags": {}
+  },
+  {
     "id": "evt-916",
     "title": "Standup with Priya Patel and Sam Lee",
     "notes": null,
@@ -14343,6 +16263,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1007",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-08-18T19:00:00Z",
+    "endDate": "2026-08-18T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },
@@ -14403,6 +16338,21 @@
     "calendarColorHex": "#00897B",
     "attendees": [],
     "isRecurring": false,
+    "url": null,
+    "noteTags": {}
+  },
+  {
+    "id": "evt-1008",
+    "title": "Book Club",
+    "notes": null,
+    "location": "Zuni Cafe",
+    "startDate": "2026-08-25T19:00:00Z",
+    "endDate": "2026-08-25T20:30:00Z",
+    "isAllDay": false,
+    "calendarTitle": "Social",
+    "calendarColorHex": "#FDD835",
+    "attendees": [],
+    "isRecurring": true,
     "url": null,
     "noteTags": {}
   },

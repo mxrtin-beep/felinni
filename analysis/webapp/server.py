@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, geocode, habits, ingest, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, geocode, habits, ingest, recurring, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -234,6 +234,12 @@ def habit():
         "consistency": records(habits.consistency_by_year(weekly)),
         "correlation": habits.habit_vs_busyness_correlation(df, category),
     })
+
+
+@app.get("/api/recurring")
+def recurring_view():
+    df = _get_df()
+    return jsonify(records(recurring.recurring_series(df)))
 
 
 @app.get("/api/travel")

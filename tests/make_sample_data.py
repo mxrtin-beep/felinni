@@ -63,7 +63,7 @@ def parse_note_tags(notes: str | None) -> dict:
     return tags
 
 
-def make_event(idx, title, start, hours, calendar, location=None, notes=None, attendees=None, is_all_day=False):
+def make_event(idx, title, start, hours, calendar, location=None, notes=None, attendees=None, is_all_day=False, is_recurring=None):
     end = start + timedelta(hours=hours)
     return {
         "id": f"evt-{idx}",
@@ -76,7 +76,7 @@ def make_event(idx, title, start, hours, calendar, location=None, notes=None, at
         "calendarTitle": calendar,
         "calendarColorHex": CALENDAR_COLORS.get(calendar),
         "attendees": attendees or [],
-        "isRecurring": calendar == "Gym",
+        "isRecurring": (calendar == "Gym") if is_recurring is None else is_recurring,
         "url": None,
         "noteTags": parse_note_tags(notes),
     }
@@ -203,6 +203,35 @@ def main():
         events.append(make_event(
             idx, "Study session", START + timedelta(days=70 + i * 21, hours=15), 2.0, "UCLA Other",
             location="North Campus Student Center",
+        ))
+        idx += 1
+
+    # Three named recurring series (a real Calendar repeat rule, not just a
+    # shared category), one in each status the recurring-events tracker
+    # reports: still going, drifting, and long stopped.
+    for i in range(60):  # weekly for ~14 months, still going through the fixture's end
+        events.append(make_event(
+            idx, "Book Club", END - timedelta(weeks=60 - i, hours=-19), 1.5, "Social",
+            location="Zuni Cafe", is_recurring=True,
+        ))
+        idx += 1
+    # Biweekly, gaps widening over time, with the last occurrence ~10 weeks
+    # before the fixture's end - "slowing down" (drifted well past its old
+    # cadence, but not so long ago as to read as fully stopped).
+    poker_gap_weeks = [2 + i // 6 for i in range(30)]
+    poker_offsets_days = [sum(poker_gap_weeks[:i]) * 7 for i in range(30)]
+    poker_last_target = END - timedelta(weeks=10)
+    poker_shift_days = (poker_last_target - (START + timedelta(days=poker_offsets_days[-1]))).days
+    for i, offset in enumerate(poker_offsets_days):
+        events.append(make_event(
+            idx, "Poker Night", START + timedelta(days=offset + poker_shift_days, hours=20),
+            2.5, "Social", location="The Alembic", is_recurring=True,
+        ))
+        idx += 1
+    for i in range(40):  # weekly through 2022, then nothing since - "stopped"
+        events.append(make_event(
+            idx, "Standup", datetime(2021, 6, 1, tzinfo=timezone.utc) + timedelta(weeks=i, hours=9),
+            0.5, "Work", is_recurring=True,
         ))
         idx += 1
 

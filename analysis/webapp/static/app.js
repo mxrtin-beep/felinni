@@ -254,6 +254,23 @@ async function refreshHabit() {
       { key: "end", label: "End", format: fmtDate },
       { key: "weeks", label: "Weeks", num: true },
     ], data.streaks.slice(0, 12));
+
+  // Independent of the category picker above - runs alongside it, but a
+  // failure here shouldn't take the rest of the tab down with it.
+  loadRecurringEvents().catch(err => console.error("Recurring events section failed:", err));
+}
+
+async function loadRecurringEvents() {
+  const rows = await api("recurring");
+  table(document.getElementById("recurring-table"),
+    [
+      { key: "title", label: "Event" },
+      { key: "category", label: "Category" },
+      { key: "cadence", label: "Usual cadence" },
+      { key: "last_seen", label: "Last seen", format: fmtDate },
+      { key: "days_since_last", label: "Days since", num: true, format: v => Math.round(v) },
+      { key: "status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
+    ], rows);
 }
 
 // --- Travel ---

@@ -39,6 +39,7 @@ def client():
     "/api/locations?category=Gym&start_year=2022&end_year=2023",
     "/api/locations?person=Alice",
     "/api/breaks",
+    "/api/recurring",
 ])
 def test_endpoint_returns_200_json(client, path):
     resp = client.get(path)
@@ -66,6 +67,15 @@ def test_breaks_has_all_three_sections(client):
     body = resp.get_json()
     assert set(body.keys()) == {"category_phases", "quiet_stretches", "location_shifts"}
     assert body["category_phases"]  # the synthetic Gym/Work streaks should surface
+
+
+def test_recurring_finds_the_synthetic_gym_series(client):
+    resp = client.get("/api/recurring")
+    body = resp.get_json()
+    assert any(row["title"] == "Gym" for row in body)
+    gym_row = next(row for row in body if row["title"] == "Gym")
+    assert gym_row["cadence"] in {"weekly", "daily"}
+    assert gym_row["status"] in {"active", "slowing down", "stopped"}
 
 
 def test_locations_without_geocode_cache_reports_zero_geocoded(client):
