@@ -117,6 +117,22 @@ def main():
             ))
             idx += 1
 
+        # Group hangouts, named only in the title (no formal Calendar
+        # attendees) - exercises multi-person title parsing, including a
+        # curly apostrophe and a non-name trailing token.
+        if weekday == 6 and random.random() < 0.1:
+            events.append(make_event(
+                idx, "Game night with Alice, Bob, Carla, and Diego", day.replace(hour=19), 3.0, "Social",
+                location=random.choice(BARS),
+            ))
+            idx += 1
+        if weekday == 6 and random.random() < 0.05:
+            events.append(make_event(
+                idx, "Potluck with Emi, Carla, and Sean O’Brien", day.replace(hour=18), 2.0, "Social",
+                location=random.choice(RESTAURANTS),
+            ))
+            idx += 1
+
         # Simulated late-2024 work crunch: dense recurring "Work" blocks.
         if datetime(2024, 10, 1, tzinfo=timezone.utc) <= day <= datetime(2024, 11, 15, tzinfo=timezone.utc):
             if weekday < 5:

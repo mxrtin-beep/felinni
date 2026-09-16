@@ -285,11 +285,27 @@ function lineChart(container, series, { yLabel = "" } = {}) {
  * one sequential hue (--series-1) whose opacity scales with count - darker
  * (more opaque) = more events that week; zero-count weeks stay neutral gray. */
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Cumulative day-of-year each month starts on (non-leap; close enough for
+// label placement), used to convert a fixed 53-week-per-year grid into
+// month tick positions that don't depend on which weeks the data happens
+// to include - critical when the data itself is date-filtered to start
+// mid-year, otherwise the first available week gets placed in column 0
+// (i.e. under "Jan") regardless of which month it's actually in.
+const MONTH_START_DAY = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+const WEEKS_PER_YEAR = 53;
+
+function weekOfYear(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
+  return Math.floor((d.getTime() - yearStart) / (7 * 86400000));
+}
 
 /** Week-activity strip: cells = [{date (Sunday-of-week, ISO), count}],
  * laid out as one row per year and one column per week-of-year (like a
- * GitHub contribution graph) so the grid carries real year/month
- * structure instead of an arbitrary wrap. One sequential hue (`color`,
+ * GitHub contribution graph), with the column position derived from the
+ * actual calendar week - not from array order - so a date-filtered range
+ * (e.g. starting in June) still lines up under the right month instead of
+ * sliding everything back to column 0. One sequential hue (`color`,
  * default --series-1) whose opacity scales with count - darker = more
  * events that week; zero-count weeks stay neutral gray. */
 function weekStrip(container, cells, { color } = {}) {
@@ -308,18 +324,17 @@ function weekStrip(container, cells, { color } = {}) {
     byYear.get(year).push(c);
   });
   const years = [...byYear.keys()].sort();
-  const maxCols = Math.max(...years.map(y => byYear.get(y).length));
 
-  const width = rowLabelW + maxCols * step + 4;
+  const width = rowLabelW + WEEKS_PER_YEAR * step + 4;
   const height = colLabelH + years.length * step + 4;
   const svg = el("svg", { width, height, viewBox: `0 0 ${width} ${height}` });
 
   const maxCount = Math.max(...cells.map(c => c.count), 1);
   const activeColor = color || cssVar("--series-1");
 
-  // Month labels along the top, positioned by ~weeks-elapsed-per-month.
+  // Month labels at fixed columns - always aligned to real calendar time.
   MONTH_ABBR.forEach((m, i) => {
-    const col = Math.round((i * maxCols) / 12);
+    const col = Math.round(MONTH_START_DAY[i] / 7);
     svg.appendChild(el("text", {
       x: rowLabelW + col * step, y: colLabelH - 4, "font-size": 9, fill: cssVar("--text-muted"),
     })).textContent = m;
@@ -330,7 +345,8 @@ function weekStrip(container, cells, { color } = {}) {
       x: 0, y: colLabelH + row * step + cellSize - 1, "font-size": 10, fill: cssVar("--text-muted"),
     })).textContent = year;
 
-    byYear.get(year).forEach((c, col) => {
+    byYear.get(year).forEach(c => {
+      const col = weekOfYear(c.date);
       const intensity = c.count > 0 ? 0.3 + 0.7 * (c.count / maxCount) : 0;
       const rect = el("rect", {
         x: rowLabelW + col * step, y: colLabelH + row * step,

@@ -374,6 +374,28 @@ function buildCategoryColors(categories, realColors) {
 
 // --- Map ---
 let leafletMap, markerLayer;
+let hasSetInitialMapView = false;
+
+/** Coarse grid-clusters locations (by degree-sized bins) and returns the
+ * [lat, lon] points belonging to whichever bin holds the most visits - a
+ * simple "zoom to where most of your life happens" default, so one trip to
+ * the other side of the world doesn't force the initial view out to a
+ * whole-world scale where the actual cluster of regular places is a speck. */
+function densestClusterPoints(locations, binSizeDegrees = 5) {
+  const bins = new Map();
+  locations.forEach(loc => {
+    const key = `${Math.round(loc.lat / binSizeDegrees)},${Math.round(loc.lon / binSizeDegrees)}`;
+    if (!bins.has(key)) bins.set(key, { visits: 0, points: [] });
+    const bin = bins.get(key);
+    bin.visits += loc.visits;
+    bin.points.push([loc.lat, loc.lon]);
+  });
+  let best = null;
+  for (const bin of bins.values()) {
+    if (!best || bin.visits > best.visits) best = bin;
+  }
+  return best ? best.points : [];
+}
 let geocodePollTimer = null;
 
 function renderMapLegend(categories) {
@@ -516,7 +538,16 @@ async function refreshMap() {
     marker.addTo(markerLayer);
     bounds.push([loc.lat, loc.lon]);
   });
-  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+
+  if (!hasSetInitialMapView && bounds.length) {
+    // First render: default to the densest cluster of places (typically
+    // "home") rather than zooming out to fit every far-flung trip too.
+    const dense = densestClusterPoints(data.locations);
+    leafletMap.fitBounds(dense.length ? dense : bounds, { padding: [30, 30], maxZoom: 12 });
+    hasSetInitialMapView = true;
+  } else if (bounds.length) {
+    leafletMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+  }
 }
 
 // --- Boot ---

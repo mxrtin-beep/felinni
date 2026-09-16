@@ -94,8 +94,11 @@ your calendar's full span.
 ### Map tab
 
 The Map tab plots your geocoded locations, filterable by category, person,
-and year range, with circle size = visit count and color = category. It
-needs coordinates for your locations first — click **Geocode locations**
+and year range, with circle size = visit count and color = category. On
+first load it zooms to your densest cluster of places (typically home)
+rather than zooming out to fit one far-flung trip too — filtering still
+refits to whatever currently matches. It needs coordinates for your
+locations first — click **Geocode locations**
 on the Map tab, which shows a live progress bar while it calls out to
 OpenStreetMap's Nominatim geocoder in the background (~1 request/sec, so
 a few minutes for a big calendar; nothing else in this repo makes network

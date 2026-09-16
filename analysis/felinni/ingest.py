@@ -43,11 +43,16 @@ def _is_junk_location(location: str) -> bool:
 
 
 # Captures a trailing "with A, B, and C" name list on an event title that
-# isn't tagged with attendees in Calendar, e.g. "Dinner with John Doe, Jane
-# Doe, and McLovin". Only trusted as people if every candidate looks like a
-# proper name (capitalized) - "lunch with the whole team" is left alone.
+# isn't fully tagged with attendees in Calendar, e.g. "Dinner with John Doe,
+# Jane Doe, and McLovin". Names are kept individually if they look like a
+# proper name (capitalized) - candidates that don't ("lunch with the whole
+# team") are simply dropped rather than voiding the whole list, since one
+# odd token (trailing emoji, "and the twins", ...) shouldn't cost you every
+# real name in a group hangout. Includes the curly apostrophe (U+2019) iOS
+# autocorrect substitutes for a straight one in names like "O'Brien".
 _WITH_PATTERN = re.compile(r"\bwith\s+(.+)$", re.IGNORECASE)
-_NAME_LIKE = re.compile(r"^[A-Z][\w.'-]*(\s+[A-Z][\w.'-]*)*$")
+_NAME_LIKE = re.compile(r"^[A-Z][\w.'’-]*(\s+[A-Z][\w.'’-]*)*$")
+_TRAILING_DECORATION = re.compile(r"[\s!?.…\U0001F300-\U0001FAFF☀-➿]+$")
 
 
 def _people_from_title(title: str | None) -> list[str]:
@@ -56,20 +61,20 @@ def _people_from_title(title: str | None) -> list[str]:
     match = _WITH_PATTERN.search(title)
     if not match:
         return []
-    names_str = match.group(1).strip().rstrip(".")
+    names_str = _TRAILING_DECORATION.sub("", match.group(1))
     names_str = re.sub(r"\s*,?\s+and\s+", ", ", names_str, flags=re.IGNORECASE)
-    candidates = [c.strip() for c in names_str.split(",") if c.strip()]
-    if not candidates or not all(_NAME_LIKE.match(c) for c in candidates):
-        return []
-    return candidates
+    candidates = [c.strip().rstrip(".,") for c in names_str.split(",")]
+    return [c for c in candidates if c and _NAME_LIKE.match(c)]
 
 
 def _people_for(row_attendees: list[str], note_tags: dict[str, list[str]], title: str | None) -> list[str]:
     people = set(row_attendees or [])
     for key in ("people", "with"):
         people.update(note_tags.get(key, []))
-    if not people:
-        people.update(_people_from_title(title))
+    # Always merged in, not just as a fallback when `people` is empty:
+    # a group event can have only some attendees formally invited in
+    # Calendar, with the rest named just in the title.
+    people.update(_people_from_title(title))
     return sorted(people)
 
 

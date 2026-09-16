@@ -69,9 +69,27 @@ def test_title_parsing_skipped_when_not_name_like(tmp_path):
     assert df.iloc[0]["people"] == []
 
 
-def test_title_parsing_skipped_when_attendees_already_tagged(tmp_path):
+def test_title_parsed_people_merge_with_existing_attendees(tmp_path):
+    # A group event where only one friend was formally invited in Calendar
+    # and the rest are just named in the title should keep everyone, not
+    # just the formal attendee.
     df = _load(tmp_path, [_event(1, "Dinner with John Doe", attendees=["Someone Else"])])
-    assert df.iloc[0]["people"] == ["Someone Else"]
+    assert sorted(df.iloc[0]["people"]) == ["John Doe", "Someone Else"]
+
+
+def test_group_title_keeps_valid_names_even_if_one_token_is_not_name_like(tmp_path):
+    df = _load(tmp_path, [_event(1, "Game night with Alice, Bob, Carla, and the twins")])
+    assert sorted(df.iloc[0]["people"]) == ["Alice", "Bob", "Carla"]
+
+
+def test_curly_apostrophe_in_name_is_recognized(tmp_path):
+    df = _load(tmp_path, [_event(1, "Drinks with Sean O’Brien")])
+    assert df.iloc[0]["people"] == ["Sean O’Brien"]
+
+
+def test_trailing_emoji_does_not_break_group_parsing(tmp_path):
+    df = _load(tmp_path, [_event(1, "Dinner with Alice, Bob, and Carla \U0001F389")])
+    assert sorted(df.iloc[0]["people"]) == ["Alice", "Bob", "Carla"]
 
 
 def test_time_by_category_excludes_all_day_events(tmp_path):
