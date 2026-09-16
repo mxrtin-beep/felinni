@@ -35,12 +35,16 @@ def geocode_locations(
     cache_path: str | Path = DEFAULT_CACHE_PATH,
     user_agent: str = "felinni-calendar-analysis",
     rate_limit_seconds: float = 1.0,
+    on_progress=None,
 ) -> dict[str, dict | None]:
     """Geocode a list of unique location strings, returning
     {location: {"lat": ..., "lon": ..., "display_name": ...} or None}.
 
     Requires the optional `geopy` dependency and network access. Already
-    cached locations are never re-queried.
+    cached locations are never re-queried. If given, `on_progress(done,
+    total)` is called once up front with done=0 and again after each
+    location, so a CLI or web caller can show progress on what can be a
+    multi-minute run (~1 request/sec).
     """
     try:
         from geopy.geocoders import Nominatim
@@ -55,7 +59,10 @@ def geocode_locations(
     geolocator = Nominatim(user_agent=user_agent)
 
     to_fetch = [loc for loc in dict.fromkeys(locations) if loc and loc not in cache]
-    for loc in to_fetch:
+    total = len(to_fetch)
+    if on_progress:
+        on_progress(0, total)
+    for i, loc in enumerate(to_fetch):
         try:
             result = geolocator.geocode(loc)
         except GeocoderServiceError:
@@ -66,6 +73,8 @@ def geocode_locations(
             else None
         )
         _save_cache(cache_path, cache)
+        if on_progress:
+            on_progress(i + 1, total)
         time.sleep(rate_limit_seconds)
 
     return {loc: cache.get(loc) for loc in locations}

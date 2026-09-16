@@ -253,3 +253,32 @@ td.num, th.num {
 }
 .badge.packed { background: rgba(227, 73, 72, 0.15); color: var(--series-2); }
 .badge.empty { background: rgba(42, 120, 214, 0.15); color: var(--series-1); }
+
+button {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.progress-track {
+  width: 220px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--grid);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--series-1);
+  transition: width 0.3s ease;
+}

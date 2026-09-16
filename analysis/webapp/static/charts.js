@@ -49,6 +49,34 @@ function formatNumber(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
+/** Wraps text to at most 2 lines within ~maxChars per line, word by word;
+ * a third line's worth of content is truncated with an ellipsis instead of
+ * overflowing. Approximate (char-count based), not measured - good enough
+ * at the fixed 12px label size these charts use. */
+function wrapLabel(text, maxChars) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+      if (lines.length === 2) break;
+    } else {
+      current = candidate;
+    }
+  }
+  if (lines.length < 2 && current) lines.push(current);
+  if (lines.length === 2) {
+    const consumed = lines.join(" ").length;
+    if (consumed < text.length) {
+      lines[1] = lines[1].length > maxChars - 1 ? lines[1].slice(0, maxChars - 1) + "…" : lines[1] + "…";
+    }
+  }
+  return lines;
+}
+
 /** Horizontal bar chart: data = [{label, value}], one series. */
 function horizontalBarChart(container, data, { valueLabel = "", color } = {}) {
   container.innerHTML = "";
@@ -57,16 +85,35 @@ function horizontalBarChart(container, data, { valueLabel = "", color } = {}) {
     return;
   }
   const barColor = color || cssVar("--series-1");
-  const rowH = 28, barH = 16, labelW = 150, width = container.clientWidth || 640;
+  const barH = 16, labelW = 220, lineHeight = 13, width = container.clientWidth || 640;
   const chartW = width - labelW - 60;
-  const height = data.length * rowH + 10;
+  const maxCharsPerLine = Math.floor((labelW - 10) / 6);
   const max = Math.max(...data.map(d => d.value), 1);
+
+  const wrapped = data.map(d => wrapLabel(String(d.label), maxCharsPerLine));
+  const rowHeights = wrapped.map(lines => Math.max(barH, lines.length * lineHeight) + 12);
+  const rowTops = [];
+  let cursor = 4;
+  rowHeights.forEach(h => { rowTops.push(cursor); cursor += h; });
+  const height = cursor + 4;
 
   const svg = el("svg", { width, height, viewBox: `0 0 ${width} ${height}` });
   data.forEach((d, i) => {
-    const y = i * rowH + 6;
+    const rowTop = rowTops[i], rowH = rowHeights[i];
+    const y = rowTop + (rowH - barH) / 2;
     const barW = Math.max((d.value / max) * chartW, 2);
-    svg.appendChild(el("text", { x: labelW - 8, y: y + barH / 2 + 4, "text-anchor": "end", fill: cssVar("--text-secondary"), "font-size": 12 })).textContent = d.label;
+
+    const lines = wrapped[i];
+    const textBlockH = lines.length * lineHeight;
+    const firstLineY = rowTop + (rowH - textBlockH) / 2 + lineHeight - 3;
+    const label = el("text", { x: labelW - 8, y: firstLineY, "text-anchor": "end", fill: cssVar("--text-secondary"), "font-size": 12 });
+    lines.forEach((line, li) => {
+      const tspan = el("tspan", { x: labelW - 8, dy: li === 0 ? 0 : lineHeight });
+      tspan.textContent = line;
+      label.appendChild(tspan);
+    });
+    svg.appendChild(label);
+
     const rect = el("rect", {
       x: labelW, y, width: barW, height: barH, rx: 4, ry: 4, fill: barColor, class: "bar-mark",
     });

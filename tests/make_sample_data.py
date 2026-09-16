@@ -44,7 +44,7 @@ def parse_note_tags(notes: str | None) -> dict:
     return tags
 
 
-def make_event(idx, title, start, hours, calendar, location=None, notes=None, attendees=None):
+def make_event(idx, title, start, hours, calendar, location=None, notes=None, attendees=None, is_all_day=False):
     end = start + timedelta(hours=hours)
     return {
         "id": f"evt-{idx}",
@@ -53,7 +53,7 @@ def make_event(idx, title, start, hours, calendar, location=None, notes=None, at
         "location": location,
         "startDate": iso(start),
         "endDate": iso(end),
-        "isAllDay": False,
+        "isAllDay": is_all_day,
         "calendarTitle": calendar,
         "attendees": attendees or [],
         "isRecurring": calendar == "Gym",
@@ -103,6 +103,17 @@ def main():
                 events.append(make_event(idx, "Work crunch", day.replace(hour=9), 10.0, "Work"))
                 idx += 1
 
+        # Weekly Zoom standup: location is a meeting link, not a place - the
+        # dashboard should filter this out rather than showing "zoom.us" as
+        # a top "place". Also exercises title-based people parsing (no
+        # attendees tagged in Calendar, just named at the end of the title).
+        if weekday == 0:
+            events.append(make_event(
+                idx, "Standup with Priya Patel and Sam Lee", day.replace(hour=9, minute=30), 0.5, "Work",
+                location="https://us02web.zoom.us/j/5551234567?pwd=abc123",
+            ))
+            idx += 1
+
         day += timedelta(days=1)
 
     # A handful of trips.
@@ -124,7 +135,21 @@ def main():
     idx += 1
 
     # A messy old event: no location, no attendees, just a title.
-    events.append(make_event(idx - 1, "Doctor appt", START + timedelta(days=5, hours=14), 1.0, "Personal"))
+    events.append(make_event(idx, "Doctor appt", START + timedelta(days=5, hours=14), 1.0, "Personal"))
+    idx += 1
+
+    # A phone-number location - another junk-location case.
+    events.append(make_event(
+        idx, "Call with recruiter", START + timedelta(days=40, hours=11), 0.5, "Work",
+        location="+1 (415) 555-0182",
+    ))
+    idx += 1
+
+    # An all-day event: should count for nothing in Time & Spend (no real duration).
+    events.append(make_event(
+        idx, "Company offsite", START + timedelta(days=250), 24.0, "Work", is_all_day=True,
+    ))
+    idx += 1
 
     events.sort(key=lambda e: e["startDate"])
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

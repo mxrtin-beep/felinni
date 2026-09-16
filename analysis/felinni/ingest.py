@@ -12,6 +12,7 @@ than dropping rows, since a sparse older history is still useful for trends.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -23,11 +24,52 @@ SEASON_BY_MONTH = {
     9: "fall", 10: "fall", 11: "fall",
 }
 
+# Matches a location that's actually a meeting link or phone number rather
+# than a place - these would otherwise pollute place-frequency/map results
+# with one-off junk like "https://zoom.us/j/123" or "+1 415-555-0100".
+_JUNK_LOCATION_PATTERNS = [
+    re.compile(r"zoom\.us", re.IGNORECASE),
+    re.compile(r"meet\.google\.com", re.IGNORECASE),
+    re.compile(r"teams\.microsoft\.com", re.IGNORECASE),
+    re.compile(r"teams\.live\.com", re.IGNORECASE),
+    re.compile(r"webex\.com", re.IGNORECASE),
+    re.compile(r"^https?://", re.IGNORECASE),
+    re.compile(r"^[\d\s()+.\-]{7,}$"),  # phone numbers: mostly digits/punctuation
+]
 
-def _people_for(row_attendees: list[str], note_tags: dict[str, list[str]]) -> list[str]:
+
+def _is_junk_location(location: str) -> bool:
+    return any(pattern.search(location) for pattern in _JUNK_LOCATION_PATTERNS)
+
+
+# Captures a trailing "with A, B, and C" name list on an event title that
+# isn't tagged with attendees in Calendar, e.g. "Dinner with John Doe, Jane
+# Doe, and McLovin". Only trusted as people if every candidate looks like a
+# proper name (capitalized) - "lunch with the whole team" is left alone.
+_WITH_PATTERN = re.compile(r"\bwith\s+(.+)$", re.IGNORECASE)
+_NAME_LIKE = re.compile(r"^[A-Z][\w.'-]*(\s+[A-Z][\w.'-]*)*$")
+
+
+def _people_from_title(title: str | None) -> list[str]:
+    if not title:
+        return []
+    match = _WITH_PATTERN.search(title)
+    if not match:
+        return []
+    names_str = match.group(1).strip().rstrip(".")
+    names_str = re.sub(r"\s*,?\s+and\s+", ", ", names_str, flags=re.IGNORECASE)
+    candidates = [c.strip() for c in names_str.split(",") if c.strip()]
+    if not candidates or not all(_NAME_LIKE.match(c) for c in candidates):
+        return []
+    return candidates
+
+
+def _people_for(row_attendees: list[str], note_tags: dict[str, list[str]], title: str | None) -> list[str]:
     people = set(row_attendees or [])
     for key in ("people", "with"):
         people.update(note_tags.get(key, []))
+    if not people:
+        people.update(_people_from_title(title))
     return sorted(people)
 
 
@@ -40,9 +82,10 @@ def _category_for(calendar_title: str, note_tags: dict[str, list[str]]) -> str:
 
 def _location_for(location: str | None, note_tags: dict[str, list[str]]) -> str | None:
     tagged = note_tags.get("location")
-    if tagged:
-        return tagged[0]
-    return location
+    resolved = tagged[0] if tagged else location
+    if isinstance(resolved, str) and _is_junk_location(resolved):
+        return None
+    return resolved
 
 
 def load_events(path: str | Path) -> pd.DataFrame:
@@ -70,7 +113,7 @@ def load_events(path: str | Path) -> pd.DataFrame:
         _location_for(loc, tags) for loc, tags in zip(df["location"], note_tags)
     ]
     df["people"] = [
-        _people_for(att, tags) for att, tags in zip(df["attendees"], note_tags)
+        _people_for(att, tags, title) for att, tags, title in zip(df["attendees"], note_tags, df["title"])
     ]
     df["n_people"] = df["people"].apply(len)
 

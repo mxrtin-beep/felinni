@@ -1,4 +1,15 @@
-const api = (path) => fetch(`/api/${path}`).then(r => r.json());
+// Global date-range filter (Overview tab) - every /api/ call includes it,
+// so narrowing the range there narrows every other tab too.
+const GLOBAL_FILTERS = { startDate: "", endDate: "" };
+
+function api(path) {
+  const [base, query] = path.split("?");
+  const params = new URLSearchParams(query || "");
+  if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
+  if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
+  const qs = params.toString();
+  return fetch(`/api/${base}${qs ? `?${qs}` : ""}`).then(r => r.json());
+}
 
 function table(container, columns, rows) {
   container.innerHTML = "";
@@ -23,6 +34,7 @@ function table(container, columns, rows) {
 function fmtHours(h) { return h == null ? "-" : `${Math.round(h)}h`; }
 function fmtDate(d) { return d ? d.slice(0, 10) : "-"; }
 function fmtPct(p) { return p == null ? "-" : `${(p * 100).toFixed(0)}%`; }
+function cssVarSafe(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
 // --- Tabs ---
 document.getElementById("tabs").addEventListener("click", (e) => {
@@ -33,23 +45,68 @@ document.getElementById("tabs").addEventListener("click", (e) => {
 });
 
 // --- Overview ---
-async function loadOverview() {
-  const meta = await api("meta");
+async function loadMeta() {
+  const meta = await api("meta"); // unfiltered - populates filter bounds/dropdowns
+  const startInput = document.getElementById("global-start-date");
+  const endInput = document.getElementById("global-end-date");
+  startInput.min = endInput.min = meta.min_date;
+  startInput.max = endInput.max = meta.max_date;
+  if (!startInput.value) {
+    startInput.value = meta.min_date;
+    endInput.value = meta.max_date;
+    GLOBAL_FILTERS.startDate = meta.min_date;
+    GLOBAL_FILTERS.endDate = meta.max_date;
+  }
+  return meta;
+}
+
+async function refreshOverviewStats() {
+  const summary = await api("summary");
   document.getElementById("subtitle").textContent =
-    `${meta.total_events.toLocaleString()} events, ${meta.min_year}–${meta.max_year}, ${Math.round(meta.total_hours).toLocaleString()} tracked hours, ${meta.n_people} people tagged`;
+    `${summary.total_events.toLocaleString()} events, ${Math.round(summary.total_hours).toLocaleString()} tracked hours, ${summary.n_people} people tagged`;
 
   const statGrid = document.getElementById("overview-stats");
   statGrid.innerHTML = "";
-  statGrid.appendChild(statTile("Total events", meta.total_events.toLocaleString()));
-  statGrid.appendChild(statTile("Years covered", `${meta.min_year}–${meta.max_year}`));
-  statGrid.appendChild(statTile("Tracked hours", Math.round(meta.total_hours).toLocaleString()));
-  statGrid.appendChild(statTile("Top category", meta.categories[0] || "-"));
+  statGrid.appendChild(statTile("Total events", summary.total_events.toLocaleString()));
+  statGrid.appendChild(statTile("Tracked hours", Math.round(summary.total_hours).toLocaleString()));
+  statGrid.appendChild(statTile("Top category", summary.top_category || "-"));
+  statGrid.appendChild(statTile("People tagged", summary.n_people));
 
   const places = await api("places?limit=10");
   horizontalBarChart(document.getElementById("overview-places-chart"),
     places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits" });
+}
 
-  return meta;
+function wireGlobalDateFilter() {
+  const startInput = document.getElementById("global-start-date");
+  const endInput = document.getElementById("global-end-date");
+  const onChange = () => {
+    GLOBAL_FILTERS.startDate = startInput.value;
+    GLOBAL_FILTERS.endDate = endInput.value;
+    reloadAll();
+  };
+  startInput.addEventListener("change", onChange);
+  endInput.addEventListener("change", onChange);
+  document.getElementById("global-range-reset").addEventListener("click", async () => {
+    const meta = await api("meta");
+    startInput.value = meta.min_date;
+    endInput.value = meta.max_date;
+    onChange();
+  });
+}
+
+async function reloadAll() {
+  await Promise.all([
+    refreshOverviewStats(),
+    loadPlaces(),
+    refreshMap(),
+    loadPeople(),
+    refreshHabit(),
+    loadTravel(),
+    loadTime(),
+    refreshSeasonality(),
+    loadAnomalies(),
+  ]);
 }
 
 // --- Places ---
@@ -208,11 +265,11 @@ async function loadAnomalies() {
       { key: "z_score", label: "Z-score", num: true, format: v => v?.toFixed(2) },
     ], data.anomalies);
 }
-function cssVarSafe(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
 // --- Map ---
 let categoryColors = {};
 let leafletMap, markerLayer;
+let geocodePollTimer = null;
 
 function buildCategoryColors(categories) {
   // Fixed order = overall frequency order from meta, so a category's color
@@ -270,6 +327,11 @@ async function loadMap(meta) {
     ["map-category", "map-person", "map-start-year", "map-end-year"].forEach(id =>
       document.getElementById(id).addEventListener("change", refreshMap));
 
+    document.getElementById("map-geocode-btn").addEventListener("click", async () => {
+      const resp = await fetch("/api/geocode/start", { method: "POST" });
+      if (resp.ok) await pollGeocodeStatus();
+    });
+
     // Leaflet measures the container on init; the Map tab may have been
     // hidden (display:none) at that point, so its size reads as zero.
     document.querySelector('button[data-panel="map"]').addEventListener("click", () => {
@@ -277,6 +339,46 @@ async function loadMap(meta) {
     });
   }
   await refreshMap();
+  await pollGeocodeStatus(); // resumes the progress bar if a job was already running
+}
+
+function updateGeocodeButton(locationsData) {
+  const btn = document.getElementById("map-geocode-btn");
+  if (btn.disabled && geocodePollTimer) return; // a job is running - leave it to the poller
+  if (locationsData && locationsData.total_places > 0 && locationsData.total_places === locationsData.geocoded_places) {
+    btn.disabled = true;
+    btn.textContent = "All locations geocoded";
+  } else {
+    btn.disabled = false;
+    btn.textContent = "Geocode locations";
+  }
+}
+
+async function pollGeocodeStatus() {
+  const status = await fetch("/api/geocode/status").then(r => r.json());
+  const btn = document.getElementById("map-geocode-btn");
+  const progressWrap = document.getElementById("map-geocode-progress");
+
+  if (!status.running) {
+    if (geocodePollTimer) {
+      clearInterval(geocodePollTimer);
+      geocodePollTimer = null;
+      await refreshMap(); // job just finished - show the newly-geocoded points
+    }
+    progressWrap.style.display = "none";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Geocoding…";
+  progressWrap.style.display = "flex";
+  const pct = status.total ? Math.round((status.done / status.total) * 100) : 0;
+  document.getElementById("map-geocode-fill").style.width = pct + "%";
+  document.getElementById("map-geocode-label").textContent = status.total ? `${status.done} / ${status.total}` : "Starting…";
+
+  if (!geocodePollTimer) {
+    geocodePollTimer = setInterval(pollGeocodeStatus, 1000);
+  }
 }
 
 async function refreshMap() {
@@ -292,12 +394,13 @@ async function refreshMap() {
 
   const data = await api(`locations?${params.toString()}`);
   markerLayer.clearLayers();
+  updateGeocodeButton(data);
 
   const note = document.getElementById("map-note");
   if (data.geocoded_places === 0) {
     note.innerHTML = data.total_places === 0
       ? "No locations match this filter."
-      : `None of your ${data.total_places} matching locations are geocoded yet. On your Mac, run <code>python cli.py geocode --events ../events.json</code> (needs network) and reload.`;
+      : `None of your ${data.total_places} matching locations are geocoded yet. Click "Geocode locations" below (needs network - it calls OpenStreetMap).`;
     return;
   }
   note.textContent = data.total_places > data.geocoded_places
@@ -323,9 +426,9 @@ async function refreshMap() {
 }
 
 // --- Boot ---
-let meta;
 (async function init() {
-  meta = await loadOverview();
+  const meta = await loadMeta();
+  await refreshOverviewStats();
   await Promise.all([
     loadPlaces(),
     loadMap(meta),
@@ -336,4 +439,5 @@ let meta;
     loadSeasonality(meta),
     loadAnomalies(),
   ]);
+  wireGlobalDateFilter();
 })();

@@ -36,10 +36,16 @@ that carry structure:
 - **Category**: use a dedicated Calendar per category (e.g. "Gym",
   "Social", "Dating", "Travel", "Work"), or add a `Category: Gym` line to
   an event's Notes — the note tag wins if both are present.
-- **People**: add attendees on the event, or a note line like
-  `People: Alice, Bob`.
+- **People**: add attendees on the event, a note line like `People: Alice,
+  Bob`, or just name them at the end of the title, e.g. "Dinner with John
+  Doe, Jane Doe, and McLovin" — parsed automatically if nothing else tagged
+  people on that event (and only when what follows "with" looks like an
+  actual name list, so "lunch with the whole team" is left alone).
 - **Location**: the event's Location field, or a `Location: <place>` note
-  line (useful when the title has the info but Location is blank).
+  line (useful when the title has the info but Location is blank). A
+  location that's actually a meeting link (Zoom/Meet/Teams/Webex) or a
+  phone number is filtered out automatically rather than showing up as a
+  "place".
 - **Travel**: tag trip events with category "Travel" (or "Trip"/"Flight").
 - **Dating**: tag first dates with category "Date" and the person as an
   attendee/`People:` tag, to enable the cross-reference in
@@ -57,7 +63,7 @@ python webapp/server.py --events ../events.json
 ```
 
 Open **http://127.0.0.1:5000**. It's a single page with tabs — Overview,
-Places, People, Habits, Travel, Time & Spend, Seasonality, Anomalies —
+Places, Map, People, Habits, Travel, Time & Spend, Seasonality, Anomalies —
 each backed by one of the analyses below, with charts and tables you can
 click through instead of running commands. It's a plain Flask dev server
 reading your local `events.json`, nothing leaves your machine.
@@ -65,22 +71,34 @@ reading your local `events.json`, nothing leaves your machine.
 Try it against the synthetic fixture first if you don't have a real
 export yet: `python webapp/server.py --events ../data/sample_events.json`.
 
+### Date range filter
+
+The Overview tab has a From/To date range that applies to every other
+tab — narrow it and Places, People, Habits, everything else recomputes
+over just that window. Each tab's own filters (a habit's category, the
+Map's person/year filters, ...) stack on top of it. Reset puts it back to
+your calendar's full span.
+
 ### Map tab
 
 The Map tab plots your geocoded locations, filterable by category, person,
 and year range, with circle size = visit count and color = category. It
-needs coordinates for your locations first, which is a separate opt-in
-step since it calls out to OpenStreetMap's Nominatim geocoder over the
-network (nothing else in this repo does):
+needs coordinates for your locations first — click **Geocode locations**
+on the Map tab, which shows a live progress bar while it calls out to
+OpenStreetMap's Nominatim geocoder in the background (~1 request/sec, so
+a few minutes for a big calendar; nothing else in this repo makes network
+calls). The button disables itself once everything's geocoded, and the
+job keeps running even if you switch tabs or the button's tab isn't open.
+
+The same thing is available as a one-shot CLI command if you'd rather not
+wait in the browser:
 
 ```bash
 python cli.py --events ../events.json geocode
 ```
 
-This geocodes every unique location string once (~1 request/sec, so it
-can take a few minutes for a big calendar) and caches the results to
-`data/geocode_cache.json`. Re-running it only geocodes new locations.
-Until you run it, the Map tab tells you so instead of showing an empty map.
+Either way, results are cached to `data/geocode_cache.json`; re-running
+only geocodes newly-seen locations.
 
 ### Or use the CLI / library directly
 
@@ -109,7 +127,7 @@ are a thin JSON wrapper over the same functions.
 | Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees or `People:`/`With:` note tags |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Travel timeline, places visited | `felinni.travel` | Collapses consecutive same-destination events into one trip |
-| Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented |
+| Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented; all-day events are excluded since they don't carry a real duration |
 | Seasonality by month/season | `felinni.seasonality` | |
 | Unusually packed/empty weeks | `felinni.anomalies` | Z-score on weekly scheduled hours |
 | Link "first date" events to a Hinge/iMessage timestamp table | `felinni.dating_link` | Matches by tagged person + nearest timestamp within a configurable window |
@@ -149,7 +167,8 @@ analysis/
 tests/
   make_sample_data.py        synthetic fixture generator
   test_analysis.py
-  test_webapp.py             smoke tests for the dashboard's API
+  test_ingest.py             junk-location filtering, title-based people parsing
+  test_webapp.py             smoke tests for the dashboard's API, incl. the geocode job
 data/
   sample_events.json         generated fixture (committed for convenience)
   geocode_cache.json         built by `cli.py geocode`, gitignored (your location history stays local)

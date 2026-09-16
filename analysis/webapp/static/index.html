@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>felinni</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -27,6 +27,15 @@
 <main>
 
   <section class="panel active" id="panel-overview">
+    <div class="card">
+      <h2>Date range</h2>
+      <p class="card-note">Applies across every tab.</p>
+      <div class="controls">
+        <label>From <input type="date" id="global-start-date"></label>
+        <label>To <input type="date" id="global-end-date"></label>
+        <button id="global-range-reset" type="button">Reset</button>
+      </div>
+    </div>
     <div class="stat-grid" id="overview-stats"></div>
     <div class="card">
       <h2>Top places by visits</h2>
@@ -60,6 +69,11 @@
         <label>Person <select id="map-person"><option value="">All</option></select></label>
         <label>From <select id="map-start-year"></select></label>
         <label>To <select id="map-end-year"></select></label>
+        <button id="map-geocode-btn" type="button">Geocode locations</button>
+      </div>
+      <div class="controls" id="map-geocode-progress" style="display:none">
+        <div class="progress-track"><div class="progress-fill" id="map-geocode-fill"></div></div>
+        <span id="map-geocode-label" style="font-size:12px;color:var(--text-secondary)"></span>
       </div>
       <div class="legend" id="map-legend"></div>
       <div id="map" style="height:480px;border-radius:8px;overflow:hidden"></div>
