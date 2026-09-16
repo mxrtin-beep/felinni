@@ -2,7 +2,7 @@
 
 The exporter's schema (see CalendarExporter/Sources/CalendarExporter/ExportedEvent.swift):
     id, title, notes, location, startDate, endDate, isAllDay, calendarTitle,
-    attendees, isRecurring, url, noteTags
+    calendarColorHex, attendees, isRecurring, url, noteTags
 
 Events since ~2022 are assumed to reliably carry startDate/endDate, location,
 and a calendar (category). Older/messier events may be missing location or
@@ -101,7 +101,7 @@ def load_events(path: str | Path) -> pd.DataFrame:
     if not raw:
         return pd.DataFrame(columns=[
             "id", "title", "notes", "location", "start", "end", "duration_hours",
-            "is_all_day", "calendar", "category", "people", "n_people",
+            "is_all_day", "calendar", "category", "calendar_color", "people", "n_people",
             "is_recurring", "url", "year", "month", "week", "weekday", "season",
         ])
 
@@ -124,7 +124,15 @@ def load_events(path: str | Path) -> pd.DataFrame:
     ]
     df["n_people"] = df["people"].apply(len)
 
-    df = df.rename(columns={"calendarTitle": "calendar", "isAllDay": "is_all_day", "isRecurring": "is_recurring"})
+    # Older exports (before CalendarExporter captured calendar colors) won't
+    # have this column at all.
+    if "calendarColorHex" not in df.columns:
+        df["calendarColorHex"] = None
+
+    df = df.rename(columns={
+        "calendarTitle": "calendar", "isAllDay": "is_all_day", "isRecurring": "is_recurring",
+        "calendarColorHex": "calendar_color",
+    })
     df["year"] = df["start"].dt.year
     df["month"] = df["start"].dt.month
     df["week"] = df["start"].dt.isocalendar().week.astype(int)
@@ -133,6 +141,19 @@ def load_events(path: str | Path) -> pd.DataFrame:
 
     return df[[
         "id", "title", "notes", "location", "start", "end", "duration_hours",
-        "is_all_day", "calendar", "category", "people", "n_people",
+        "is_all_day", "calendar", "category", "calendar_color", "people", "n_people",
         "is_recurring", "url", "year", "month", "week", "weekday", "season",
     ]].sort_values("start").reset_index(drop=True)
+
+
+def category_color_map(df: pd.DataFrame) -> dict[str, str]:
+    """The most common calendar color per category, so the dashboard can
+    reuse the same colors you already picked in Calendar.app instead of an
+    arbitrary fixed palette. Categories with no captured color (older
+    exports, or a category set purely via a `Category:` note tag rather
+    than a dedicated calendar) are simply absent from the result."""
+    colored = df.dropna(subset=["calendar_color"])
+    if colored.empty:
+        return {}
+    mode_per_category = colored.groupby("category")["calendar_color"].agg(lambda s: s.mode().iat[0])
+    return mode_per_category.to_dict()

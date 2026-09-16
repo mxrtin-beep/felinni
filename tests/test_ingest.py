@@ -12,7 +12,7 @@ from felinni import anomalies, ingest, seasonality, spending, travel
 
 
 def _event(idx, title, start="2024-01-01T19:00:00Z", end="2024-01-01T21:00:00Z", location=None,
-           attendees=None, is_all_day=False, category=None, calendar="Social"):
+           attendees=None, is_all_day=False, category=None, calendar="Social", calendar_color=None):
     notes = f"Category: {category}" if category else None
     return {
         "id": f"evt-{idx}",
@@ -23,6 +23,7 @@ def _event(idx, title, start="2024-01-01T19:00:00Z", end="2024-01-01T21:00:00Z",
         "endDate": end,
         "isAllDay": is_all_day,
         "calendarTitle": calendar,
+        "calendarColorHex": calendar_color,
         "attendees": attendees or [],
         "isRecurring": False,
         "url": None,
@@ -111,3 +112,20 @@ def test_travel_falls_back_to_title_keyword_match(tmp_path):
     df = _load(tmp_path, events)
     matched = travel.travel_events(df)
     assert len(matched) == 1
+
+
+def test_category_color_map_uses_calendar_color(tmp_path):
+    events = [
+        _event(1, "Gym", calendar="Gym", calendar_color="#FF0000"),
+        _event(2, "Gym", calendar="Gym", calendar_color="#FF0000"),
+        _event(3, "Social", calendar="Social", calendar_color=None),
+    ]
+    df = _load(tmp_path, events)
+    colors = ingest.category_color_map(df)
+    assert colors == {"Gym": "#FF0000"}
+
+
+def test_category_color_map_empty_when_no_colors_captured(tmp_path):
+    events = [_event(1, "Gym", calendar="Gym")]
+    df = _load(tmp_path, events)
+    assert ingest.category_color_map(df) == {}

@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, geocode, habits, ingest, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, geocode, habits, ingest, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -70,6 +70,7 @@ def meta():
         "categories": sorted(DF["category"].dropna().unique().tolist(), key=lambda c: -int((DF["category"] == c).sum())),
         "people": sorted(DF[DF["n_people"] > 0].explode("people")["people"].dropna().unique().tolist()),
         "n_geocoded": _geocoded_count(),
+        "category_colors": ingest.category_color_map(DF),
     })
 
 
@@ -81,6 +82,16 @@ def summary():
         "total_hours": float(df["duration_hours"].sum()),
         "top_category": df["category"].value_counts().idxmax() if len(df) else None,
         "n_people": int(df[df["n_people"] > 0].explode("people")["people"].nunique()) if len(df) else 0,
+    })
+
+
+@app.get("/api/breaks")
+def breaks_view():
+    df = _get_df()
+    return jsonify({
+        "category_phases": records(breaks.category_phases(df)),
+        "quiet_stretches": records(breaks.quiet_stretches(df)),
+        "location_shifts": records(breaks.location_shifts(df)),
     })
 
 
@@ -145,7 +156,8 @@ def _run_geocode_job():
 
     try:
         unique_locations = DF["location"].dropna().unique().tolist()
-        geocode.geocode_locations(unique_locations, on_progress=on_progress)
+        location_categories = DF.groupby("location")["category"].agg(lambda s: s.mode().iat[0]).to_dict()
+        geocode.geocode_locations(unique_locations, on_progress=on_progress, location_categories=location_categories)
     except Exception as e:
         with _geocode_lock:
             GEOCODE_STATE["error"] = str(e)
@@ -264,7 +276,8 @@ def anomalies_view():
     df = _get_df()
     weekly = anomalies.weekly_load(df).reset_index().rename(columns={"index": "week"})
     flagged = anomalies.anomalous_weeks(df, z).reset_index().rename(columns={"index": "week"})
-    return jsonify({"weekly": records(weekly), "anomalies": records(flagged)})
+    by_category = records(anomalies.category_anomalies(df, z))
+    return jsonify({"weekly": records(weekly), "anomalies": records(flagged), "by_category": by_category})
 
 
 def main():

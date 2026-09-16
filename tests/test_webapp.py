@@ -38,6 +38,7 @@ def client():
     "/api/locations",
     "/api/locations?category=Gym&start_year=2022&end_year=2023",
     "/api/locations?person=Alice",
+    "/api/breaks",
 ])
 def test_endpoint_returns_200_json(client, path):
     resp = client.get(path)
@@ -50,6 +51,21 @@ def test_meta_lists_people(client):
     body = resp.get_json()
     assert "Alice" in body["people"]
     assert body["n_geocoded"] == 0  # no geocode cache committed to the repo
+    assert body["category_colors"]["Gym"] == "#8E24AA"
+
+
+def test_anomalies_includes_category_breakdown(client):
+    resp = client.get("/api/anomalies")
+    body = resp.get_json()
+    assert body["by_category"]
+    assert {"week", "category", "hours", "z_score", "label"} <= body["by_category"][0].keys()
+
+
+def test_breaks_has_all_three_sections(client):
+    resp = client.get("/api/breaks")
+    body = resp.get_json()
+    assert set(body.keys()) == {"category_phases", "quiet_stretches", "location_shifts"}
+    assert body["category_phases"]  # the synthetic Gym/Work streaks should surface
 
 
 def test_locations_without_geocode_cache_reports_zero_geocoded(client):

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// One calendar event, normalized into the JSON schema the Python analysis
@@ -11,6 +12,7 @@ struct ExportedEvent: Codable {
     var endDate: Date
     var isAllDay: Bool
     var calendarTitle: String
+    var calendarColorHex: String?
     var attendees: [String]
     var isRecurring: Bool
     var url: String?
@@ -21,6 +23,25 @@ struct ExportedEvent: Codable {
     /// so events tagged by hand in the Notes field still parse cleanly even
     /// when the title/location fields don't carry that info.
     var noteTags: [String: [String]]
+}
+
+enum CalendarColor {
+    /// Converts a Calendar's `cgColor` (whatever the user picked for that
+    /// calendar in Calendar.app) to a plain "#RRGGBB" hex string, so the
+    /// dashboard can color categories/map markers/habit charts to match
+    /// the same colors the user already associates with each calendar,
+    /// rather than an arbitrary fixed palette. `cgColor` is used (over the
+    /// AppKit `NSColor`/UIKit `UIColor` typed accessor) since it's the same
+    /// API on macOS and iOS.
+    static func hex(from cgColor: CGColor) -> String? {
+        guard let converted = cgColor.converted(to: CGColorSpaceCreateDeviceRGB(), intent: .defaultIntent, options: nil),
+              let components = converted.components, components.count >= 3
+        else { return nil }
+        let r = Int((components[0] * 255).rounded())
+        let g = Int((components[1] * 255).rounded())
+        let b = Int((components[2] * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
+    }
 }
 
 enum NoteTagParser {

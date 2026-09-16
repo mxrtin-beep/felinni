@@ -118,6 +118,7 @@ for event in allEvents {
         endDate: event.endDate,
         isAllDay: event.isAllDay,
         calendarTitle: event.calendar.title,
+        calendarColorHex: CalendarColor.hex(from: event.calendar.cgColor),
         attendees: attendeeNames,
         isRecurring: event.hasRecurrenceRules,
         url: event.url?.absoluteString,

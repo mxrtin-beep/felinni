@@ -32,6 +32,14 @@ RESTAURANTS = [
 BARS = ["The Alembic", "Trick Dog"]
 TRIP_DESTINATIONS = ["Tokyo, Japan", "Lisbon, Portugal", "New York, NY"]
 
+# Distinct from the dashboard's own fixed palette, so a real Calendar.app
+# color visibly overrides the fallback rather than coincidentally matching it.
+CALENDAR_COLORS = {
+    "Gym": "#8E24AA",
+    "Work": "#00897B",
+    "Social": "#FDD835",
+}
+
 
 def iso(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -66,6 +74,7 @@ def make_event(idx, title, start, hours, calendar, location=None, notes=None, at
         "endDate": iso(end),
         "isAllDay": is_all_day,
         "calendarTitle": calendar,
+        "calendarColorHex": CALENDAR_COLORS.get(calendar),
         "attendees": attendees or [],
         "isRecurring": calendar == "Gym",
         "url": None,
@@ -161,6 +170,25 @@ def main():
         idx, "Company offsite", START + timedelta(days=250), 24.0, "Work", is_all_day=True,
     ))
     idx += 1
+
+    # A named-venue full address (name prefix before the street number) -
+    # exercises the 4-line address split: name / street / city+state / zip+country.
+    for i in range(5):
+        events.append(make_event(
+            idx, "Club meeting", START + timedelta(days=60 + i * 14, hours=18), 1.5, "UCLA Clubs",
+            location="eaves Woodland Hills, 22122 Ventura Blvd, Woodland Hills, CA 91367, United States",
+        ))
+        idx += 1
+
+    # A UCLA building name with no street address at all - relies on the
+    # geocode category-anchor (felinni.geocode.DEFAULT_LOCATION_ANCHORS) to
+    # land on campus instead of drifting to a same-named place worldwide.
+    for i in range(4):
+        events.append(make_event(
+            idx, "Study session", START + timedelta(days=70 + i * 21, hours=15), 2.0, "UCLA Other",
+            location="North Campus Student Center",
+        ))
+        idx += 1
 
     events.sort(key=lambda e: e["startDate"])
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

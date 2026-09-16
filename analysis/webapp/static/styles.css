@@ -251,8 +251,8 @@ td.num, th.num {
   border-radius: 999px;
   font-weight: 600;
 }
-.badge.packed { background: rgba(227, 73, 72, 0.15); color: var(--series-2); }
-.badge.empty { background: rgba(42, 120, 214, 0.15); color: var(--series-1); }
+.badge.packed { background: rgba(235, 104, 52, 0.15); color: var(--series-2); }
+.badge.empty { background: rgba(27, 175, 122, 0.15); color: var(--series-3); }
 
 button {
   font: inherit;

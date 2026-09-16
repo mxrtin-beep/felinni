@@ -57,6 +57,7 @@ async function loadMeta() {
     GLOBAL_FILTERS.startDate = meta.min_date;
     GLOBAL_FILTERS.endDate = meta.max_date;
   }
+  categoryColors = buildCategoryColors(meta.categories, meta.category_colors);
   return meta;
 }
 
@@ -75,6 +76,34 @@ async function refreshOverviewStats() {
   const places = await api("places?limit=10");
   horizontalBarChart(document.getElementById("overview-places-chart"),
     places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
+
+  await loadNotableBreaks();
+}
+
+async function loadNotableBreaks() {
+  const data = await api("breaks");
+  const rows = [];
+  data.category_phases.forEach(p => rows.push({
+    date: p.start,
+    what: `${p.category}: ${p.type === "active" ? "active" : "break"}`,
+    when: `${fmtDate(p.start)} – ${fmtDate(p.end)} (${p.weeks} wks)`,
+  }));
+  data.quiet_stretches.forEach(q => rows.push({
+    date: q.start,
+    what: "Unusually quiet stretch",
+    when: `${fmtDate(q.start)} – ${fmtDate(q.end)} (${q.weeks} wks)`,
+  }));
+  data.location_shifts.forEach(l => rows.push({
+    date: l.quarter,
+    what: "Possible home-base change",
+    when: `Around ${fmtDate(l.quarter)}: most frequent location became "${l.location}"`,
+  }));
+  rows.sort((a, b) => new Date(a.date) - new Date(b.date));
+  table(document.getElementById("breaks-table"),
+    [
+      { key: "what", label: "What" },
+      { key: "when", label: "When" },
+    ], rows);
 }
 
 function wireGlobalDateFilter() {
@@ -134,24 +163,33 @@ document.getElementById("stopped-inactive-months").addEventListener("change", re
 
 // --- People ---
 async function loadPeople() {
-  const people = await api("people?limit=15");
-  horizontalBarChart(document.getElementById("people-chart"),
-    people.map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
-
   const select = document.getElementById("people-granularity");
   if (!select.dataset.wired) {
     select.addEventListener("change", refreshPeopleTrend);
     select.dataset.wired = "1";
   }
-  await refreshPeopleTrend();
 
-  const trends = await api("trends");
-  table(document.getElementById("trends-table"),
-    [
-      { key: "person", label: "Person" },
-      { key: "total_events", label: "Total events", num: true },
-      { key: "slope_events_per_year", label: "Trend (events/yr)", num: true, format: v => v?.toFixed(2) },
-    ], trends);
+  // Independent pieces of this tab, run with allSettled rather than
+  // sequential awaits: one endpoint failing (or an empty result) must
+  // never silently prevent the others from rendering.
+  const results = await Promise.allSettled([
+    (async () => {
+      const people = await api("people?limit=15");
+      horizontalBarChart(document.getElementById("people-chart"),
+        people.map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
+    })(),
+    refreshPeopleTrend(),
+    (async () => {
+      const trends = await api("trends");
+      table(document.getElementById("trends-table"),
+        [
+          { key: "person", label: "Person" },
+          { key: "total_events", label: "Total events", num: true },
+          { key: "slope_events_per_year", label: "Trend (events/yr)", num: true, format: v => v?.toFixed(2) },
+        ], trends);
+    })(),
+  ]);
+  results.forEach(r => { if (r.status === "rejected") console.error("People tab section failed:", r.reason); });
 }
 
 function formatPeriodLabel(period, granularity) {
@@ -191,7 +229,8 @@ async function refreshHabit() {
   if (!category) return;
   const data = await api(`habit?category=${encodeURIComponent(category)}`);
 
-  weekStrip(document.getElementById("habit-strip"), data.weekly.map(w => ({ date: w.week.slice(0, 10), count: w.count })));
+  weekStrip(document.getElementById("habit-strip"), data.weekly.map(w => ({ date: w.week.slice(0, 10), count: w.count })),
+    { color: categoryColors[category] });
 
   const statGrid = document.getElementById("habit-stats");
   statGrid.innerHTML = "";
@@ -241,7 +280,8 @@ async function loadTravel() {
 async function loadTime() {
   const rows = await api("time-by-category");
   columnChart(document.getElementById("time-chart"),
-    rows.map(r => ({ label: r.category, value: r.total_hours })), { valueLabel: "hours" });
+    rows.map(r => ({ label: r.category, value: r.total_hours })),
+    { valueLabel: "hours", highlight: d => categoryColors[d.label] || null });
   table(document.getElementById("time-table"),
     [
       { key: "category", label: "Category" },
@@ -276,10 +316,18 @@ async function refreshSeasonality() {
 // --- Anomalies ---
 async function loadAnomalies() {
   const data = await api("anomalies?z=2.0");
-  const flaggedWeeks = new Set(data.anomalies.map(a => a.week));
+  const flagByWeek = new Map(data.anomalies.map(a => [a.week, a.label]));
   columnChart(document.getElementById("anomalies-chart"),
     data.weekly.map(w => ({ label: w.week.slice(0, 7), value: w.total_hours, week: w.week })),
-    { valueLabel: "hours", highlight: d => flaggedWeeks.has(d.week) ? cssVarSafe("--series-2") : null });
+    {
+      valueLabel: "hours",
+      highlight: d => {
+        const label = flagByWeek.get(d.week);
+        if (label === "packed") return cssVarSafe("--series-2");
+        if (label === "empty") return cssVarSafe("--series-3");
+        return null;
+      },
+    });
   table(document.getElementById("anomalies-table"),
     [
       { key: "week", label: "Week of", format: fmtDate },
@@ -287,22 +335,44 @@ async function loadAnomalies() {
       { key: "label", label: "Type", format: v => `<span class="badge ${v}">${v}</span>` },
       { key: "z_score", label: "Z-score", num: true, format: v => v?.toFixed(2) },
     ], data.anomalies);
+  table(document.getElementById("anomalies-category-table"),
+    [
+      { key: "week", label: "Week of", format: fmtDate },
+      { key: "category", label: "Category" },
+      { key: "hours", label: "Hours", num: true, format: v => Math.round(v) },
+      { key: "label", label: "Type", format: v => `<span class="badge ${v}">${v}</span>` },
+      { key: "z_score", label: "Z-score", num: true, format: v => v?.toFixed(2) },
+    ], data.by_category.slice(0, 30));
 }
 
-// --- Map ---
+// --- Category colors (shared across Map, Habits, Time & Spend) ---
 let categoryColors = {};
-let leafletMap, markerLayer;
-let geocodePollTimer = null;
 
-function buildCategoryColors(categories) {
-  // Fixed order = overall frequency order from meta, so a category's color
-  // never repaints when a filter changes the set of series on screen.
+function buildCategoryColors(categories, realColors) {
+  // Prefer the color you already picked for that Calendar in Calendar.app
+  // (captured by CalendarExporter, keyed by category in meta.category_colors)
+  // over the fixed palette, so the dashboard's colors match what you
+  // already associate with each category. Categories without a captured
+  // color (older exports, or a category set via a note tag rather than a
+  // dedicated calendar) fall back to the fixed order - by overall
+  // frequency, so a category's color never repaints when a filter changes
+  // the set of series on screen.
   const colors = {};
-  categories.forEach((cat, i) => {
-    colors[cat] = i < 6 ? seriesColor(i) : cssVarSafe("--text-muted");
+  let fallbackSlot = 0;
+  categories.forEach(cat => {
+    if (realColors && realColors[cat]) {
+      colors[cat] = realColors[cat];
+    } else {
+      colors[cat] = fallbackSlot < 6 ? seriesColor(fallbackSlot) : cssVarSafe("--text-muted");
+      fallbackSlot++;
+    }
   });
   return colors;
 }
+
+// --- Map ---
+let leafletMap, markerLayer;
+let geocodePollTimer = null;
 
 function renderMapLegend(categories) {
   const legend = document.getElementById("map-legend");
@@ -344,7 +414,6 @@ async function loadMap(meta) {
     document.getElementById("map-category").innerHTML += meta.categories.map(c => `<option value="${c}">${c}</option>`).join("");
     document.getElementById("map-person").innerHTML += meta.people.map(p => `<option value="${p}">${p}</option>`).join("");
     populateYearSelects(meta.min_year, meta.max_year);
-    categoryColors = buildCategoryColors(meta.categories);
     renderMapLegend(meta.categories);
 
     ["map-category", "map-person", "map-start-year", "map-end-year"].forEach(id =>

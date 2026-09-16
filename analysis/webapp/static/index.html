@@ -41,6 +41,11 @@
       <h2>Top places by visits</h2>
       <div id="overview-places-chart"></div>
     </div>
+    <div class="card">
+      <h2>Notable breaks in trends</h2>
+      <p class="card-note">Heuristic - category phases starting/stopping, unusually quiet stretches, and a rough "did my home base change" signal. Worth a second look, not a definitive timeline.</p>
+      <div id="breaks-table"></div>
+    </div>
   </section>
 
   <section class="panel" id="panel-places">
@@ -158,11 +163,20 @@
   <section class="panel" id="panel-anomalies">
     <div class="card">
       <h2>Weekly scheduled hours</h2>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--series-1)"></span>Typical</span>
+        <span><span class="swatch" style="background:var(--series-2)"></span>Packed</span>
+        <span><span class="swatch" style="background:var(--series-3)"></span>Empty</span>
+      </div>
       <div id="anomalies-chart"></div>
     </div>
     <div class="card">
       <h2>Flagged weeks</h2>
       <div id="anomalies-table"></div>
+    </div>
+    <div class="card">
+      <h2>Anomalies by category</h2>
+      <div id="anomalies-category-table"></div>
     </div>
   </section>
 

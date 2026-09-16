@@ -35,20 +35,32 @@ def person_trend_by_year(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-_FREQ_ALIASES = {"year": "YE", "month": "ME", "week": "W"}
-
-
 def person_trend_by_period(df: pd.DataFrame, granularity: str = "year") -> pd.DataFrame:
     """Events per person per period (year/month/week) — index = period start
     timestamp, columns = person. Used for the dashboard's configurable
     "events over time" chart; `person_trend_by_year` above is kept as-is
     since `fading_or_growing`'s year-over-year slope depends on its exact
-    (person x calendar-year) shape."""
-    freq = _FREQ_ALIASES.get(granularity, "YE")
+    (person x calendar-year) shape.
+
+    Buckets via numpy datetime64 truncation rather than `.resample()`,
+    since resample's year/month-end aliases ("YE"/"ME") only exist from
+    pandas 2.2 - truncating manually works identically on any pandas 2.x.
+    """
     exploded = _exploded_people(df)
     if exploded.empty:
         return pd.DataFrame()
-    grouped = exploded.set_index("start").groupby("person").resample(freq).size()
+
+    starts = exploded["start"]
+    if granularity == "week":
+        # Sunday-ending weeks, matching felinni.habits/.anomalies' resample("W").
+        days_until_sunday = (6 - starts.dt.weekday) % 7
+        period_start = (starts + pd.to_timedelta(days_until_sunday, unit="D")).dt.normalize()
+    elif granularity == "month":
+        period_start = pd.to_datetime(starts.values.astype("datetime64[M]"))
+    else:
+        period_start = pd.to_datetime(starts.values.astype("datetime64[Y]"))
+
+    grouped = exploded.assign(period=period_start).groupby(["person", "period"]).size()
     return grouped.unstack(level=0).fillna(0).astype(int)
 
 

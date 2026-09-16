@@ -35,3 +35,50 @@ def anomalous_weeks(df: pd.DataFrame, z_threshold: float = 2.0) -> pd.DataFrame:
         lambda z: "packed" if z >= z_threshold else ("empty" if z <= -z_threshold else "typical")
     )
     return load[load["label"] != "typical"].sort_values("z_score", ascending=False)
+
+
+def weekly_load_by_category(df: pd.DataFrame) -> pd.DataFrame:
+    """Total scheduled hours per ISO week, broken out by category (index =
+    week, columns = category), gaps filled with 0."""
+    df = timed_events(df)
+    pivot = (
+        df.set_index("start").groupby("category")["duration_hours"]
+        .resample("W").sum().unstack(level=0).fillna(0)
+    )
+    full_range = pd.date_range(pivot.index.min(), pivot.index.max(), freq="W")
+    return pivot.reindex(full_range, fill_value=0)
+
+
+def category_anomalies(df: pd.DataFrame, z_threshold: float = 2.0, min_active_weeks: int = 4) -> pd.DataFrame:
+    """Per-category weekly anomalies: each category is compared against its
+    own mean/std week (so a naturally-quiet category like Dating isn't
+    judged against Gym's baseline), flagged packed/empty the same way as
+    `anomalous_weeks`, sorted by how extreme the anomaly is either way.
+    Categories active in fewer than `min_active_weeks` weeks are skipped -
+    with only one or two data points, a single ordinary event trivially
+    reads as an extreme z-score."""
+    pivot = weekly_load_by_category(df)
+    rows = []
+    for category in pivot.columns:
+        series = pivot[category]
+        if (series > 0).sum() < min_active_weeks:
+            continue
+        mean, std = series.mean(), series.std()
+        if not std:
+            continue
+        z = (series - mean) / std
+        for week, z_score in z.items():
+            if z_score >= z_threshold:
+                label = "packed"
+            elif z_score <= -z_threshold:
+                label = "empty"
+            else:
+                continue
+            rows.append({
+                "week": week, "category": category, "hours": series[week],
+                "z_score": z_score, "label": label,
+            })
+    if not rows:
+        return pd.DataFrame(columns=["week", "category", "hours", "z_score", "label"])
+    result = pd.DataFrame(rows)
+    return result.reindex(result["z_score"].abs().sort_values(ascending=False).index).reset_index(drop=True)

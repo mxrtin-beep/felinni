@@ -77,29 +77,38 @@ function wrapLabel(text, maxChars) {
   return lines;
 }
 
-/** Splits a free-text location/address into up to 3 display lines: the
- * street/venue address, "city, state", and "zip, country" - matching how
- * Apple Calendar's Location field usually reads when picked from Maps
- * ("Name, Street, City, State Zip, Country"). Only splits when that
- * structure is actually detected (a "ST 12345"-style segment); otherwise
- * generic word-wrap, since e.g. "Lisbon, Portugal" reads better as one
- * wrapped label than as two arbitrary comma-split lines. */
+/** Splits a free-text location/address into up to 4 display lines by
+ * splitting at the first digit (name -> street), the first comma after it
+ * (street -> city/state), and the next digit after that (city/state ->
+ * zip/country). Matches how Apple Calendar's Location field reads when
+ * picked from Maps, e.g. "eaves Woodland Hills, 22122 Ventura Blvd,
+ * Woodland Hills, CA 91367, United States" splits into:
+ *   "eaves Woodland Hills" / "22122 Ventura Blvd" / "Woodland Hills, CA" / "91367, United States"
+ * A name-less address ("22122 Ventura Blvd, ...") just yields 3 lines
+ * (empty leading line dropped). Falls back to generic word-wrap when the
+ * string has no digits at all - no address structure to key off of. */
 function splitLocationLines(location, maxCharsPerLine) {
-  const parts = String(location).split(",").map(s => s.trim()).filter(Boolean);
-  if (parts.length >= 3) {
-    const secondLast = parts[parts.length - 2];
-    const stateZipMatch = /^([A-Za-z]{2,})\s+(\d[\d-]{3,9})$/.exec(secondLast);
-    if (stateZipMatch) {
-      const country = parts[parts.length - 1];
-      const [, state, zip] = stateZipMatch;
-      const city = parts[parts.length - 3];
-      const address = parts.slice(0, parts.length - 3).join(", ");
-      const cityState = [city, state].filter(Boolean).join(", ");
-      const zipCountry = [zip, country].filter(Boolean).join(", ");
-      return [address, cityState, zipCountry].filter(Boolean).map(l => truncateLine(l, maxCharsPerLine));
-    }
+  const str = String(location);
+  const firstDigit = str.search(/\d/);
+  if (firstDigit === -1) return wrapLabel(str, maxCharsPerLine);
+
+  const name = str.slice(0, firstDigit).trim().replace(/[,\s]+$/, "");
+  const rest = str.slice(firstDigit);
+
+  const commaIdx = rest.indexOf(",");
+  if (commaIdx === -1) {
+    return [name, rest.trim()].filter(Boolean).map(l => truncateLine(l, maxCharsPerLine));
   }
-  return wrapLabel(String(location), maxCharsPerLine);
+  const street = rest.slice(0, commaIdx).trim();
+  const afterStreet = rest.slice(commaIdx + 1).replace(/^[,\s]+/, "");
+
+  const zipIdx = afterStreet.search(/\d/);
+  if (zipIdx === -1) {
+    return [name, street, afterStreet.trim()].filter(Boolean).map(l => truncateLine(l, maxCharsPerLine));
+  }
+  const cityState = afterStreet.slice(0, zipIdx).trim().replace(/[,\s]+$/, "");
+  const zipCountry = afterStreet.slice(zipIdx).trim();
+  return [name, street, cityState, zipCountry].filter(Boolean).map(l => truncateLine(l, maxCharsPerLine));
 }
 
 function truncateLine(text, maxChars) {
@@ -275,31 +284,64 @@ function lineChart(container, series, { yLabel = "" } = {}) {
 /** Week-activity strip: cells = [{date, count}] rendered as a compact grid,
  * one sequential hue (--series-1) whose opacity scales with count - darker
  * (more opaque) = more events that week; zero-count weeks stay neutral gray. */
-function weekStrip(container, cells) {
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Week-activity strip: cells = [{date (Sunday-of-week, ISO), count}],
+ * laid out as one row per year and one column per week-of-year (like a
+ * GitHub contribution graph) so the grid carries real year/month
+ * structure instead of an arbitrary wrap. One sequential hue (`color`,
+ * default --series-1) whose opacity scales with count - darker = more
+ * events that week; zero-count weeks stay neutral gray. */
+function weekStrip(container, cells, { color } = {}) {
   container.innerHTML = "";
   if (!cells.length) {
     container.innerHTML = '<p class="empty-note">No data yet.</p>';
     return;
   }
-  const cols = 52;
-  const cellSize = 10, gap = 2;
-  const rows = Math.ceil(cells.length / cols);
-  const width = cols * (cellSize + gap), height = rows * (cellSize + gap);
+  const cellSize = 10, gap = 2, rowLabelW = 34, colLabelH = 14;
+  const step = cellSize + gap;
+
+  const byYear = new Map();
+  cells.forEach(c => {
+    const year = c.date.slice(0, 4);
+    if (!byYear.has(year)) byYear.set(year, []);
+    byYear.get(year).push(c);
+  });
+  const years = [...byYear.keys()].sort();
+  const maxCols = Math.max(...years.map(y => byYear.get(y).length));
+
+  const width = rowLabelW + maxCols * step + 4;
+  const height = colLabelH + years.length * step + 4;
   const svg = el("svg", { width, height, viewBox: `0 0 ${width} ${height}` });
+
   const maxCount = Math.max(...cells.map(c => c.count), 1);
-  const activeColor = cssVar("--series-1");
-  cells.forEach((c, i) => {
-    const col = i % cols, row = Math.floor(i / cols);
-    const intensity = c.count > 0 ? 0.3 + 0.7 * (c.count / maxCount) : 0;
-    const rect = el("rect", {
-      x: col * (cellSize + gap), y: row * (cellSize + gap),
-      width: cellSize, height: cellSize, rx: 2, ry: 2,
-      fill: c.count > 0 ? activeColor : cssVar("--grid"),
-      "fill-opacity": c.count > 0 ? intensity.toFixed(2) : 1,
+  const activeColor = color || cssVar("--series-1");
+
+  // Month labels along the top, positioned by ~weeks-elapsed-per-month.
+  MONTH_ABBR.forEach((m, i) => {
+    const col = Math.round((i * maxCols) / 12);
+    svg.appendChild(el("text", {
+      x: rowLabelW + col * step, y: colLabelH - 4, "font-size": 9, fill: cssVar("--text-muted"),
+    })).textContent = m;
+  });
+
+  years.forEach((year, row) => {
+    svg.appendChild(el("text", {
+      x: 0, y: colLabelH + row * step + cellSize - 1, "font-size": 10, fill: cssVar("--text-muted"),
+    })).textContent = year;
+
+    byYear.get(year).forEach((c, col) => {
+      const intensity = c.count > 0 ? 0.3 + 0.7 * (c.count / maxCount) : 0;
+      const rect = el("rect", {
+        x: rowLabelW + col * step, y: colLabelH + row * step,
+        width: cellSize, height: cellSize, rx: 2, ry: 2,
+        fill: c.count > 0 ? activeColor : cssVar("--grid"),
+        "fill-opacity": c.count > 0 ? intensity.toFixed(2) : 1,
+      });
+      rect.addEventListener("mousemove", (evt) => showTooltip(evt, `Week of ${c.date}<br>${c.count} event${c.count === 1 ? "" : "s"}`));
+      rect.addEventListener("mouseleave", hideTooltip);
+      svg.appendChild(rect);
     });
-    rect.addEventListener("mousemove", (evt) => showTooltip(evt, `${c.date}<br>${c.count} event${c.count === 1 ? "" : "s"}`));
-    rect.addEventListener("mouseleave", hideTooltip);
-    svg.appendChild(rect);
   });
   container.appendChild(svg);
 }

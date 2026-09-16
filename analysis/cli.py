@@ -99,11 +99,15 @@ def main():
         from felinni import geocode
         cache_path = args.cache or geocode.DEFAULT_CACHE_PATH
         unique_locations = df["location"].dropna().unique().tolist()
+        location_categories = df.groupby("location")["category"].agg(lambda s: s.mode().iat[0]).to_dict()
 
         def on_progress(done, total):
             print(f"\rGeocoding via Nominatim (~1/sec, needs network): {done}/{total}", end="", flush=True)
 
-        result = geocode.geocode_locations(unique_locations, cache_path=cache_path, on_progress=on_progress)
+        result = geocode.geocode_locations(
+            unique_locations, cache_path=cache_path, on_progress=on_progress,
+            location_categories=location_categories,
+        )
         n_found = sum(1 for v in result.values() if v)
         print(f"\nDone: {n_found}/{len(unique_locations)} geocoded. Cache written to {cache_path}")
 

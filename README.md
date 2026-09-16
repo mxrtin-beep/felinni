@@ -72,6 +72,14 @@ each backed by one of the analyses below, with charts and tables you can
 click through instead of running commands. It's a plain Flask dev server
 reading your local `events.json`, nothing leaves your machine.
 
+The Overview tab also lists **notable breaks in trends** — a heuristic
+scan for category phases starting/stopping (a job, a school term, a
+long-running habit), extended unusually-quiet stretches, and a rough
+"did my home base change" signal from which raw location dominates each
+quarter. It's meant to point at dates worth a second look, not a
+definitive timeline — see `felinni.breaks` for exactly what each one
+checks.
+
 Try it against the synthetic fixture first if you don't have a real
 export yet: `python webapp/server.py --events ../data/sample_events.json`.
 
@@ -104,6 +112,23 @@ python cli.py --events ../events.json geocode
 Either way, results are cached to `data/geocode_cache.json`; re-running
 only geocodes newly-seen locations.
 
+A bare building/room name with no street address (e.g. "North Campus
+Student Center") often geocodes to a same-named place worldwide instead
+of the right one. If its category matches a key in
+`felinni.geocode.DEFAULT_LOCATION_ANCHORS`, that entry's anchor text
+(e.g. `"UCLA, Los Angeles, CA"`) is appended to the *geocoding query only*
+— the stored/displayed location string is untouched. Edit that dict to
+match your own campus/workplace calendars.
+
+### Category colors
+
+If you've colored your calendars in Calendar.app, the exporter captures
+each event's calendar color and the dashboard reuses those same colors
+for the Map, the habit-activity strip, and the Time & Spend chart, instead
+of an arbitrary fixed palette. Categories with no captured color (older
+exports, or one set purely via a `Category:` note tag) fall back to the
+fixed palette.
+
 ### Or use the CLI / library directly
 
 ```bash
@@ -133,7 +158,8 @@ are a thin JSON wrapper over the same functions.
 | Travel timeline, places visited | `felinni.travel` | Collapses consecutive same-destination events into one trip |
 | Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented; all-day events are excluded since they don't carry a real duration |
 | Seasonality by month/season | `felinni.seasonality` | Only counts timed events — all-day entries (birthdays, holidays, vacations) are excluded |
-| Unusually packed/empty weeks | `felinni.anomalies` | Z-score on weekly scheduled hours; all-day events excluded, same reasoning |
+| Unusually packed/empty weeks, in both directions and broken down by category | `felinni.anomalies` | Z-score on weekly scheduled hours (overall and per-category, each against its own baseline); all-day events excluded, same reasoning |
+| Notable breaks in trends (category phases, quiet stretches, home-base changes) | `felinni.breaks` | Heuristic - see the dashboard note above |
 | Link "first date" events to a Hinge/iMessage timestamp table | `felinni.dating_link` | Matches by tagged person + nearest timestamp within a configurable window |
 
 ## Testing without a real calendar
@@ -162,7 +188,7 @@ analysis/
     ingest.py                events.json -> pandas DataFrame
     geocode.py                optional Nominatim geocoding, disk-cached
     location.py, social.py, habits.py, travel.py, spending.py,
-    seasonality.py, anomalies.py, dating_link.py
+    seasonality.py, anomalies.py, breaks.py, dating_link.py
   webapp/
     server.py                 Flask API wrapping felinni's analysis functions
     serialize.py               DataFrame -> JSON-safe records
@@ -171,7 +197,9 @@ analysis/
 tests/
   make_sample_data.py        synthetic fixture generator
   test_analysis.py
-  test_ingest.py             junk-location filtering, title-based people parsing
+  test_ingest.py             junk-location filtering, title-based people parsing, calendar colors
+  test_breaks_and_trends.py  category anomalies, notable breaks, pandas-version-alias regressions
+  test_geocode.py            location-anchor query construction
   test_webapp.py             smoke tests for the dashboard's API, incl. the geocode job
 data/
   sample_events.json         generated fixture (committed for convenience)
