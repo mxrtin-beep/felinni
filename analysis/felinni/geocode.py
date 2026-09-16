@@ -16,7 +16,7 @@ import json
 import time
 from pathlib import Path
 
-DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "geocode_cache.json"
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "geocode_cache.json"
 
 
 def _load_cache(cache_path: Path) -> dict:

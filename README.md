@@ -65,6 +65,23 @@ reading your local `events.json`, nothing leaves your machine.
 Try it against the synthetic fixture first if you don't have a real
 export yet: `python webapp/server.py --events ../data/sample_events.json`.
 
+### Map tab
+
+The Map tab plots your geocoded locations, filterable by category, person,
+and year range, with circle size = visit count and color = category. It
+needs coordinates for your locations first, which is a separate opt-in
+step since it calls out to OpenStreetMap's Nominatim geocoder over the
+network (nothing else in this repo does):
+
+```bash
+python cli.py --events ../events.json geocode
+```
+
+This geocodes every unique location string once (~1 request/sec, so it
+can take a few minutes for a big calendar) and caches the results to
+`data/geocode_cache.json`. Re-running it only geocodes new locations.
+Until you run it, the Map tab tells you so instead of showing an empty map.
+
 ### Or use the CLI / library directly
 
 ```bash
@@ -128,10 +145,12 @@ analysis/
     server.py                 Flask API wrapping felinni's analysis functions
     serialize.py               DataFrame -> JSON-safe records
     static/                    index.html, app.js, charts.js (hand-built SVG), styles.css
+    static/vendor/leaflet/     vendored Leaflet (map tab), no CDN dependency
 tests/
   make_sample_data.py        synthetic fixture generator
   test_analysis.py
   test_webapp.py             smoke tests for the dashboard's API
 data/
   sample_events.json         generated fixture (committed for convenience)
+  geocode_cache.json         built by `cli.py geocode`, gitignored (your location history stays local)
 ```

@@ -32,11 +32,29 @@ def client():
     "/api/seasonality",
     "/api/seasonality?category=Gym",
     "/api/anomalies",
+    "/api/locations",
+    "/api/locations?category=Gym&start_year=2022&end_year=2023",
+    "/api/locations?person=Alice",
 ])
 def test_endpoint_returns_200_json(client, path):
     resp = client.get(path)
     assert resp.status_code == 200
     assert resp.is_json
+
+
+def test_meta_lists_people(client):
+    resp = client.get("/api/meta")
+    body = resp.get_json()
+    assert "Alice" in body["people"]
+    assert body["n_geocoded"] == 0  # no geocode cache committed to the repo
+
+
+def test_locations_without_geocode_cache_reports_zero_geocoded(client):
+    resp = client.get("/api/locations")
+    body = resp.get_json()
+    assert body["geocoded_places"] == 0
+    assert body["total_places"] > 0
+    assert body["locations"] == []
 
 
 def test_habit_requires_category(client):

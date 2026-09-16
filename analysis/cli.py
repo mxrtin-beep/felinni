@@ -56,6 +56,9 @@ def main():
     p_anom = sub.add_parser("anomalies", help="Unusually packed or empty weeks")
     p_anom.add_argument("--z-threshold", type=float, default=2.0)
 
+    p_geo = sub.add_parser("geocode", help="Geocode every unique location via OpenStreetMap Nominatim (needs network; powers the dashboard's map)")
+    p_geo.add_argument("--cache", default=None, help="Cache file path (default: data/geocode_cache.json)")
+
     args = parser.parse_args()
     df = ingest.load_events(args.events)
     if df.empty:
@@ -92,6 +95,14 @@ def main():
         _print(seasonality.seasonal_activity(df, args.category))
     elif args.command == "anomalies":
         _print(anomalies.anomalous_weeks(df, args.z_threshold))
+    elif args.command == "geocode":
+        from felinni import geocode
+        cache_path = args.cache or geocode.DEFAULT_CACHE_PATH
+        unique_locations = df["location"].dropna().unique().tolist()
+        print(f"Geocoding {len(unique_locations)} unique locations via Nominatim (~1/sec, needs network)...")
+        result = geocode.geocode_locations(unique_locations, cache_path=cache_path)
+        n_found = sum(1 for v in result.values() if v)
+        print(f"Done: {n_found}/{len(unique_locations)} geocoded. Cache written to {cache_path}")
 
 
 if __name__ == "__main__":

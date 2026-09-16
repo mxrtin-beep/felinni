@@ -210,12 +210,125 @@ async function loadAnomalies() {
 }
 function cssVarSafe(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
+// --- Map ---
+let categoryColors = {};
+let leafletMap, markerLayer;
+
+function buildCategoryColors(categories) {
+  // Fixed order = overall frequency order from meta, so a category's color
+  // never repaints when a filter changes the set of series on screen.
+  const colors = {};
+  categories.forEach((cat, i) => {
+    colors[cat] = i < 6 ? seriesColor(i) : cssVarSafe("--text-muted");
+  });
+  return colors;
+}
+
+function renderMapLegend(categories) {
+  const legend = document.getElementById("map-legend");
+  legend.innerHTML = "";
+  const shown = categories.slice(0, 6);
+  const rest = categories.length > 6;
+  shown.forEach(cat => {
+    const item = document.createElement("span");
+    item.innerHTML = `<span class="swatch" style="background:${categoryColors[cat]}"></span>${cat}`;
+    legend.appendChild(item);
+  });
+  if (rest) {
+    const item = document.createElement("span");
+    item.innerHTML = `<span class="swatch" style="background:${cssVarSafe("--text-muted")}"></span>Other`;
+    legend.appendChild(item);
+  }
+}
+
+function populateYearSelects(minYear, maxYear) {
+  const startSel = document.getElementById("map-start-year");
+  const endSel = document.getElementById("map-end-year");
+  const years = [];
+  for (let y = minYear; y <= maxYear; y++) years.push(y);
+  startSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+  endSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+  startSel.value = minYear;
+  endSel.value = maxYear;
+}
+
+async function loadMap(meta) {
+  if (!leafletMap) {
+    leafletMap = L.map("map").setView([20, 0], 2);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(leafletMap);
+    markerLayer = L.layerGroup().addTo(leafletMap);
+
+    document.getElementById("map-category").innerHTML += meta.categories.map(c => `<option value="${c}">${c}</option>`).join("");
+    document.getElementById("map-person").innerHTML += meta.people.map(p => `<option value="${p}">${p}</option>`).join("");
+    populateYearSelects(meta.min_year, meta.max_year);
+    categoryColors = buildCategoryColors(meta.categories);
+    renderMapLegend(meta.categories);
+
+    ["map-category", "map-person", "map-start-year", "map-end-year"].forEach(id =>
+      document.getElementById(id).addEventListener("change", refreshMap));
+
+    // Leaflet measures the container on init; the Map tab may have been
+    // hidden (display:none) at that point, so its size reads as zero.
+    document.querySelector('button[data-panel="map"]').addEventListener("click", () => {
+      setTimeout(() => leafletMap.invalidateSize(), 0);
+    });
+  }
+  await refreshMap();
+}
+
+async function refreshMap() {
+  const category = document.getElementById("map-category").value;
+  const person = document.getElementById("map-person").value;
+  const startYear = document.getElementById("map-start-year").value;
+  const endYear = document.getElementById("map-end-year").value;
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (person) params.set("person", person);
+  if (startYear) params.set("start_year", startYear);
+  if (endYear) params.set("end_year", endYear);
+
+  const data = await api(`locations?${params.toString()}`);
+  markerLayer.clearLayers();
+
+  const note = document.getElementById("map-note");
+  if (data.geocoded_places === 0) {
+    note.innerHTML = data.total_places === 0
+      ? "No locations match this filter."
+      : `None of your ${data.total_places} matching locations are geocoded yet. On your Mac, run <code>python cli.py geocode --events ../events.json</code> (needs network) and reload.`;
+    return;
+  }
+  note.textContent = data.total_places > data.geocoded_places
+    ? `Showing ${data.geocoded_places} of ${data.total_places} matching locations (the rest aren't geocoded yet).`
+    : `Showing all ${data.geocoded_places} matching locations. Circle size = visit count.`;
+
+  const maxVisits = Math.max(...data.locations.map(l => l.visits), 1);
+  const bounds = [];
+  data.locations.forEach(loc => {
+    const primaryCategory = (loc.categories && loc.categories[0]) || "Other";
+    const color = categoryColors[primaryCategory] || cssVarSafe("--text-muted");
+    const radius = 5 + 15 * Math.sqrt(loc.visits / maxVisits);
+    const marker = L.circleMarker([loc.lat, loc.lon], {
+      radius, color, fillColor: color, fillOpacity: 0.6, weight: 1,
+    });
+    marker.bindPopup(
+      `<strong>${loc.location}</strong><br>${loc.visits} visits (${fmtDate(loc.first_seen)} – ${fmtDate(loc.last_seen)})<br>${(loc.categories || []).join(", ")}`
+    );
+    marker.addTo(markerLayer);
+    bounds.push([loc.lat, loc.lon]);
+  });
+  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+}
+
 // --- Boot ---
 let meta;
 (async function init() {
   meta = await loadOverview();
   await Promise.all([
     loadPlaces(),
+    loadMap(meta),
     loadPeople(),
     loadHabits(meta),
     loadTravel(),

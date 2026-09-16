@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>felinni</title>
 <link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -15,6 +16,7 @@
 <nav class="tabs" id="tabs">
   <button data-panel="overview" class="active">Overview</button>
   <button data-panel="places">Places</button>
+  <button data-panel="map">Map</button>
   <button data-panel="people">People</button>
   <button data-panel="habits">Habits</button>
   <button data-panel="travel">Travel</button>
@@ -46,6 +48,21 @@
         <label>Inactive for (months) <input type="number" id="stopped-inactive-months" value="9" min="1" style="width:60px"></label>
       </div>
       <div id="stopped-going-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-map">
+    <div class="card">
+      <h2>Locations</h2>
+      <p class="card-note" id="map-note">Filter by category, person, or year range. Circle size = visit count.</p>
+      <div class="controls">
+        <label>Category <select id="map-category"><option value="">All</option></select></label>
+        <label>Person <select id="map-person"><option value="">All</option></select></label>
+        <label>From <select id="map-start-year"></select></label>
+        <label>To <select id="map-end-year"></select></label>
+      </div>
+      <div class="legend" id="map-legend"></div>
+      <div id="map" style="height:480px;border-radius:8px;overflow:hidden"></div>
     </div>
   </section>
 
@@ -133,6 +150,7 @@
   </section>
 
 </main>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script src="charts.js"></script>
 <script src="app.js"></script>
 </body>

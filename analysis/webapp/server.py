@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, habits, ingest, social, spending, travel, location
+from felinni import anomalies, geocode, habits, ingest, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -42,8 +42,22 @@ def meta():
         "min_year": int(DF["year"].min()),
         "max_year": int(DF["year"].max()),
         "categories": sorted(DF["category"].dropna().unique().tolist(), key=lambda c: -int((DF["category"] == c).sum())),
+        "people": sorted(DF[DF["n_people"] > 0].explode("people")["people"].dropna().unique().tolist()),
         "n_people": int(DF[DF["n_people"] > 0].explode("people")["people"].nunique()),
+        "n_geocoded": _geocoded_count(),
     })
+
+
+def _load_geocode_cache() -> dict:
+    if geocode.DEFAULT_CACHE_PATH.exists():
+        import json
+        return json.loads(geocode.DEFAULT_CACHE_PATH.read_text())
+    return {}
+
+
+def _geocoded_count() -> int:
+    cache = _load_geocode_cache()
+    return sum(1 for v in cache.values() if v)
 
 
 @app.get("/api/places")
@@ -51,6 +65,40 @@ def places():
     limit = request.args.get("limit", 20, type=int)
     freq = location.place_frequency(DF).reset_index().head(limit)
     return jsonify(records(freq))
+
+
+@app.get("/api/locations")
+def locations_view():
+    """Geocoded location frequency, filterable by category/person/year range,
+    for the map tab. Only locations present in the geocode cache (built via
+    `python cli.py geocode`) come back with lat/lon; everything else is
+    still counted in `total_places` so the UI can say how much is missing.
+    """
+    events = DF
+    category = request.args.get("category")
+    if category:
+        events = events[events["category"].str.casefold() == category.casefold()]
+    person = request.args.get("person")
+    if person:
+        events = events[events["people"].apply(lambda people: person in people)]
+    start_year = request.args.get("start_year", type=int)
+    if start_year:
+        events = events[events["year"] >= start_year]
+    end_year = request.args.get("end_year", type=int)
+    if end_year:
+        events = events[events["year"] <= end_year]
+
+    freq = location.place_frequency(events).reset_index()
+    cache = _load_geocode_cache()
+    freq["lat"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lat"))
+    freq["lon"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lon"))
+    geocoded = freq.dropna(subset=["lat", "lon"])
+
+    return jsonify({
+        "total_places": int(len(freq)),
+        "geocoded_places": int(len(geocoded)),
+        "locations": records(geocoded),
+    })
 
 
 @app.get("/api/stopped-going")
