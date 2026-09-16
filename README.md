@@ -48,11 +48,26 @@ that carry structure:
 Messier/older events (no location, no people) are handled too — they just
 don't contribute to analyses that need that field.
 
-## 2. Analyze
+## 2. Browse the dashboard
 
 ```bash
 cd analysis
 pip install -r requirements.txt   # geopy/folium are optional, only for mapping
+python webapp/server.py --events ../events.json
+```
+
+Open **http://127.0.0.1:5000**. It's a single page with tabs — Overview,
+Places, People, Habits, Travel, Time & Spend, Seasonality, Anomalies —
+each backed by one of the analyses below, with charts and tables you can
+click through instead of running commands. It's a plain Flask dev server
+reading your local `events.json`, nothing leaves your machine.
+
+Try it against the synthetic fixture first if you don't have a real
+export yet: `python webapp/server.py --events ../data/sample_events.json`.
+
+### Or use the CLI / library directly
+
+```bash
 python cli.py --events ../events.json places
 python cli.py --events ../events.json stopped-going --min-visits 3 --inactive-months 9
 python cli.py --events ../events.json people
@@ -64,9 +79,10 @@ python cli.py --events ../events.json seasonality --category Gym
 python cli.py --events ../events.json anomalies
 ```
 
-Or use the library directly from a notebook — `felinni.ingest.load_events`
-returns a plain pandas DataFrame; everything else is a pure function over
-that DataFrame.
+Or from a notebook — `felinni.ingest.load_events` returns a plain pandas
+DataFrame; everything else (`felinni.location`, `.social`, `.habits`, ...)
+is a pure function over that DataFrame, and `webapp/server.py`'s routes
+are a thin JSON wrapper over the same functions.
 
 ## Analyses, and where they live
 
@@ -108,9 +124,14 @@ analysis/
     geocode.py                optional Nominatim geocoding, disk-cached
     location.py, social.py, habits.py, travel.py, spending.py,
     seasonality.py, anomalies.py, dating_link.py
+  webapp/
+    server.py                 Flask API wrapping felinni's analysis functions
+    serialize.py               DataFrame -> JSON-safe records
+    static/                    index.html, app.js, charts.js (hand-built SVG), styles.css
 tests/
   make_sample_data.py        synthetic fixture generator
   test_analysis.py
+  test_webapp.py             smoke tests for the dashboard's API
 data/
   sample_events.json         generated fixture (committed for convenience)
 ```

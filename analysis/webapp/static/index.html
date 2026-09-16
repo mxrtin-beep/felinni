@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>felinni</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>felinni</h1>
+  <p class="subtitle" id="subtitle">Loading your calendar…</p>
+</header>
+<nav class="tabs" id="tabs">
+  <button data-panel="overview" class="active">Overview</button>
+  <button data-panel="places">Places</button>
+  <button data-panel="people">People</button>
+  <button data-panel="habits">Habits</button>
+  <button data-panel="travel">Travel</button>
+  <button data-panel="time">Time &amp; Spend</button>
+  <button data-panel="seasonality">Seasonality</button>
+  <button data-panel="anomalies">Anomalies</button>
+</nav>
+<main>
+
+  <section class="panel active" id="panel-overview">
+    <div class="stat-grid" id="overview-stats"></div>
+    <div class="card">
+      <h2>Top places by visits</h2>
+      <p class="card-note">Highest-frequency locations across your whole calendar.</p>
+      <div id="overview-places-chart"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-places">
+    <div class="card">
+      <h2>Place frequency</h2>
+      <p class="card-note">Every location you've tagged, ranked by visit count.</p>
+      <div id="places-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Places you used to go and stopped</h2>
+      <div class="controls">
+        <label>Min visits <input type="number" id="stopped-min-visits" value="3" min="1" style="width:60px"></label>
+        <label>Inactive for (months) <input type="number" id="stopped-inactive-months" value="9" min="1" style="width:60px"></label>
+      </div>
+      <div id="stopped-going-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-people">
+    <div class="card">
+      <h2>Time spent with each person</h2>
+      <p class="card-note">Total hours, from tagged attendees or People/With note tags.</p>
+      <div id="people-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Events per year, top people</h2>
+      <div id="people-year-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Growing vs. fading</h2>
+      <p class="card-note">Linear trend in events/year. Negative = seeing them less over time.</p>
+      <div id="trends-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-habits">
+    <div class="card">
+      <div class="controls">
+        <label>Category <select id="habit-category"></select></label>
+      </div>
+      <h2>Weekly activity</h2>
+      <p class="card-note">Each cell is one week; filled = at least one event that week.</p>
+      <div id="habit-strip"></div>
+    </div>
+    <div class="stat-grid" id="habit-stats"></div>
+    <div class="card">
+      <h2>Consistency by year</h2>
+      <div id="habit-consistency-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Longest streaks and gaps</h2>
+      <div id="habit-streaks-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-travel">
+    <div class="card">
+      <h2>Trip timeline</h2>
+      <div id="travel-timeline"></div>
+    </div>
+    <div class="card">
+      <h2>Places visited</h2>
+      <div id="travel-places-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-time">
+    <div class="card">
+      <h2>Time by category</h2>
+      <p class="card-note">Estimated spend only shows for categories with a per-visit cost you've configured (analysis/felinni/spending.py).</p>
+      <div id="time-chart"></div>
+      <div id="time-table" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-seasonality">
+    <div class="card">
+      <div class="controls">
+        <label>Category <select id="season-category"><option value="">All</option></select></label>
+      </div>
+      <h2>Average events by month</h2>
+      <div id="season-month-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Average events by season</h2>
+      <div id="season-season-chart"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-anomalies">
+    <div class="card">
+      <h2>Weekly scheduled hours</h2>
+      <p class="card-note">Packed/empty weeks are flagged where hours are far from your own weekly average.</p>
+      <div id="anomalies-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Flagged weeks</h2>
+      <div id="anomalies-table"></div>
+    </div>
+  </section>
+
+</main>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
