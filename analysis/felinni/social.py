@@ -35,6 +35,23 @@ def person_trend_by_year(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+_FREQ_ALIASES = {"year": "YE", "month": "ME", "week": "W"}
+
+
+def person_trend_by_period(df: pd.DataFrame, granularity: str = "year") -> pd.DataFrame:
+    """Events per person per period (year/month/week) — index = period start
+    timestamp, columns = person. Used for the dashboard's configurable
+    "events over time" chart; `person_trend_by_year` above is kept as-is
+    since `fading_or_growing`'s year-over-year slope depends on its exact
+    (person x calendar-year) shape."""
+    freq = _FREQ_ALIASES.get(granularity, "YE")
+    exploded = _exploded_people(df)
+    if exploded.empty:
+        return pd.DataFrame()
+    grouped = exploded.set_index("start").groupby("person").resample(freq).size()
+    return grouped.unstack(level=0).fillna(0).astype(int)
+
+
 def fading_or_growing(df: pd.DataFrame, min_total_events: int = 5) -> pd.DataFrame:
     """Fit a simple linear trend (events/year, via least squares on yearly
     counts) per person to flag relationships that are growing vs fading."""

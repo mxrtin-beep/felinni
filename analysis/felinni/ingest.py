@@ -88,6 +88,13 @@ def _location_for(location: str | None, note_tags: dict[str, list[str]]) -> str 
     return resolved
 
 
+def timed_events(df: pd.DataFrame) -> pd.DataFrame:
+    """Events with a specific start/end time - excludes all-day entries
+    (vacations, birthdays, holidays, ...) that don't carry a real duration
+    and would otherwise skew anything counting hours or daily/weekly load."""
+    return df[~df["is_all_day"]]
+
+
 def load_events(path: str | Path) -> pd.DataFrame:
     """Load and normalize an events.json export into a DataFrame, one row per event."""
     raw = json.loads(Path(path).read_text())

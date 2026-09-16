@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis"))
 
-from felinni import ingest, spending
+from felinni import anomalies, ingest, seasonality, spending, travel
 
 
 def _event(idx, title, start="2024-01-01T19:00:00Z", end="2024-01-01T21:00:00Z", location=None,
@@ -82,3 +82,32 @@ def test_time_by_category_excludes_all_day_events(tmp_path):
     result = spending.time_by_category(df)
     assert "Travel" not in result.index
     assert "Gym" in result.index
+
+
+def test_seasonality_excludes_all_day_events(tmp_path):
+    events = [
+        _event(1, "Birthday", is_all_day=True, category="Personal", calendar="Personal",
+               start="2024-06-01T00:00:00Z", end="2024-06-02T00:00:00Z"),
+        _event(2, "Gym", category="Gym", calendar="Gym", start="2024-06-01T07:00:00Z", end="2024-06-01T08:00:00Z"),
+    ]
+    df = _load(tmp_path, events)
+    monthly = seasonality.monthly_activity(df)
+    assert monthly.loc[6, "avg_events_per_month"] == 1  # only the Gym event counts
+
+
+def test_anomalies_excludes_all_day_events(tmp_path):
+    events = [
+        _event(1, "Company offsite", is_all_day=True, category="Work", calendar="Work",
+               start="2024-06-01T00:00:00Z", end="2024-06-02T00:00:00Z"),
+        _event(2, "Gym", category="Gym", calendar="Gym", start="2024-06-01T07:00:00Z", end="2024-06-01T08:00:00Z"),
+    ]
+    df = _load(tmp_path, events)
+    load = anomalies.weekly_load(df)
+    assert load["total_hours"].sum() == 1.0  # the 24h all-day event isn't counted
+
+
+def test_travel_falls_back_to_title_keyword_match(tmp_path):
+    events = [_event(1, "Flight to Tokyo", category=None, calendar="Personal", location="Tokyo, Japan")]
+    df = _load(tmp_path, events)
+    matched = travel.travel_events(df)
+    assert len(matched) == 1

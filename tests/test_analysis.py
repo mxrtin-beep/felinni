@@ -34,7 +34,11 @@ def test_messy_event_survives_without_location_or_people(df):
 
 def test_place_frequency_ranks_gyms_highest(df):
     freq = location.place_frequency(df)
-    assert freq.index[0] in {"Equinox - Union Square", "Equinox - SoMa", "Crunch - Mission"}
+    assert freq.index[0] in {
+        "Equinox Union Square, 301 Grant Ave, San Francisco, CA 94108, United States",
+        "Equinox SoMa, 747 Market St, San Francisco, CA 94103, United States",
+        "Crunch - Mission",
+    }
     assert (freq["visits"] > 0).all()
 
 

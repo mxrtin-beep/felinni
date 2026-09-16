@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from felinni.ingest import timed_events
+
 # Edit these to match your own typical per-visit spend by category.
 # Categories not listed here are counted for time but excluded from the
 # dollar estimate.
@@ -21,9 +23,7 @@ DEFAULT_COST_PER_VISIT = {
 
 
 def time_by_category(df: pd.DataFrame) -> pd.DataFrame:
-    # All-day events (vacations, birthdays, "out of office" blocks) don't
-    # carry a real duration - counting them would blow up "hours" per event.
-    df = df[~df["is_all_day"]]
+    df = timed_events(df)
     return df.groupby("category").agg(
         events=("id", "count"),
         total_hours=("duration_hours", "sum"),
@@ -51,7 +51,7 @@ def spend_by_year(
     cost_per_visit: dict[str, float] = DEFAULT_COST_PER_VISIT,
 ) -> pd.DataFrame:
     cost_lookup = {k.casefold(): v for k, v in cost_per_visit.items()}
-    priced = df[~df["is_all_day"]].copy()
+    priced = timed_events(df).copy()
     priced["cost_per_visit"] = priced["category"].str.casefold().map(cost_lookup)
     priced = priced.dropna(subset=["cost_per_visit"])
     return priced.groupby(["year", "category"])["cost_per_visit"].sum().unstack(fill_value=0)

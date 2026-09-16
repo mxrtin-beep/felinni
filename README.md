@@ -46,7 +46,11 @@ that carry structure:
   location that's actually a meeting link (Zoom/Meet/Teams/Webex) or a
   phone number is filtered out automatically rather than showing up as a
   "place".
-- **Travel**: tag trip events with category "Travel" (or "Trip"/"Flight").
+- **Travel**: tag trip events with category "Travel"/"Trip"/"Flight"/
+  "Vacation"/"Vacay"/"Holiday", or just put "Flight to...", "Trip to...",
+  or "Vacation" in the title — matched automatically if nothing else
+  tagged the category. The Travel tab tells you exactly what it searched
+  for if nothing matches.
 - **Dating**: tag first dates with category "Date" and the person as an
   attendee/`People:` tag, to enable the cross-reference in
   `felinni.dating_link`.
@@ -124,12 +128,12 @@ are a thin JSON wrapper over the same functions.
 | Ask | Module | Notes |
 |---|---|---|
 | Map every place, cluster by neighborhood, radius of life over time, places you stopped going to | `felinni.location` | Neighborhood clustering and radius-of-life need geocoded coordinates (`felinni.geocode`, opt-in, uses OpenStreetMap Nominatim, cached to disk) |
-| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees or `People:`/`With:` note tags |
+| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Travel timeline, places visited | `felinni.travel` | Collapses consecutive same-destination events into one trip |
 | Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented; all-day events are excluded since they don't carry a real duration |
-| Seasonality by month/season | `felinni.seasonality` | |
-| Unusually packed/empty weeks | `felinni.anomalies` | Z-score on weekly scheduled hours |
+| Seasonality by month/season | `felinni.seasonality` | Only counts timed events — all-day entries (birthdays, holidays, vacations) are excluded |
+| Unusually packed/empty weeks | `felinni.anomalies` | Z-score on weekly scheduled hours; all-day events excluded, same reasoning |
 | Link "first date" events to a Hinge/iMessage timestamp table | `felinni.dating_link` | Matches by tagged person + nearest timestamp within a configurable window |
 
 ## Testing without a real calendar

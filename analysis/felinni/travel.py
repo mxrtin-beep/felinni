@@ -1,15 +1,30 @@
 """Travel history: build a "places visited" timeline from events tagged
-as travel (category "Travel"/"Flight"/"Trip" by default, or matched by
-`Category: Travel` / `Trip: <place>` note tags)."""
+as travel (category "Travel"/"Flight"/"Trip"/... by default, or matched by
+`Category: Travel` / `Trip: <place>` note tags).
+
+Calendar tagging conventions vary a lot here, so category matching alone
+often finds nothing: falls back to a title keyword match ("flight to...",
+"trip to...", "vacation", ...) for events in an untagged/default category,
+so a plain "Flight to Tokyo" or "Vacation" entry with no dedicated Travel
+calendar still shows up.
+"""
 from __future__ import annotations
+
+import re
 
 import pandas as pd
 
-DEFAULT_TRAVEL_CATEGORIES = {"travel", "flight", "trip"}
+DEFAULT_TRAVEL_CATEGORIES = {"travel", "flight", "trip", "vacation", "vacay", "holiday"}
+
+_TITLE_FALLBACK_PATTERN = re.compile(
+    r"\b(?:flight|trip to|traveling to|travelling to|vacation|vacay)\b", re.IGNORECASE
+)
 
 
 def travel_events(df: pd.DataFrame, categories: set[str] = DEFAULT_TRAVEL_CATEGORIES) -> pd.DataFrame:
-    return df[df["category"].str.casefold().isin({c.casefold() for c in categories})]
+    by_category = df["category"].str.casefold().isin({c.casefold() for c in categories})
+    by_title = df["title"].fillna("").str.contains(_TITLE_FALLBACK_PATTERN)
+    return df[by_category | by_title]
 
 
 def _trip_destination(row: pd.Series) -> str:

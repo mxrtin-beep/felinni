@@ -39,7 +39,6 @@
     <div class="stat-grid" id="overview-stats"></div>
     <div class="card">
       <h2>Top places by visits</h2>
-      <p class="card-note">Highest-frequency locations across your whole calendar.</p>
       <div id="overview-places-chart"></div>
     </div>
   </section>
@@ -47,7 +46,6 @@
   <section class="panel" id="panel-places">
     <div class="card">
       <h2>Place frequency</h2>
-      <p class="card-note">Every location you've tagged, ranked by visit count.</p>
       <div id="places-chart"></div>
     </div>
     <div class="card">
@@ -83,11 +81,17 @@
   <section class="panel" id="panel-people">
     <div class="card">
       <h2>Time spent with each person</h2>
-      <p class="card-note">Total hours, from tagged attendees or People/With note tags.</p>
       <div id="people-chart"></div>
     </div>
     <div class="card">
-      <h2>Events per year, top people</h2>
+      <div class="controls">
+        <h2 style="margin:0">Events over time, top people</h2>
+        <select id="people-granularity">
+          <option value="year">Year</option>
+          <option value="month">Month</option>
+          <option value="week">Week</option>
+        </select>
+      </div>
       <div id="people-year-chart"></div>
     </div>
     <div class="card">
@@ -118,6 +122,7 @@
   </section>
 
   <section class="panel" id="panel-travel">
+    <p class="card-note" id="travel-note" style="display:none"></p>
     <div class="card">
       <h2>Trip timeline</h2>
       <div id="travel-timeline"></div>
@@ -131,7 +136,6 @@
   <section class="panel" id="panel-time">
     <div class="card">
       <h2>Time by category</h2>
-      <p class="card-note">Estimated spend only shows for categories with a per-visit cost you've configured (analysis/felinni/spending.py).</p>
       <div id="time-chart"></div>
       <div id="time-table" style="margin-top:12px"></div>
     </div>
@@ -154,7 +158,6 @@
   <section class="panel" id="panel-anomalies">
     <div class="card">
       <h2>Weekly scheduled hours</h2>
-      <p class="card-note">Packed/empty weeks are flagged where hours are far from your own weekly average.</p>
       <div id="anomalies-chart"></div>
     </div>
     <div class="card">

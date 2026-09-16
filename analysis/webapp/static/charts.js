@@ -77,8 +77,39 @@ function wrapLabel(text, maxChars) {
   return lines;
 }
 
-/** Horizontal bar chart: data = [{label, value}], one series. */
-function horizontalBarChart(container, data, { valueLabel = "", color } = {}) {
+/** Splits a free-text location/address into up to 3 display lines: the
+ * street/venue address, "city, state", and "zip, country" - matching how
+ * Apple Calendar's Location field usually reads when picked from Maps
+ * ("Name, Street, City, State Zip, Country"). Only splits when that
+ * structure is actually detected (a "ST 12345"-style segment); otherwise
+ * generic word-wrap, since e.g. "Lisbon, Portugal" reads better as one
+ * wrapped label than as two arbitrary comma-split lines. */
+function splitLocationLines(location, maxCharsPerLine) {
+  const parts = String(location).split(",").map(s => s.trim()).filter(Boolean);
+  if (parts.length >= 3) {
+    const secondLast = parts[parts.length - 2];
+    const stateZipMatch = /^([A-Za-z]{2,})\s+(\d[\d-]{3,9})$/.exec(secondLast);
+    if (stateZipMatch) {
+      const country = parts[parts.length - 1];
+      const [, state, zip] = stateZipMatch;
+      const city = parts[parts.length - 3];
+      const address = parts.slice(0, parts.length - 3).join(", ");
+      const cityState = [city, state].filter(Boolean).join(", ");
+      const zipCountry = [zip, country].filter(Boolean).join(", ");
+      return [address, cityState, zipCountry].filter(Boolean).map(l => truncateLine(l, maxCharsPerLine));
+    }
+  }
+  return wrapLabel(String(location), maxCharsPerLine);
+}
+
+function truncateLine(text, maxChars) {
+  return text.length > maxChars ? text.slice(0, maxChars - 1) + "…" : text;
+}
+
+/** Horizontal bar chart: data = [{label, value}], one series. Pass
+ * `addressLines: true` to split each label into address/city+state/zip+country
+ * lines (see splitLocationLines) instead of generic word-wrapping. */
+function horizontalBarChart(container, data, { valueLabel = "", color, addressLines = false } = {}) {
   container.innerHTML = "";
   if (!data.length) {
     container.innerHTML = '<p class="empty-note">No data yet.</p>';
@@ -87,10 +118,15 @@ function horizontalBarChart(container, data, { valueLabel = "", color } = {}) {
   const barColor = color || cssVar("--series-1");
   const barH = 16, labelW = 220, lineHeight = 13, width = container.clientWidth || 640;
   const chartW = width - labelW - 60;
-  const maxCharsPerLine = Math.floor((labelW - 10) / 6);
+  // ~7px/char is a safe estimate for this font at 12px - err conservative
+  // since text-anchor:end grows leftward and an overlong line clips off
+  // the left edge rather than visibly truncating.
+  const maxCharsPerLine = Math.floor((labelW - 10) / 7);
   const max = Math.max(...data.map(d => d.value), 1);
 
-  const wrapped = data.map(d => wrapLabel(String(d.label), maxCharsPerLine));
+  const wrapped = data.map(d => addressLines
+    ? splitLocationLines(d.label, maxCharsPerLine)
+    : wrapLabel(String(d.label), maxCharsPerLine));
   const rowHeights = wrapped.map(lines => Math.max(barH, lines.length * lineHeight) + 12);
   const rowTops = [];
   let cursor = 4;
@@ -203,7 +239,7 @@ function lineChart(container, series, { yLabel = "" } = {}) {
     svg.appendChild(el("path", { d, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
     pts.forEach(p => {
       const dot = el("circle", { cx: xScale(p.x), cy: yScale(p.y), r: 4, fill: color, stroke: cssVar("--surface-1"), "stroke-width": 2 });
-      dot.addEventListener("mousemove", (evt) => showTooltip(evt, `<strong>${s.name}</strong><br>${p.x}: ${formatNumber(p.y)} ${yLabel}`));
+      dot.addEventListener("mousemove", (evt) => showTooltip(evt, `<strong>${s.name}</strong><br>${p.xLabel ?? p.x}: ${formatNumber(p.y)} ${yLabel}`));
       dot.addEventListener("mouseleave", hideTooltip);
       svg.appendChild(dot);
     });
@@ -214,9 +250,21 @@ function lineChart(container, series, { yLabel = "" } = {}) {
     }
   });
 
-  const xTicks = [...new Set(xs)].sort((a, b) => a - b);
-  xTicks.forEach(x => {
-    svg.appendChild(el("text", { x: xScale(x), y: height - 8, "text-anchor": "middle", fill: cssVar("--text-muted"), "font-size": 10 })).textContent = x;
+  // x ticks: one label per unique x, but thinned out (not skipped from the
+  // data - just from what gets drawn) so labels never overlap into a smear.
+  const tickLabels = new Map();
+  allPoints.forEach(p => { if (!tickLabels.has(p.x)) tickLabels.set(p.x, p.xLabel ?? p.x); });
+  const xTicks = [...tickLabels.keys()].sort((a, b) => a - b);
+  const minLabelGap = 46;
+  const labelEvery = Math.max(1, Math.ceil((minLabelGap * xTicks.length) / chartW));
+  let lastDrawnX = -Infinity;
+  xTicks.forEach((x, i) => {
+    const isLast = i === xTicks.length - 1;
+    if (i % labelEvery !== 0 && !isLast) return;
+    const px = xScale(x);
+    if (isLast && px - lastDrawnX < minLabelGap) return; // too close to the previous label - skip rather than overlap
+    lastDrawnX = px;
+    svg.appendChild(el("text", { x: px, y: height - 8, "text-anchor": "middle", fill: cssVar("--text-muted"), "font-size": 10 })).textContent = tickLabels.get(x);
   });
   svg.appendChild(el("line", { x1: padLeft, x2: width - padRight, y1: padTop + chartH, y2: padTop + chartH, stroke: cssVar("--baseline"), "stroke-width": 1 }));
 
@@ -224,7 +272,9 @@ function lineChart(container, series, { yLabel = "" } = {}) {
   container.appendChild(svg);
 }
 
-/** Week-activity strip: cells = [{date, active: bool}] rendered as a compact grid. */
+/** Week-activity strip: cells = [{date, count}] rendered as a compact grid,
+ * one sequential hue (--series-1) whose opacity scales with count - darker
+ * (more opaque) = more events that week; zero-count weeks stay neutral gray. */
 function weekStrip(container, cells) {
   container.innerHTML = "";
   if (!cells.length) {
@@ -236,14 +286,18 @@ function weekStrip(container, cells) {
   const rows = Math.ceil(cells.length / cols);
   const width = cols * (cellSize + gap), height = rows * (cellSize + gap);
   const svg = el("svg", { width, height, viewBox: `0 0 ${width} ${height}` });
+  const maxCount = Math.max(...cells.map(c => c.count), 1);
+  const activeColor = cssVar("--series-1");
   cells.forEach((c, i) => {
     const col = i % cols, row = Math.floor(i / cols);
+    const intensity = c.count > 0 ? 0.3 + 0.7 * (c.count / maxCount) : 0;
     const rect = el("rect", {
       x: col * (cellSize + gap), y: row * (cellSize + gap),
       width: cellSize, height: cellSize, rx: 2, ry: 2,
-      fill: c.active ? cssVar("--series-3") : cssVar("--grid"),
+      fill: c.count > 0 ? activeColor : cssVar("--grid"),
+      "fill-opacity": c.count > 0 ? intensity.toFixed(2) : 1,
     });
-    rect.addEventListener("mousemove", (evt) => showTooltip(evt, `${c.date}<br>${c.active ? "active" : "no event"}`));
+    rect.addEventListener("mousemove", (evt) => showTooltip(evt, `${c.date}<br>${c.count} event${c.count === 1 ? "" : "s"}`));
     rect.addEventListener("mouseleave", hideTooltip);
     svg.appendChild(rect);
   });

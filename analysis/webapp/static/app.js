@@ -74,7 +74,7 @@ async function refreshOverviewStats() {
 
   const places = await api("places?limit=10");
   horizontalBarChart(document.getElementById("overview-places-chart"),
-    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits" });
+    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
 }
 
 function wireGlobalDateFilter() {
@@ -113,7 +113,7 @@ async function reloadAll() {
 async function loadPlaces() {
   const places = await api("places?limit=20");
   horizontalBarChart(document.getElementById("places-chart"),
-    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits" });
+    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
   await refreshStoppedGoing();
 }
 
@@ -138,13 +138,12 @@ async function loadPeople() {
   horizontalBarChart(document.getElementById("people-chart"),
     people.map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
 
-  const yearRows = await api("person-year-trend?top_n=6");
-  const byPerson = {};
-  yearRows.forEach(r => {
-    (byPerson[r.person] = byPerson[r.person] || []).push({ x: r.year, y: r.count });
-  });
-  lineChart(document.getElementById("people-year-chart"),
-    Object.entries(byPerson).map(([name, points]) => ({ name, points })), { yLabel: "events" });
+  const select = document.getElementById("people-granularity");
+  if (!select.dataset.wired) {
+    select.addEventListener("change", refreshPeopleTrend);
+    select.dataset.wired = "1";
+  }
+  await refreshPeopleTrend();
 
   const trends = await api("trends");
   table(document.getElementById("trends-table"),
@@ -153,6 +152,27 @@ async function loadPeople() {
       { key: "total_events", label: "Total events", num: true },
       { key: "slope_events_per_year", label: "Trend (events/yr)", num: true, format: v => v?.toFixed(2) },
     ], trends);
+}
+
+function formatPeriodLabel(period, granularity) {
+  if (granularity === "year") return period.slice(0, 4);
+  if (granularity === "month") return period.slice(0, 7);
+  return period.slice(0, 10);
+}
+
+async function refreshPeopleTrend() {
+  const granularity = document.getElementById("people-granularity").value;
+  const rows = await api(`person-trend?top_n=6&granularity=${granularity}`);
+  const periods = [...new Set(rows.map(r => r.period))].sort();
+  const indexOf = Object.fromEntries(periods.map((p, i) => [p, i]));
+  const byPerson = {};
+  rows.forEach(r => {
+    (byPerson[r.person] = byPerson[r.person] || []).push({
+      x: indexOf[r.period], xLabel: formatPeriodLabel(r.period, granularity), y: r.count,
+    });
+  });
+  lineChart(document.getElementById("people-year-chart"),
+    Object.entries(byPerson).map(([name, points]) => ({ name, points })), { yLabel: "events" });
 }
 
 // --- Habits ---
@@ -171,7 +191,7 @@ async function refreshHabit() {
   if (!category) return;
   const data = await api(`habit?category=${encodeURIComponent(category)}`);
 
-  weekStrip(document.getElementById("habit-strip"), data.weekly.map(w => ({ date: w.week.slice(0, 10), active: w.count > 0 })));
+  weekStrip(document.getElementById("habit-strip"), data.weekly.map(w => ({ date: w.week.slice(0, 10), count: w.count })));
 
   const statGrid = document.getElementById("habit-stats");
   statGrid.innerHTML = "";
@@ -198,6 +218,9 @@ async function refreshHabit() {
 // --- Travel ---
 async function loadTravel() {
   const data = await api("travel");
+  const note = document.getElementById("travel-note");
+  note.textContent = data.message || "";
+  note.style.display = data.message ? "block" : "none";
   table(document.getElementById("travel-timeline"),
     [
       { key: "destination", label: "Destination" },

@@ -16,8 +16,19 @@ START = datetime(2021, 1, 1, tzinfo=timezone.utc)
 END = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
 FRIENDS = ["Alice", "Bob", "Carla", "Diego", "Emi"]
-GYMS = ["Equinox - Union Square", "Equinox - SoMa", "Crunch - Mission"]
-RESTAURANTS = ["Tartine", "State Bird", "Zuni Cafe", "Nopa"]
+# Mix of full Maps-picked addresses and bare venue names, to exercise both
+# the address-line splitter and its plain-fallback path.
+GYMS = [
+    "Equinox Union Square, 301 Grant Ave, San Francisco, CA 94108, United States",
+    "Equinox SoMa, 747 Market St, San Francisco, CA 94103, United States",
+    "Crunch - Mission",
+]
+RESTAURANTS = [
+    "Tartine Bakery, 600 Guerrero St, San Francisco, CA 94110, United States",
+    "State Bird Provisions, 1529 Fillmore St, San Francisco, CA 94115, United States",
+    "Zuni Cafe",
+    "Nopa",
+]
 BARS = ["The Alembic", "Trick Dog"]
 TRIP_DESTINATIONS = ["Tokyo, Japan", "Lisbon, Portugal", "New York, NY"]
 

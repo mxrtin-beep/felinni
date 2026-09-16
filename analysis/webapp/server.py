@@ -190,18 +190,21 @@ def trends():
     return jsonify(records(social.fading_or_growing(_get_df())))
 
 
-@app.get("/api/person-year-trend")
-def person_year_trend():
+@app.get("/api/person-trend")
+def person_trend():
     top_n = request.args.get("top_n", 6, type=int)
+    granularity = request.args.get("granularity", "year")
+    if granularity not in ("year", "month", "week"):
+        return jsonify({"error": "granularity must be year, month, or week"}), 400
     df = _get_df()
-    pivot = social.person_trend_by_year(df)
+    pivot = social.person_trend_by_period(df, granularity)
     top_people = social.person_frequency(df).head(top_n).index.tolist()
     rows = []
     for person in top_people:
-        if person not in pivot.index:
+        if person not in pivot.columns:
             continue
-        for year, count in pivot.loc[person].items():
-            rows.append({"person": person, "year": int(year), "count": int(count)})
+        for period, count in pivot[person].items():
+            rows.append({"person": person, "period": period.date().isoformat(), "count": int(count)})
     return jsonify(rows)
 
 
@@ -224,9 +227,19 @@ def habit():
 @app.get("/api/travel")
 def travel_view():
     df = _get_df()
+    trips = records(travel.trip_timeline(df))
+    message = None
+    if not trips:
+        message = (
+            "No events matched a travel category (Travel/Flight/Trip/Vacation/...) "
+            "or a title like \"Flight to...\"/\"Trip to...\"/\"Vacation\". "
+            "Tag trips with one of those categories, or via a Category: Travel note, "
+            "to see them here."
+        )
     return jsonify({
-        "trips": records(travel.trip_timeline(df)),
+        "trips": trips,
         "places": records(travel.places_visited(df).reset_index()),
+        "message": message,
     })
 
 

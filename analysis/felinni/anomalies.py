@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import pandas as pd
 
+from felinni.ingest import timed_events
+
 
 def weekly_load(df: pd.DataFrame) -> pd.DataFrame:
     """Total scheduled hours and event count per ISO week, with gaps
-    (weeks with zero events) filled in — those are anomalies too."""
+    (weeks with zero events) filled in — those are anomalies too. All-day
+    events (vacations, birthdays, holidays) are excluded, since a week
+    isn't "packed" or "empty" because of those."""
+    df = timed_events(df)
     weekly_hours = df.set_index("start")["duration_hours"].resample("W").sum()
     weekly_counts = df.set_index("start").resample("W").size()
     full_range = pd.date_range(weekly_hours.index.min(), weekly_hours.index.max(), freq="W")
