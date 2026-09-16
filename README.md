@@ -72,13 +72,13 @@ each backed by one of the analyses below, with charts and tables you can
 click through instead of running commands. It's a plain Flask dev server
 reading your local `events.json`, nothing leaves your machine.
 
-The Overview tab also lists **notable breaks in trends** — a heuristic
-scan for category phases starting/stopping (a job, a school term, a
-long-running habit), extended unusually-quiet stretches, and a rough
-"did my home base change" signal from which raw location dominates each
-quarter. It's meant to point at dates worth a second look, not a
-definitive timeline — see `felinni.breaks` for exactly what each one
-checks.
+The Overview tab also lists **Phases of Life** — long (8+ week) stretches
+where a category was consistently active, e.g. "UCLA (October 2020 to
+July 2024)" or "Gym (August 2022 to April 2023)". `felinni.breaks` also
+computes extended unusually-quiet stretches and a rough "did my home base
+change" signal (from which raw location dominates each quarter); those
+aren't surfaced in the dashboard but are available from the `/api/breaks`
+endpoint or the module directly if you want them.
 
 Try it against the synthetic fixture first if you don't have a real
 export yet: `python webapp/server.py --events ../data/sample_events.json`.
@@ -159,7 +159,7 @@ are a thin JSON wrapper over the same functions.
 | Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented; all-day events are excluded since they don't carry a real duration |
 | Seasonality by month/season | `felinni.seasonality` | Only counts timed events — all-day entries (birthdays, holidays, vacations) are excluded |
 | Unusually packed/empty weeks, in both directions and broken down by category | `felinni.anomalies` | Z-score on weekly scheduled hours (overall and per-category, each against its own baseline); all-day events excluded, same reasoning |
-| Notable breaks in trends (category phases, quiet stretches, home-base changes) | `felinni.breaks` | Heuristic - see the dashboard note above |
+| Phases of Life (category phases), plus quiet stretches and home-base changes | `felinni.breaks` | Only "Phases of Life" (active category streaks) shows in the dashboard; the other two are available via `/api/breaks` |
 | Link "first date" events to a Hinge/iMessage timestamp table | `felinni.dating_link` | Matches by tagged person + nearest timestamp within a configurable window |
 
 ## Testing without a real calendar

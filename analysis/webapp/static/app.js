@@ -77,33 +77,35 @@ async function refreshOverviewStats() {
   horizontalBarChart(document.getElementById("overview-places-chart"),
     places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
 
-  await loadNotableBreaks();
+  await loadPhasesOfLife();
 }
 
-async function loadNotableBreaks() {
+function monthYear(iso) {
+  return new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+async function loadPhasesOfLife() {
   const data = await api("breaks");
-  const rows = [];
-  data.category_phases.forEach(p => rows.push({
-    date: p.start,
-    what: `${p.category}: ${p.type === "active" ? "active" : "break"}`,
-    when: `${fmtDate(p.start)} – ${fmtDate(p.end)} (${p.weeks} wks)`,
-  }));
-  data.quiet_stretches.forEach(q => rows.push({
-    date: q.start,
-    what: "Unusually quiet stretch",
-    when: `${fmtDate(q.start)} – ${fmtDate(q.end)} (${q.weeks} wks)`,
-  }));
-  data.location_shifts.forEach(l => rows.push({
-    date: l.quarter,
-    what: "Possible home-base change",
-    when: `Around ${fmtDate(l.quarter)}: most frequent location became "${l.location}"`,
-  }));
-  rows.sort((a, b) => new Date(a.date) - new Date(b.date));
-  table(document.getElementById("breaks-table"),
-    [
-      { key: "what", label: "What" },
-      { key: "when", label: "When" },
-    ], rows);
+  const phases = data.category_phases
+    .filter(p => p.type === "active")
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  const container = document.getElementById("phases-list");
+  container.innerHTML = "";
+  if (!phases.length) {
+    container.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
+    return;
+  }
+  const ul = document.createElement("ul");
+  ul.style.margin = "0";
+  ul.style.paddingLeft = "20px";
+  phases.forEach(p => {
+    const li = document.createElement("li");
+    li.style.marginBottom = "4px";
+    li.textContent = `${p.category} (${monthYear(p.start)} to ${monthYear(p.end)})`;
+    ul.appendChild(li);
+  });
+  container.appendChild(ul);
 }
 
 function wireGlobalDateFilter() {
