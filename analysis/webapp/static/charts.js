@@ -362,6 +362,69 @@ function weekStrip(container, cells, { color } = {}) {
   container.appendChild(svg);
 }
 
+/** Gantt-style timeline: groups = [{label, color, segments: [{start, end}]}],
+ * one row per group, each segment a bar spanning its date range on a
+ * shared time axis with year gridlines - for "which phases were active
+ * when" at a glance, instead of a flat list of date ranges. */
+function timelineChart(container, groups) {
+  container.innerHTML = "";
+  const allSegments = groups.flatMap(g => g.segments);
+  if (!allSegments.length) {
+    container.innerHTML = '<p class="empty-note">No data yet.</p>';
+    return;
+  }
+  const rowLabelW = 110, rowH = 30, barH = 14, padTop = 10, padBottom = 24, padRight = 14;
+  const width = container.clientWidth || 640;
+  const chartW = width - rowLabelW - padRight;
+  const height = padTop + groups.length * rowH + padBottom;
+
+  const allTimes = allSegments.flatMap(s => [new Date(s.start).getTime(), new Date(s.end).getTime()]);
+  const minTime = Math.min(...allTimes), maxTime = Math.max(...allTimes);
+  const xScale = t => rowLabelW + (maxTime === minTime ? 0 : ((t - minTime) / (maxTime - minTime)) * chartW);
+
+  const svg = el("svg", { width, height, viewBox: `0 0 ${width} ${height}` });
+
+  const minYear = new Date(minTime).getUTCFullYear();
+  const maxYear = new Date(maxTime).getUTCFullYear();
+  const yearSpan = Math.max(maxYear - minYear, 1);
+  const yearStep = Math.max(1, Math.ceil((yearSpan * 40) / chartW)); // thin out labels on a long span
+  for (let y = minYear; y <= maxYear; y++) {
+    const t = Date.UTC(y, 0, 1);
+    if (t < minTime || t > maxTime) continue;
+    const x = xScale(t);
+    svg.appendChild(el("line", { x1: x, x2: x, y1: padTop, y2: height - padBottom, stroke: cssVar("--grid"), "stroke-width": 1 }));
+    if ((y - minYear) % yearStep === 0) {
+      svg.appendChild(el("text", {
+        x, y: height - padBottom + 14, "text-anchor": "middle", "font-size": 10, fill: cssVar("--text-muted"),
+      })).textContent = y;
+    }
+  }
+
+  groups.forEach((g, row) => {
+    const y = padTop + row * rowH;
+    svg.appendChild(el("text", {
+      x: rowLabelW - 8, y: y + barH / 2 + 4, "text-anchor": "end", "font-size": 12, fill: cssVar("--text-secondary"),
+    })).textContent = g.label;
+
+    const barColor = g.color || cssVar("--series-1");
+    g.segments.forEach(s => {
+      const x1 = xScale(new Date(s.start).getTime());
+      const x2 = xScale(new Date(s.end).getTime());
+      const w = Math.max(x2 - x1, 3);
+      const rect = el("rect", { x: x1, y, width: w, height: barH, rx: 4, ry: 4, fill: barColor });
+      rect.addEventListener("mousemove", (evt) => showTooltip(evt, `<strong>${g.label}</strong><br>${s.start.slice(0, 10)} – ${s.end.slice(0, 10)}`));
+      rect.addEventListener("mouseleave", hideTooltip);
+      svg.appendChild(rect);
+    });
+  });
+
+  svg.appendChild(el("line", {
+    x1: rowLabelW, x2: width - padRight, y1: height - padBottom, y2: height - padBottom,
+    stroke: cssVar("--baseline"), "stroke-width": 1,
+  }));
+  container.appendChild(svg);
+}
+
 function statTile(label, value) {
   const div = document.createElement("div");
   div.className = "stat-tile";

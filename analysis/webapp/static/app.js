@@ -93,32 +93,34 @@ async function refreshOverviewStats() {
   await loadPhasesOfLife();
 }
 
-function monthYear(iso) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
-}
-
 async function loadPhasesOfLife() {
   const data = await api("breaks");
-  const phases = data.category_phases
-    .filter(p => p.type === "active")
-    .sort((a, b) => new Date(a.start) - new Date(b.start));
+  const phases = data.category_phases.filter(p => p.type === "active");
 
   const container = document.getElementById("phases-list");
-  container.innerHTML = "";
   if (!phases.length) {
     container.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
     return;
   }
-  const ul = document.createElement("ul");
-  ul.style.margin = "0";
-  ul.style.paddingLeft = "20px";
+
+  const byCategory = new Map();
   phases.forEach(p => {
-    const li = document.createElement("li");
-    li.style.marginBottom = "4px";
-    li.textContent = `${p.category} (${monthYear(p.start)} to ${monthYear(p.end)})`;
-    ul.appendChild(li);
+    if (!byCategory.has(p.category)) byCategory.set(p.category, []);
+    byCategory.get(p.category).push({ start: p.start, end: p.end });
   });
-  container.appendChild(ul);
+
+  // Most time-covered categories on top - the ones that actually define a
+  // "phase of life" rather than a brief blip.
+  const groups = [...byCategory.entries()]
+    .map(([label, segments]) => ({
+      label,
+      segments,
+      color: categoryColors[label],
+      totalDays: segments.reduce((sum, s) => sum + (new Date(s.end) - new Date(s.start)), 0),
+    }))
+    .sort((a, b) => b.totalDays - a.totalDays);
+
+  timelineChart(container, groups);
 }
 
 function wireGlobalDateFilter() {
@@ -175,23 +177,7 @@ async function loadPlaces() {
   const places = await api("places?limit=20");
   horizontalBarChart(document.getElementById("places-chart"),
     places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
-  await refreshStoppedGoing();
 }
-
-async function refreshStoppedGoing() {
-  const minVisits = document.getElementById("stopped-min-visits").value;
-  const inactiveMonths = document.getElementById("stopped-inactive-months").value;
-  const rows = await api(`stopped-going?min_visits=${minVisits}&inactive_months=${inactiveMonths}`);
-  table(document.getElementById("stopped-going-table"),
-    [
-      { key: "location", label: "Location" },
-      { key: "visits", label: "Visits", num: true },
-      { key: "last_seen", label: "Last seen", format: fmtDate },
-      { key: "months_since_last_visit", label: "Months ago", num: true, format: v => v?.toFixed(1) },
-    ], rows);
-}
-document.getElementById("stopped-min-visits").addEventListener("change", refreshStoppedGoing);
-document.getElementById("stopped-inactive-months").addEventListener("change", refreshStoppedGoing);
 
 // --- People ---
 async function loadPeople() {

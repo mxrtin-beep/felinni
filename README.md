@@ -72,12 +72,13 @@ each backed by one of the analyses below, with charts and tables you can
 click through instead of running commands. It's a plain Flask dev server
 reading your local `events.json`, nothing leaves your machine.
 
-The Overview tab also lists **Phases of Life** — long (8+ week) stretches
-where a category was consistently active, e.g. "UCLA (October 2020 to
-July 2024)" or "Gym (August 2022 to April 2023)". `felinni.breaks` also
-computes extended unusually-quiet stretches and a rough "did my home base
-change" signal (from which raw location dominates each quarter); those
-aren't surfaced in the dashboard but are available from the `/api/breaks`
+The Overview tab also has a **Phases of Life** timeline — one row per
+category, with a bar for each long (8+ week) stretch it was consistently
+active, on a shared year-gridlined time axis (Gantt-style), colored to
+match that category everywhere else in the dashboard. `felinni.breaks`
+also computes extended unusually-quiet stretches and a rough "did my home
+base change" signal (from which raw location dominates each quarter);
+those aren't surfaced in the dashboard but are available from the `/api/breaks`
 endpoint or the module directly if you want them.
 
 Try it against the synthetic fixture first if you don't have a real
@@ -177,7 +178,7 @@ are a thin JSON wrapper over the same functions.
 
 | Ask | Module | Notes |
 |---|---|---|
-| Map every place, cluster by neighborhood, radius of life over time, places you stopped going to | `felinni.location` | Neighborhood clustering and radius-of-life need geocoded coordinates (`felinni.geocode`, opt-in, uses OpenStreetMap Nominatim, cached to disk) |
+| Map every place, cluster by neighborhood, radius of life over time, places you stopped going to | `felinni.location` | Neighborhood clustering and radius-of-life need geocoded coordinates (`felinni.geocode`, opt-in, uses OpenStreetMap Nominatim, cached to disk). "Stopped going to" is CLI/library only (`cli.py stopped-going`) - not on the dashboard |
 | Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Repeating events falling off pace (Book Club, Poker Night, ...) | `felinni.recurring` | Auto-detects every named recurring series from Calendar's own repeat rule (`is_recurring`) - no need to pick one, unlike `felinni.habits` above. Flags each as active/slowing down/stopped relative to its own historical cadence |
