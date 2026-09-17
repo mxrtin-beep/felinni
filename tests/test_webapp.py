@@ -127,9 +127,7 @@ def test_future_returns_empty_skeleton(client):
     resp = client.get("/api/future")
     body = resp.get_json()
     assert body["suggestions"] == []
-    assert set(body["platforms"].keys()) == {"eventbrite", "luma", "meetup"}
-    for info in body["platforms"].values():
-        assert info == {"connected": False, "events": []}
+    assert body["events"] == []
     assert body["message"]
 
 

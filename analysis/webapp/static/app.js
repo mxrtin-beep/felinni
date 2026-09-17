@@ -610,14 +610,6 @@ async function loadTravel() {
 
   populateTravelMetroSelect(data.region_visits, data.home_region);
   await refreshTravelNeighborhoods();
-
-  table(document.getElementById("travel-timeline"),
-    [
-      { key: "destination", label: "Destination" },
-      { key: "start", label: "Start", format: fmtDate },
-      { key: "end", label: "End", format: fmtDate },
-      { key: "duration_days", label: "Days", num: true, format: v => v?.toFixed(1) },
-    ], data.tagged_trips);
 }
 
 // --- Time & Spend ---
@@ -699,13 +691,10 @@ async function loadFuture() {
     ? data.suggestions.map(s => `<p>${escapeHtml(s.title)}</p>`).join("")
     : '<p class="empty-note">Nothing here yet - no platforms connected.</p>';
 
-  Object.entries(data.platforms).forEach(([platform, info]) => {
-    const container = document.getElementById(`future-${platform}`);
-    if (!container) return;
-    container.innerHTML = info.events.length
-      ? info.events.map(e => `<p>${escapeHtml(e.title)}</p>`).join("")
-      : '<p class="empty-note">Nothing here yet.</p>';
-  });
+  const events = document.getElementById("future-events");
+  events.innerHTML = data.events.length
+    ? data.events.map(e => `<p>${escapeHtml(e.title)} <span class="source-meta">${escapeHtml(e.source || "")}</span></p>`).join("")
+    : '<p class="empty-note">Nothing here yet.</p>';
 }
 
 // --- Category colors (shared across Map, Habits, Time & Spend) ---
@@ -865,6 +854,7 @@ async function pollGeocodeStatus() {
   const status = await fetch("/api/geocode/status").then(r => r.json());
   const btn = document.getElementById("map-geocode-btn");
   const progressWrap = document.getElementById("map-geocode-progress");
+  const errorNote = document.getElementById("map-geocode-error");
 
   if (!status.running) {
     if (geocodePollTimer) {
@@ -873,9 +863,19 @@ async function pollGeocodeStatus() {
       await refreshMap(); // job just finished - show the newly-geocoded points
     }
     progressWrap.style.display = "none";
+    // A run that stopped early (rather than working through every
+    // location) leaves an error here - surface it instead of silently
+    // showing a partial result with no explanation.
+    if (status.error) {
+      errorNote.textContent = `Geocoding stopped early: ${status.error}. Click "Geocode locations" again to pick up where it left off.`;
+      errorNote.style.display = "block";
+    } else {
+      errorNote.style.display = "none";
+    }
     return;
   }
 
+  errorNote.style.display = "none";
   btn.disabled = true;
   btn.textContent = "Geocoding…";
   progressWrap.style.display = "flex";

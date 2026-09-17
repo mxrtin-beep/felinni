@@ -192,9 +192,19 @@ report: "Santa Monica Pier" landing in Europe). Three ways to fix it:
 
 - **Anchors**: if a location's category matches a key in
   `felinni.geocode.DEFAULT_LOCATION_ANCHORS` (ships with `ucla` and
-  `amgen` examples), that entry's text (e.g. `"UCLA, Los Angeles, CA"`) is
-  appended to the *geocoding query only* — the stored/displayed location
-  is untouched. Edit that dict to match your own campus/workplace.
+  `amgen` examples), that entry kicks in - the stored/displayed location
+  is never touched, only the geocoding query (and, in the stronger form
+  below, which results even count). Two forms:
+  - a plain string (e.g. `"UCLA, Los Angeles, CA"`) is appended to the
+    query as context - a nudge, not a guarantee, so a common building
+    name (Royce Hall, Powell) can still occasionally lose to a
+    same-named match elsewhere in the world.
+  - `{"query":, "lat":, "lon":, "radius_km":}` does the same, plus
+    hard-restricts the search to within that radius of `(lat, lon)` -
+    guaranteed to land on campus rather than just biased toward it.
+    Prefer this form (the shipped `ucla`/`amgen` anchors already use it)
+    once you know your campus/workplace's coordinates.
+  Edit that dict to match your own campus/workplace.
 - **Region bias**: once ~5 locations in a run have resolved, later
   ambiguous queries are nudged (not restricted) toward that region -
   helps exactly the "well-known place, wrong match" case, automatically,

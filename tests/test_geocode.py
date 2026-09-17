@@ -52,6 +52,57 @@ def test_anchor_appended_to_query_not_to_cache_key(tmp_path):
     assert result["North Campus Student Center"]["lat"] == 34.07
 
 
+def test_dict_anchor_bounds_the_search_to_its_radius(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    seen_kwargs = {}
+
+    def fake_geocode(query, **kwargs):
+        seen_kwargs.update(kwargs)
+        return _fake_result()
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = fake_geocode
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["Royce Hall"],
+            cache_path=cache_path,
+            rate_limit_seconds=0,
+            location_categories={"Royce Hall": "UCLA Clubs"},
+            anchors={"ucla": {"query": "UCLA, Los Angeles, CA", "lat": 34.0689, "lon": -118.4452, "radius_km": 3.0}},
+        )
+
+    assert seen_kwargs["bounded"] is True
+    (lat_min, lon_min), (lat_max, lon_max) = seen_kwargs["viewbox"]
+    assert lat_min < 34.0689 < lat_max
+    assert lon_min < -118.4452 < lon_max
+    # A ~3km radius is a small box, not the whole world.
+    assert (lat_max - lat_min) < 0.2
+
+
+def test_string_anchor_does_not_bound_the_search(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    seen_kwargs = {}
+
+    def fake_geocode(query, **kwargs):
+        seen_kwargs.update(kwargs)
+        return _fake_result()
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = fake_geocode
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["North Campus Student Center"],
+            cache_path=cache_path,
+            rate_limit_seconds=0,
+            location_categories={"North Campus Student Center": "UCLA Clubs"},
+            anchors={"ucla": "UCLA, Los Angeles, CA"},
+        )
+
+    assert "bounded" not in seen_kwargs or seen_kwargs.get("bounded") is False
+
+
 def test_no_anchor_when_category_does_not_match(tmp_path):
     cache_path = tmp_path / "cache.json"
     queries_seen = []
@@ -89,6 +140,29 @@ def test_failed_geocode_is_retried_on_next_run(tmp_path):
         # ...but retried (not treated as permanently resolved) and now succeeds.
         assert second["Mono Lake"] is not None
         assert call_count["n"] == 2
+
+
+def test_unwrapped_exception_does_not_abort_the_whole_batch(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    calls = []
+
+    def flaky(query, **kwargs):
+        calls.append(query)
+        if query == "Bad Location":
+            raise ConnectionError("network hiccup")  # not a GeocoderServiceError
+        return _fake_result()
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["Bad Location", "Good Location"], cache_path=cache_path, rate_limit_seconds=0,
+        )
+
+    assert calls == ["Bad Location", "Good Location"]  # kept going past the failure
+    assert result["Bad Location"] is None
+    assert result["Good Location"] is not None
 
 
 def test_successful_geocode_captures_structured_city_and_country(tmp_path):

@@ -473,17 +473,16 @@ def anomalies_view():
 @app.get("/api/future")
 def future_view():
     """Skeleton for the Future tab - always empty for now (see
-    felinni.future_events). Each platform is reported not-connected since
-    none has API access configured; the shape (suggestions + one entry per
-    platform) is what a real integration would fill in later."""
-    platforms = {
-        platform: {"connected": False, "events": future_events.platform_events(platform)}
-        for platform in future_events.PLATFORMS
-    }
+    felinni.future_events). `events` merges every platform's results into
+    one list (each tagged with its "source") rather than a separate
+    section per platform, since none is connected yet anyway."""
+    events = []
+    for platform in future_events.PLATFORMS:
+        events.extend(future_events.platform_events(platform))
     return jsonify({
         "suggestions": future_events.suggestions_for(_get_df()),
-        "platforms": platforms,
-        "message": "Future event suggestions aren't wired up yet - each platform needs its own API access, which isn't configured.",
+        "events": events,
+        "message": "Upcoming events aren't wired up yet - each platform needs its own API access, which isn't configured.",
     })
 
 

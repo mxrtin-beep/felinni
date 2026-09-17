@@ -123,6 +123,7 @@
         <div class="progress-track"><div class="progress-fill" id="map-geocode-fill"></div></div>
         <span id="map-geocode-label" style="font-size:12px;color:var(--text-secondary)"></span>
       </div>
+      <p class="card-note" id="map-geocode-error" style="display:none;color:var(--status-critical)"></p>
       <div class="legend" id="map-legend"></div>
       <div id="map" style="height:480px;border-radius:8px;overflow:hidden"></div>
     </div>
@@ -216,11 +217,6 @@
       <p class="card-note">A finer breakdown within one metro area - defaults to home.</p>
       <div id="travel-neighborhoods-table"></div>
     </div>
-    <div class="card">
-      <h2>Tagged trips</h2>
-      <p class="card-note">Events tagged Travel/Flight/Trip/Vacation/... - a cross-check, catches trips even before you've geocoded anything.</p>
-      <div id="travel-timeline"></div>
-    </div>
   </section>
 
   <section class="panel" id="panel-time">
@@ -284,27 +280,11 @@
     </div>
     <div class="card">
       <div class="controls" style="justify-content:space-between">
-        <h2 style="margin:0">Eventbrite</h2>
-        <button type="button" class="future-connect-btn" data-platform="eventbrite" disabled>Connect</button>
+        <h2 style="margin:0">Upcoming events</h2>
+        <button type="button" id="future-connect-btn" disabled>Connect a platform</button>
       </div>
-      <p class="card-note">Needs an Eventbrite API key - not configured.</p>
-      <div id="future-eventbrite"><p class="empty-note">Nothing here yet.</p></div>
-    </div>
-    <div class="card">
-      <div class="controls" style="justify-content:space-between">
-        <h2 style="margin:0">Luma</h2>
-        <button type="button" class="future-connect-btn" data-platform="luma" disabled>Connect</button>
-      </div>
-      <p class="card-note">Needs a Luma API key - not configured.</p>
-      <div id="future-luma"><p class="empty-note">Nothing here yet.</p></div>
-    </div>
-    <div class="card">
-      <div class="controls" style="justify-content:space-between">
-        <h2 style="margin:0">Meetup</h2>
-        <button type="button" class="future-connect-btn" data-platform="meetup" disabled>Connect</button>
-      </div>
-      <p class="card-note">Needs Meetup OAuth access - not configured.</p>
-      <div id="future-meetup"><p class="empty-note">Nothing here yet.</p></div>
+      <p class="card-note">Pulled from Eventbrite, Luma, and Meetup once connected - needs each platform's own API access (Eventbrite/Luma: an API key, Meetup: OAuth), none of which is configured yet.</p>
+      <div id="future-events"><p class="empty-note">Nothing here yet.</p></div>
     </div>
   </section>
 

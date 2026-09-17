@@ -38,15 +38,24 @@ DEFAULT_OVERRIDES_PATH = _DATA_DIR / "geocode_overrides.json"
 
 # A building/room name alone ("North Campus Student Center") often won't
 # geocode correctly, or geocodes to a same-named place somewhere else in
-# the world entirely. When a location's category OR the location text
-# itself matches one of these keys (case-insensitive substring), the
-# anchor text is appended to the GEOCODING QUERY only - never to the
-# stored/displayed location - so "North Campus Student Center" searches as
-# "North Campus Student Center, UCLA, Los Angeles, CA" instead of drifting
-# worldwide. Edit this to match your own campus/workplace calendars.
+# the world entirely - even with anchor text appended to the query,
+# Nominatim's ranking sometimes still prefers an unrelated same-named
+# match elsewhere ("Royce Hall" is common enough to exist outside LA too).
+# When a location's category OR the location text itself matches one of
+# these keys (case-insensitive substring), the anchor kicks in - never
+# touching the stored/displayed location, only the GEOCODING QUERY (and,
+# for a dict anchor, which results are even considered):
+#   - a plain string: appended to the query as context, e.g. "North Campus
+#     Student Center, UCLA, Los Angeles, CA" - a nudge, not a guarantee.
+#   - a dict {"query":, "lat":, "lon":, "radius_km":}: same text appended,
+#     PLUS the search is restricted (bounded=True) to within that radius
+#     of (lat, lon) - a hard guarantee the result is actually on campus,
+#     not just a same-named building somewhere else in the world. Prefer
+#     this form once you know your campus/workplace's coordinates.
+# Edit this to match your own campus/workplace calendars.
 DEFAULT_LOCATION_ANCHORS = {
-    "ucla": "UCLA, Los Angeles, CA",
-    "amgen": "Amgen, Thousand Oaks, CA",
+    "ucla": {"query": "UCLA, Los Angeles, CA", "lat": 34.0689, "lon": -118.4452, "radius_km": 3.0},
+    "amgen": {"query": "Amgen, Thousand Oaks, CA", "lat": 34.2064, "lon": -118.8253, "radius_km": 2.0},
 }
 
 
@@ -145,12 +154,32 @@ def clear_cache_entries(locations: list[str], cache_path: str | Path = DEFAULT_C
     return removed
 
 
-def _anchor_for(loc: str, category: str | None, anchors: dict[str, str]) -> str | None:
+def _anchor_for(loc: str, category: str | None, anchors: dict) -> str | dict | None:
     haystacks = [loc.lower()] + ([category.lower()] if category else [])
-    for key, text in anchors.items():
+    for key, value in anchors.items():
         if any(key.lower() in h for h in haystacks):
-            return text
+            return value
     return None
+
+
+def _anchor_query_text(anchor: str | dict | None) -> str | None:
+    if isinstance(anchor, dict):
+        return anchor.get("query")
+    return anchor
+
+
+def _anchor_viewbox(anchor: str | dict | None):
+    """A hard bounding box around a dict-form anchor's coordinates, or
+    None for a plain-string anchor (query-text nudge only, no
+    restriction) - see DEFAULT_LOCATION_ANCHORS."""
+    if not isinstance(anchor, dict):
+        return None
+    lat, lon = anchor.get("lat"), anchor.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+    radius_km = anchor.get("radius_km", 3.0)
+    pad_degrees = radius_km / 111.0  # ~111km per degree of latitude, close enough for a small campus-sized radius
+    return [(lat - pad_degrees, lon - pad_degrees), (lat + pad_degrees, lon + pad_degrees)]
 
 
 def _viewbox_from_points(points: list[tuple[float, float]], pad_degrees: float = 3.0):
@@ -233,16 +262,33 @@ def geocode_locations(
     for i, loc in enumerate(to_fetch):
         query = loc
         anchor = _anchor_for(loc, location_categories.get(loc), anchors)
-        if anchor:
-            query = f"{loc}, {anchor}"
+        anchor_text = _anchor_query_text(anchor)
+        if anchor_text:
+            query = f"{loc}, {anchor_text}"
 
-        viewbox = _viewbox_from_points(resolved_points) if len(resolved_points) >= 5 else None
         geocode_kwargs = {"addressdetails": True}
-        if viewbox:
-            geocode_kwargs.update(viewbox=viewbox, bounded=False)
+        bounded_viewbox = _anchor_viewbox(anchor)
+        if bounded_viewbox:
+            # A dict-form anchor with known coordinates: hard-restrict to
+            # that radius rather than just biasing, so a same-named
+            # building/room elsewhere in the world can't win out over the
+            # actual campus/workplace location.
+            geocode_kwargs.update(viewbox=bounded_viewbox, bounded=True)
+        else:
+            viewbox = _viewbox_from_points(resolved_points) if len(resolved_points) >= 5 else None
+            if viewbox:
+                geocode_kwargs.update(viewbox=viewbox, bounded=False)
         try:
             result = geolocator.geocode(query, **geocode_kwargs)
         except GeocoderServiceError:
+            result = None
+        except Exception:
+            # A network hiccup, timeout, or anything else geopy didn't
+            # wrap in GeocoderServiceError (e.g. a raw connection error)
+            # shouldn't abort the whole batch - previously it did, which
+            # could leave a large run stuck partway through with no
+            # obvious explanation. This location is just retried like any
+            # other failure on the next run.
             result = None
 
         if result:
