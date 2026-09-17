@@ -786,22 +786,33 @@ async function loadAnomalies() {
     ], data.by_category.slice(0, 30));
 }
 
-// --- Future (Eventbrite/Luma/Meetup events found via a DuckDuckGo search) ---
+// --- Future (Eventbrite/Luma/Meetup/other-site events found via a DuckDuckGo search) ---
+const FUTURE_CONFLICTS_SHOWN = 4;
+
 function _futureConflictNote(e) {
   if (!e.conflicts || !e.conflicts.length) return "";
-  const items = e.conflicts.map(c => {
+  const shown = e.conflicts.slice(0, FUTURE_CONFLICTS_SHOWN).map(c => {
     const label = c.type === "calendar" ? "your calendar" : `another suggestion (${escapeHtml(c.source || "")})`;
     return `${escapeHtml(c.title)} on ${label}`;
   }).join("; ");
-  return `<p class="future-conflict">&#9888; Conflicts with ${items}</p>`;
+  const more = e.conflicts.length > FUTURE_CONFLICTS_SHOWN ? ` (+${e.conflicts.length - FUTURE_CONFLICTS_SHOWN} more)` : "";
+  return `<p class="future-conflict">&#9888; Conflicts with ${shown}${more}</p>`;
 }
 
 function _futureEventCard(e) {
+  if (e.is_ai_suggestion) {
+    return `
+      <div class="future-event future-ai-idea">
+        <p><span class="badge planned">AI idea, not a live listing</span></p>
+        <p>${escapeHtml(e.title)}</p>
+      </div>`;
+  }
+
   const when = e.start
     ? `${fmtDateTime(e.start)}${e.end ? ` – ${fmtDateTime(e.end)}` : ""}${e.duration_hours ? ` (${fmtDuration(e.duration_hours)})` : ""}`
     : "Date/time unknown";
   const people = e.suggested_people && e.suggested_people.length
-    ? `<p class="card-note">Consider inviting: ${e.suggested_people.map(escapeHtml).join(", ")}</p>`
+    ? `<p class="card-note">Consider inviting: ${e.suggested_people.map(escapeHtml).join(", ")} (${escapeHtml(e.people_reason || "")})</p>`
     : "";
   const fit = e.fit_reasons && e.fit_reasons.length
     ? `<p class="card-note">${e.fit_reasons.map(escapeHtml).join(" · ")}</p>`
@@ -827,11 +838,6 @@ async function loadFuture(region) {
 
   const regionInput = document.getElementById("future-region-input");
   if (regionInput && !regionInput.value) regionInput.value = data.region || "";
-
-  const suggestions = document.getElementById("future-suggestions");
-  suggestions.innerHTML = data.suggestions.length
-    ? data.suggestions.map(_futureEventCard).join("")
-    : '<p class="empty-note">Nothing here yet.</p>';
 
   const events = document.getElementById("future-events");
   events.innerHTML = data.events.length

@@ -131,10 +131,15 @@
     </div>
     <div class="card">
       <h2>Fix a location</h2>
-      <p class="card-note">Wrong pin, or missing entirely? Pick the location and give a corrected address (or exact coordinates) - it always wins over the cache and the map updates right away.</p>
-      <div class="controls">
-        <label>Location <select id="fix-location-select"></select></label>
-        <label>Corrected address <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA" style="min-width:280px"></label>
+      <div class="controls fix-location-controls">
+        <label class="field">
+          <span>Location</span>
+          <select id="fix-location-select"></select>
+        </label>
+        <label class="field">
+          <span>Corrected address</span>
+          <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA">
+        </label>
         <button id="fix-location-btn" type="button">Fix</button>
       </div>
       <p class="card-note" id="fix-location-status"></p>
@@ -279,23 +284,20 @@
     <div class="card">
       <h2>Future</h2>
       <p class="card-note">
-        Upcoming events from Eventbrite, Luma, and Meetup, found via a
-        DuckDuckGo search for your region and enriched with start/end time,
+        Upcoming events from Eventbrite, Luma, Meetup, and anywhere else
+        DuckDuckGo turns up for your region, enriched with start/end time,
         duration, and location from each event's own page - no platform API
-        key/login needed. Flagged in red if it overlaps your calendar or
-        another suggestion below. Defaults to your geocoded home metro (Map
-        tab); search a different region below.
+        key/login needed. Ranked by fit with your habits (category overlap,
+        your usual day/time, places you already frequent), each with people
+        you might want to invite and why, and flagged in red if it overlaps
+        your calendar or another suggestion. Defaults to your geocoded home
+        metro (Map tab); search a different region below.
       </p>
       <div class="controls">
         <input type="text" id="future-region-input" placeholder="e.g. Los Angeles, CA">
         <button type="button" id="future-region-btn">Search</button>
       </div>
       <p class="card-note" id="future-note"></p>
-    </div>
-    <div class="card">
-      <h2>Suggested for you</h2>
-      <p class="card-note">Ranked by fit with your habits - category overlap, your usual day/time, places you already frequent - each with people you might want to invite and a warning if it clashes with your calendar or another suggestion.</p>
-      <div id="future-suggestions"><p class="empty-note">Nothing here yet.</p></div>
     </div>
     <div class="card">
       <h2>Upcoming events</h2>

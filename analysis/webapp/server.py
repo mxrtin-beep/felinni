@@ -472,16 +472,18 @@ def anomalies_view():
 
 @app.get("/api/future")
 def future_view():
-    """Future tab: events found for Eventbrite/Luma/Meetup via a DuckDuckGo
-    search, enriched with start/end/duration/location from each event's own
-    page (see felinni.future_events - no platform API key/OAuth needed).
-    `region` defaults to your geocoded home metro, falling back to
+    """Future tab: events found for Eventbrite/Luma/Meetup plus anywhere
+    else DuckDuckGo turns up, via a DuckDuckGo search, enriched with
+    start/end/duration/location from each event's own page (see
+    felinni.future_events - no platform API key/OAuth needed). `region`
+    defaults to your geocoded home metro, falling back to
     felinni.future_events.DEFAULT_REGION if nothing's been geocoded yet;
-    `?region=` overrides either for a one-off search elsewhere. `events`
-    merges every platform's results into one list (each tagged with its
-    "source" and flagged with any scheduling conflicts) rather than a
-    separate section per platform; `suggestions` is the same events ranked
-    by fit with your calendar history, each with people worth inviting."""
+    `?region=` overrides either for a one-off search elsewhere. `events` is
+    one ranked list - every candidate scored by fit with your calendar
+    history and flagged with any scheduling conflicts - rather than a
+    separate "suggested" list duplicating the same events in a different
+    order. If a local Ollama server is running, a few AI-brainstormed
+    (clearly labeled, not real listings) event ideas are folded in too."""
     df = _get_df()
     cache = _load_geocode_cache()
     home = regions.home_region(regions.visits_by_region(df, cache))
@@ -490,18 +492,21 @@ def future_view():
     raw_events = []
     for platform in future_events.PLATFORMS:
         raw_events.extend(future_events.platform_events(platform, region=region))
-    events = future_events.annotate_conflicts(raw_events, df)
+    raw_events.extend(future_events.other_web_events(region=region))
+    raw_events.extend(future_events.ollama_event_ideas(df, region=region))
+
+    annotated = future_events.annotate_conflicts(raw_events, df)
+    events = future_events.suggestions_for(df, annotated)
 
     message = None
     if not events:
         message = (
-            f"No results from Eventbrite/Luma/Meetup for \"{region}\" right now - "
+            f"No results from Eventbrite/Luma/Meetup/other sites for \"{region}\" right now - "
             "try a different region, or DuckDuckGo may be rate-limiting this search."
         )
 
     return jsonify({
         "region": region,
-        "suggestions": future_events.suggestions_for(df, events),
         "events": events,
         "message": message,
     })

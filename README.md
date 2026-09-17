@@ -74,14 +74,19 @@ tab's own filters stack on top.
   runs. Duplicate events across sources are matched and only counted once.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
-- **Future** — upcoming events from Eventbrite, Luma, and Meetup for your
-  home region (or any region you type in), found via a DuckDuckGo search
-  and enriched with start/end time, duration, and location straight from
-  each event's own page — no API key/OAuth needed for any of the three.
-  Flags anything that overlaps your calendar or another suggestion, and
-  ranks results by fit with your habits (category, usual day/time, familiar
-  venues), suggesting people to invite based on who you usually do that
-  category with.
+- **Future** — one ranked list of upcoming events from Eventbrite, Luma,
+  Meetup, and anywhere else DuckDuckGo turns up for your home region (or
+  any region you type in), enriched with start/end time, duration, and
+  location straight from each event's own page — no API key/OAuth needed.
+  Skips browse/listing pages ("Discover LA Events") in favor of actual
+  single events, picks the soonest occurrence for a "multiple dates"
+  listing rather than blending across them, and flags anything that
+  overlaps your calendar or another suggestion. Ranks by fit with your
+  habits (category, usual day/time, familiar venues) and suggests people to
+  invite with a reason (who you usually do that category/venue with, or
+  your most frequent people overall as a last resort). If a local Ollama
+  server is running, a few clearly-labeled AI-brainstormed event ideas are
+  folded in too — never presented as a real listing.
 
 ### Or skip the browser
 

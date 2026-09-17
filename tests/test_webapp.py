@@ -126,7 +126,6 @@ def test_exclude_categories_filter_applies_globally(client):
 def test_future_returns_empty_skeleton(client):
     resp = client.get("/api/future")
     body = resp.get_json()
-    assert body["suggestions"] == []
     assert body["events"] == []
     assert body["message"]
 

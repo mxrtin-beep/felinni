@@ -1,13 +1,15 @@
 """Tests for felinni.future_events: parsing/filtering DuckDuckGo HTML search
 results and each event page's schema.org JSON-LD into the Future tab's event
-shape, conflict detection against the calendar and other candidates, and
-ranking by fit with calendar history. Network calls are always mocked via
-requests.post/requests.get (see felinni.calendar_sources's tests for the
-same pattern) - these never hit a real endpoint."""
+shape, listing-page/occurrence-picking edge cases, conflict detection against
+the calendar and other candidates, and ranking by fit with calendar history.
+Network calls are always mocked via requests.post/requests.get (see
+felinni.calendar_sources's tests for the same pattern) - these never hit a
+real endpoint."""
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis"))
@@ -15,8 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis"))
 from felinni import future_events, ingest
 
 # A trimmed but structurally faithful DuckDuckGo HTML results page: one
-# meetup.com hit (should survive the domain filter), one unrelated hit
-# (should be dropped even though it matched the query), and a result whose
+# meetup.com event page (should survive the domain+URL-shape filter), an
+# Eventbrite-style "browse this whole city" listing page (should be
+# dropped even though it matched the site: filter), and a result whose
 # link is wrapped in DDG's outbound-redirect format (should be unwrapped).
 SAMPLE_DDG_HTML = """
 <div class="result results_links results_links_deep web-result">
@@ -30,9 +33,9 @@ SAMPLE_DDG_HTML = """
 <div class="result results_links results_links_deep web-result">
   <div class="result__body">
     <h2 class="result__title">
-      <a rel="nofollow" class="result__a" href="https://www.some-blog.com/best-la-events">Best LA Events This Month</a>
+      <a rel="nofollow" class="result__a" href="https://www.meetup.com/find/?location=la">Discover Los Angeles Events &amp; Activities</a>
     </h2>
-    <a class="result__snippet" href="https://www.some-blog.com/best-la-events">A roundup of things to do around town.</a>
+    <a class="result__snippet" href="https://www.meetup.com/find/?location=la">Browse everything happening in LA.</a>
   </div>
 </div>
 <div class="result results_links results_links_deep web-result">
@@ -45,8 +48,8 @@ SAMPLE_DDG_HTML = """
 </div>
 """
 
-# A schema.org Event JSON-LD block as Meetup/Eventbrite/Luma embed on an
-# event page, wrapped in the surrounding HTML a real page would have.
+# A schema.org Event JSON-LD block as a real event page embeds for SEO,
+# wrapped in the surrounding HTML a real page would have.
 SAMPLE_EVENT_PAGE_HTML = """
 <html><head>
 <script type="application/ld+json">
@@ -67,6 +70,17 @@ SAMPLE_EVENT_PAGE_HTML = """
 """
 
 SAMPLE_EVENT_PAGE_NO_JSONLD = "<html><body><p>No structured data here.</p></body></html>"
+
+
+def _multi_date_page_html(dates):
+    """A "multiple dates" listing embedding one Event JSON-LD block per
+    occurrence, the way a real recurring-event page does."""
+    scripts = "\n".join(
+        f'<script type="application/ld+json">{{"@type": "Event", "name": "Perfume Making Class", '
+        f'"startDate": "{start}", "endDate": "{end}", "location": {{"name": "Sunset Rooftop"}}}}</script>'
+        for start, end in dates
+    )
+    return f"<html><head>{scripts}</head></html>"
 
 
 def _mock_response(text):
@@ -106,13 +120,22 @@ def test_platform_events_parses_and_filters_by_domain():
          patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.platform_events("meetup", region="Los Angeles, CA")
 
-    assert len(events) == 2  # the some-blog.com result is dropped
+    assert len(events) == 2  # the discover/browse listing page is dropped
     assert events[0]["title"] == "LA Hikers & Outdoors Meetup"
     assert events[0]["url"] == "https://www.meetup.com/la-hikers/events/123/"
     assert events[0]["source"] == "meetup"
     assert events[0]["location"] == "Los Angeles, CA"  # falls back to region - no JSON-LD on this page
     assert events[0]["start"] is None
     assert "Griffith Park" in events[0]["snippet"]
+
+
+def test_platform_events_drops_a_browse_listing_page():
+    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        events = future_events.platform_events("meetup")
+
+    assert all("discover" not in e["title"].casefold() for e in events)
+    assert all("find" not in e["url"] for e in events)
 
 
 def test_platform_events_unwraps_ddg_redirect_links():
@@ -162,12 +185,147 @@ def test_platform_events_enriches_from_event_page_jsonld():
     assert "Griffith Park" in event["location"]
 
 
-def test_enrich_with_event_page_leaves_event_unchanged_on_fetch_failure():
+def test_enrich_with_event_page_falls_back_to_text_date_when_page_has_no_jsonld():
+    stub = {
+        "title": "American International Short Film Festival Tickets, Monday, September 14, 2026",
+        "url": "https://www.eventbrite.com/e/short-film-festival-tickets-123",
+        "start": None, "end": None, "duration_hours": None,
+        "location": "Los Angeles, CA", "source": "eventbrite",
+        "snippet": "Eventbrite - American International Short Film Festival presents ... "
+                   "Monday, September 14, 2026 at City Club LA, Los Angeles, CA.",
+    }
+    with patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        enriched = future_events.enrich_with_event_page(stub)
+
+    assert enriched["start"] is not None
+    assert enriched["start"].startswith("2026-09-14")
+    assert enriched["end"] is not None
+
+
+def test_enrich_with_event_page_falls_back_to_text_date_when_fetch_fails():
+    stub = {
+        "title": "X", "url": "https://www.eventbrite.com/e/x",
+        "start": None, "end": None, "duration_hours": None,
+        "location": "Los Angeles, CA", "source": "eventbrite",
+        "snippet": "Join us Monday, September 14, 2026 at 7:00PM for something fun.",
+    }
+    with patch("requests.get", side_effect=OSError("blocked")):
+        enriched = future_events.enrich_with_event_page(stub)
+    assert enriched["start"] is not None
+    assert enriched["start"].startswith("2026-09-14")
+
+
+def test_enrich_with_event_page_leaves_event_unchanged_when_no_date_anywhere():
     stub = {"title": "X", "url": "https://www.meetup.com/x", "start": None, "end": None,
-            "duration_hours": None, "location": "Los Angeles, CA", "source": "meetup", "snippet": ""}
+            "duration_hours": None, "location": "Los Angeles, CA", "source": "meetup", "snippet": "no date here"}
     with patch("requests.get", side_effect=OSError("network unreachable")):
         enriched = future_events.enrich_with_event_page(stub)
     assert enriched == stub
+
+
+def test_multi_date_listing_picks_the_soonest_future_occurrence_not_a_blended_span():
+    """A "multiple dates" listing (e.g. a recurring class) embeds one Event
+    JSON-LD block per occurrence. Previously this module took only the
+    first node found and combined whichever start/end it had, which could
+    accidentally pair one occurrence's start with a much later occurrence's
+    end - reported as a single event spanning many months. It should
+    instead pick one whole, self-consistent occurrence: the soonest one
+    still in the future."""
+    now = future_events._now_utc()
+    past_start = now - pd.Timedelta(days=30)
+    soon_start = now + pd.Timedelta(days=10)
+    later_start = now + pd.Timedelta(days=200)
+    dates = [
+        (past_start.isoformat(), (past_start + pd.Timedelta(hours=2)).isoformat()),
+        (soon_start.isoformat(), (soon_start + pd.Timedelta(hours=2)).isoformat()),
+        (later_start.isoformat(), (later_start + pd.Timedelta(hours=2)).isoformat()),
+    ]
+    stub = {
+        "title": "Perfume Making Class", "url": "https://www.eventbrite.com/e/perfume-class",
+        "start": None, "end": None, "duration_hours": None,
+        "location": "Los Angeles, CA", "source": "eventbrite", "snippet": "Multiple dates",
+    }
+    with patch("requests.get", return_value=_mock_response(_multi_date_page_html(dates))):
+        enriched = future_events.enrich_with_event_page(stub)
+
+    picked_start = pd.Timestamp(enriched["start"])
+    assert abs((picked_start - soon_start).total_seconds()) < 1
+    assert enriched["duration_hours"] == 2.0  # one coherent occurrence's own start+end, not a blended span
+
+
+def test_implausibly_long_span_is_treated_as_unknown_end():
+    stub = {
+        "title": "X", "url": "https://www.eventbrite.com/e/x", "start": None, "end": None,
+        "duration_hours": None, "location": "LA", "source": "eventbrite", "snippet": "",
+    }
+    page = _multi_date_page_html([("2026-08-14T03:00:00Z", "2027-03-24T05:00:00Z")])
+    with patch("requests.get", return_value=_mock_response(page)):
+        enriched = future_events.enrich_with_event_page(stub)
+    assert enriched["start"] is not None
+    assert enriched["end"] is None
+    assert enriched["duration_hours"] is None
+
+
+def test_other_web_events_skips_known_platform_domains():
+    ddg_html = """
+    <div class="result"><div class="result__body">
+      <h2 class="result__title"><a class="result__a" href="https://www.meetup.com/x/events/1/">Meetup event</a></h2>
+      <a class="result__snippet" href="https://www.meetup.com/x/events/1/">snippet</a>
+    </div></div>
+    """
+    with patch("requests.post", return_value=_mock_response(ddg_html)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+        events = future_events.other_web_events(region="Los Angeles, CA")
+    assert events == []
+
+
+def test_other_web_events_keeps_a_confirmed_real_event_from_any_domain():
+    ddg_html = """
+    <div class="result"><div class="result__body">
+      <h2 class="result__title"><a class="result__a" href="https://www.residentadvisor.net/events/123">A real show</a></h2>
+      <a class="result__snippet" href="https://www.residentadvisor.net/events/123">Live music tonight.</a>
+    </div></div>
+    """
+    with patch("requests.post", return_value=_mock_response(ddg_html)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+        events = future_events.other_web_events(region="Los Angeles, CA")
+    assert len(events) == 1
+    assert events[0]["source"] == "residentadvisor.net"
+    assert events[0]["start"] is not None
+
+
+def test_other_web_events_drops_results_with_no_confirmed_date():
+    ddg_html = """
+    <div class="result"><div class="result__body">
+      <h2 class="result__title"><a class="result__a" href="https://www.some-blog.com/best-events">Best events roundup</a></h2>
+      <a class="result__snippet" href="https://www.some-blog.com/best-events">A blog post, not an event page.</a>
+    </div></div>
+    """
+    with patch("requests.post", return_value=_mock_response(ddg_html)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        events = future_events.other_web_events(region="Los Angeles, CA")
+    assert events == []
+
+
+def test_ollama_event_ideas_returns_empty_when_ollama_unavailable(df):
+    with patch("requests.post", side_effect=OSError("connection refused")):
+        assert future_events.ollama_event_ideas(df) == []
+
+
+def test_ollama_event_ideas_parses_response_lines(df):
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {"response": "- Try a new hiking trail\n- Visit a local museum\n"}
+    with patch("requests.post", return_value=resp):
+        ideas = future_events.ollama_event_ideas(df, limit=2)
+    assert len(ideas) == 2
+    assert ideas[0]["is_ai_suggestion"] is True
+    assert ideas[0]["url"] is None
+    assert "hiking trail" in ideas[0]["title"]
+
+
+def test_ollama_event_ideas_empty_for_empty_calendar():
+    assert future_events.ollama_event_ideas(pd.DataFrame()) == []
 
 
 def test_calendar_conflicts_finds_overlapping_calendar_event(df):
@@ -191,6 +349,12 @@ def test_event_conflicts_finds_overlap_between_candidates():
     b = {"title": "B", "url": "urlB", "start": "2026-10-03T19:00:00", "end": "2026-10-03T21:00:00", "source": "eventbrite"}
     assert future_events.event_conflicts(a, [a, b])[0]["title"] == "B"
     assert future_events.event_conflicts(b, [a, b])[0]["title"] == "A"
+
+
+def test_event_conflicts_does_not_treat_two_urlless_ai_ideas_as_conflicting():
+    a = {"title": "Idea A", "url": None, "start": None, "end": None}
+    b = {"title": "Idea B", "url": None, "start": None, "end": None}
+    assert future_events.event_conflicts(a, [a, b]) == []
 
 
 def test_annotate_conflicts_flags_both_calendar_and_event_conflicts(df):
@@ -233,6 +397,7 @@ def test_suggestions_for_ranks_matching_category_and_time_higher(df):
     assert ranked[0]["matched_category"] == "Outdoors"
     assert ranked[0]["fit_score"] > ranked[1]["fit_score"]
     assert "Alice" in ranked[0]["suggested_people"]  # top trail-run companion
+    assert "Outdoors" in ranked[0]["people_reason"]
 
 
 def test_suggestions_for_penalizes_conflicting_events(df):
@@ -247,6 +412,24 @@ def test_suggestions_for_penalizes_conflicting_events(df):
     assert any("conflict" in reason for reason in ranked[0]["fit_reasons"])
 
 
-def test_suggested_people_falls_back_to_overall_frequency_for_unmatched_category(df):
-    people = future_events.suggested_people(df, category=None)
+def test_suggested_people_uses_category_when_matched(df):
+    people, reason = future_events.suggested_people(df, category="Outdoors")
     assert "Alice" in people
+    assert "Outdoors" in reason
+
+
+def test_suggested_people_falls_back_to_location_when_no_category(df):
+    people, reason = future_events.suggested_people(df, category=None, location="Griffith Park Trailhead")
+    assert "Alice" in people
+    assert "Griffith Park" in reason
+
+
+def test_suggested_people_falls_back_to_overall_frequency_when_nothing_matches(df):
+    people, reason = future_events.suggested_people(df, category=None, location=None)
+    assert "Alice" in people
+    assert "overall" in reason
+
+
+def test_suggested_people_empty_for_empty_calendar():
+    people, reason = future_events.suggested_people(pd.DataFrame(), category="Outdoors")
+    assert people == []
