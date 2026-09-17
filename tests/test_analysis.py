@@ -72,6 +72,17 @@ def test_anomalies_catch_the_simulated_work_crunch(df):
     assert any(pd.Timestamp("2024-10-01") <= idx <= pd.Timestamp("2024-11-20") for idx in packed_weeks.index)
 
 
+def test_anomalies_also_catch_empty_weeks(df):
+    # A regression test: a handful of packed weeks (the simulated work
+    # crunch above) used to inflate the raw standard deviation enough that
+    # "mean - 2*std" went negative, making it mathematically impossible
+    # for any week - however empty - to ever be flagged, silently. Scoring
+    # on log1p(hours) instead fixes that; this dataset does have some
+    # single-event weeks, so they should show up here.
+    flagged = anomalies.anomalous_weeks(df, z_threshold=2.0)
+    assert (flagged["label"] == "empty").any()
+
+
 def test_travel_timeline_collapses_consecutive_events_into_trips(df):
     trips = travel.trip_timeline(df)
     assert len(trips) == 3

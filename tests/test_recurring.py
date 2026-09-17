@@ -77,6 +77,29 @@ def test_streak_days_spans_first_to_last_occurrence(tmp_path):
     assert row["streak_days"] == 9 * 7
 
 
+def test_default_as_of_uses_real_now_not_an_unrelated_future_event(tmp_path):
+    # A real bug: defaulting as_of to the dataset's latest event date meant
+    # an unrelated future-dated event (a recurring series' own
+    # pre-materialized future instances, or just a flight you already
+    # booked) could make an actively-ongoing series look "stopped" purely
+    # because something else on the calendar was dated even later.
+    now = pd.Timestamp.now().replace(hour=9, minute=0, second=0, microsecond=0)
+    events = [_recurring_event(i, "Standup", now - pd.Timedelta(weeks=9) + pd.Timedelta(weeks=i)) for i in range(9)]
+    events.append(_recurring_event(9, "Standup", now - pd.Timedelta(days=1)))
+    events.append({
+        "id": "evt-future", "title": "Future Flight", "notes": None, "location": None,
+        "startDate": (now + pd.Timedelta(days=400)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "endDate": (now + pd.Timedelta(days=400, hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "isAllDay": False, "calendarTitle": "Travel", "calendarColorHex": None,
+        "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+    })
+    df = _load(tmp_path, events)
+
+    result = recurring.recurring_series(df)  # no as_of passed - uses the real-now default
+    row = result[result["title"] == "Standup"].iloc[0]
+    assert row["status"] == "active"
+
+
 def test_series_with_too_few_occurrences_is_skipped(tmp_path):
     start = pd.Timestamp("2024-01-01")
     events = [_recurring_event(i, "New Thing", start + pd.Timedelta(weeks=i)) for i in range(2)]

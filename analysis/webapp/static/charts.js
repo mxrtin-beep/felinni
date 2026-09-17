@@ -3,7 +3,10 @@
 // shared hover tooltip, legend for multi-series charts.
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4", "--series-5", "--series-6"];
+const SERIES_VARS = [
+  "--series-1", "--series-2", "--series-3", "--series-4", "--series-5", "--series-6",
+  "--series-7", "--series-8", "--series-9", "--series-10", "--series-11", "--series-12",
+];
 
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

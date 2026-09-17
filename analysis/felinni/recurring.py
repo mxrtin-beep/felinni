@@ -24,8 +24,16 @@ def recurring_series(
       - "stopped": longer than that, or no longer occurring at its old pace
     Series with fewer than `min_occurrences` are skipped - too little
     history to infer a cadence from.
+
+    Defaults `as_of` to the real current time, not the dataset's latest
+    event - a calendar export routinely contains events dated after
+    today (a recurring series' own future-materialized instances, a
+    one-off event you already scheduled), and using whichever happens to
+    be latest as "now" can make a series that's still going on look
+    "stopped" just because some *other*, unrelated event on your calendar
+    happens to be dated later still.
     """
-    as_of = as_of or df["start"].max()
+    as_of = as_of or pd.Timestamp.now()
     recurring = df[df["is_recurring"]]
 
     rows = []

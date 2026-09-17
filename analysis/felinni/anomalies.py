@@ -2,6 +2,7 @@
 as a rough proxy for stress or low periods."""
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from felinni.ingest import timed_events
@@ -22,15 +23,32 @@ def weekly_load(df: pd.DataFrame) -> pd.DataFrame:
     })
 
 
+def _z_scores(hours: pd.Series) -> pd.Series | None:
+    """Z-scores computed on log1p(hours) rather than raw hours. Weekly
+    hours are bounded at 0 but not above, so a handful of unusually packed
+    weeks (a work crunch, a trip) inflate the raw standard deviation
+    enough that `mean - z_threshold*std` goes negative - at which point no
+    week, however empty, can ever be `z_threshold` deviations *below* the
+    mean, and "empty" detection silently stops firing while "packed" keeps
+    working. log1p compresses that right skew so both directions stay
+    meaningful. Returns None when there's no variation to score against."""
+    log_hours = np.log1p(hours)
+    mean, std = log_hours.mean(), log_hours.std()
+    if not std:
+        return None
+    return (log_hours - mean) / std
+
+
 def anomalous_weeks(df: pd.DataFrame, z_threshold: float = 2.0) -> pd.DataFrame:
     """Weeks whose total scheduled hours are `z_threshold` standard
-    deviations away from your own mean week, flagged as packed/empty."""
+    deviations away from your own mean week (log-scaled - see
+    `_z_scores`), flagged as packed/empty."""
     load = weekly_load(df)
-    mean, std = load["total_hours"].mean(), load["total_hours"].std()
-    if not std:
+    z_scores = _z_scores(load["total_hours"])
+    if z_scores is None:
         return load.assign(z_score=0.0, label="typical").iloc[0:0]
 
-    load["z_score"] = (load["total_hours"] - mean) / std
+    load["z_score"] = z_scores
     load["label"] = load["z_score"].apply(
         lambda z: "packed" if z >= z_threshold else ("empty" if z <= -z_threshold else "typical")
     )
@@ -63,10 +81,9 @@ def category_anomalies(df: pd.DataFrame, z_threshold: float = 2.0, min_active_we
         series = pivot[category]
         if (series > 0).sum() < min_active_weeks:
             continue
-        mean, std = series.mean(), series.std()
-        if not std:
+        z = _z_scores(series)
+        if z is None:
             continue
-        z = (series - mean) / std
         for week, z_score in z.items():
             if z_score >= z_threshold:
                 label = "packed"

@@ -800,15 +800,17 @@ function buildCategoryColors(categories, realColors) {
   // already associate with each category. Categories without a captured
   // color (older exports, or a category set via a note tag rather than a
   // dedicated calendar) fall back to the fixed order - by overall
-  // frequency, so a category's color never repaints when a filter changes
-  // the set of series on screen.
+  // frequency, cycling through all 12 series colors (seriesColor wraps
+  // via modulo) rather than graying out anything past the 6th, so every
+  // category gets a real, distinct color instead of being lumped into a
+  // catch-all gray "Other".
   const colors = {};
   let fallbackSlot = 0;
   categories.forEach(cat => {
     if (realColors && realColors[cat]) {
       colors[cat] = realColors[cat];
     } else {
-      colors[cat] = fallbackSlot < 6 ? seriesColor(fallbackSlot) : cssVarSafe("--text-muted");
+      colors[cat] = seriesColor(fallbackSlot);
       fallbackSlot++;
     }
   });
@@ -854,18 +856,11 @@ let lastLocationsData = null;
 function renderMapLegend(categories) {
   const legend = document.getElementById("map-legend");
   legend.innerHTML = "";
-  const shown = categories.slice(0, 6);
-  const rest = categories.length > 6;
-  shown.forEach(cat => {
+  categories.forEach(cat => {
     const item = document.createElement("span");
-    item.innerHTML = `<span class="swatch" style="background:${categoryColors[cat]}"></span>${cat}`;
+    item.innerHTML = `<span class="swatch" style="background:${categoryColors[cat]}"></span>${escapeHtml(cat)}`;
     legend.appendChild(item);
   });
-  if (rest) {
-    const item = document.createElement("span");
-    item.innerHTML = `<span class="swatch" style="background:${cssVarSafe("--text-muted")}"></span>Other`;
-    legend.appendChild(item);
-  }
 }
 
 function populateYearSelects(minYear, maxYear) {

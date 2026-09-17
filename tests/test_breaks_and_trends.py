@@ -43,6 +43,20 @@ def test_person_trend_by_period_no_frequency_alias_errors(df):
         assert not result.empty
 
 
+def test_z_scores_handle_a_right_skewed_outlier_week():
+    # Raw mean/std z-scoring is structurally incapable of ever flagging an
+    # "empty" week once a couple of packed outliers inflate the std enough
+    # that "mean - z_threshold*std" goes negative - hours can't go below 0,
+    # so no week can ever be far enough below the mean. log1p first fixes
+    # that: mostly-quiet weeks with one huge outlier week should still
+    # score both directions.
+    hours = pd.Series([3.0] * 40 + [0.05] * 5 + [45.0])  # one big outlier among mostly-typical weeks
+    z = anomalies._z_scores(hours)
+    assert z is not None
+    assert (z <= -2.0).any()  # the quiet 0.5h weeks read as unusually empty
+    assert (z >= 2.0).any()   # the 60h week still reads as unusually packed
+
+
 def test_category_anomalies_flags_both_directions(df):
     result = anomalies.category_anomalies(df, z_threshold=2.0)
     assert not result.empty
