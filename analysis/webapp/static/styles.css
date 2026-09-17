@@ -379,6 +379,26 @@ th.sortable:hover {
   padding: 8px 0;
 }
 
+.future-event {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--grid);
+}
+
+.future-event:last-child {
+  border-bottom: none;
+}
+
+.future-event.has-conflict {
+  border-left: 3px solid var(--status-critical);
+  padding-left: 10px;
+}
+
+.future-conflict {
+  font-size: 12px;
+  color: var(--status-critical);
+  margin: 4px 0 0;
+}
+
 .badge {
   display: inline-block;
   font-size: 11px;

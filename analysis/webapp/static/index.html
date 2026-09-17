@@ -280,9 +280,11 @@
       <h2>Future</h2>
       <p class="card-note">
         Upcoming events from Eventbrite, Luma, and Meetup, found via a
-        DuckDuckGo search for your region - no platform API key/login
-        needed. Defaults to your geocoded home metro (Map tab); search a
-        different region below.
+        DuckDuckGo search for your region and enriched with start/end time,
+        duration, and location from each event's own page - no platform API
+        key/login needed. Flagged in red if it overlaps your calendar or
+        another suggestion below. Defaults to your geocoded home metro (Map
+        tab); search a different region below.
       </p>
       <div class="controls">
         <input type="text" id="future-region-input" placeholder="e.g. Los Angeles, CA">
@@ -291,8 +293,8 @@
       <p class="card-note" id="future-note"></p>
     </div>
     <div class="card">
-      <h2>Suggested for you <span class="badge planned">Coming soon</span></h2>
-      <p class="card-note">Would rank upcoming events by fit with your habits - category overlap, your usual day/time, places you already frequent, people you tend to see. Not implemented yet - a search-result event doesn't carry a reliable date/category to score against your history with.</p>
+      <h2>Suggested for you</h2>
+      <p class="card-note">Ranked by fit with your habits - category overlap, your usual day/time, places you already frequent - each with people you might want to invite and a warning if it clashes with your calendar or another suggestion.</p>
       <div id="future-suggestions"><p class="empty-note">Nothing here yet.</p></div>
     </div>
     <div class="card">

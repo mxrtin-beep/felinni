@@ -75,10 +75,13 @@ tab's own filters stack on top.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
 - **Future** — upcoming events from Eventbrite, Luma, and Meetup for your
-  home region (or any region you type in), found via a DuckDuckGo search —
-  no API key/OAuth needed for any of the three. Ranking results by fit with
-  your habits is still a skeleton (search snippets don't carry a reliable
-  date/category to score against your history with).
+  home region (or any region you type in), found via a DuckDuckGo search
+  and enriched with start/end time, duration, and location straight from
+  each event's own page — no API key/OAuth needed for any of the three.
+  Flags anything that overlaps your calendar or another suggestion, and
+  ranks results by fit with your habits (category, usual day/time, familiar
+  venues), suggesting people to invite based on who you usually do that
+  category with.
 
 ### Or skip the browser
 

@@ -78,6 +78,18 @@ function table(container, columns, rows) {
 
 function fmtHours(h) { return h == null ? "-" : `${Math.round(h)}h`; }
 function fmtDate(d) { return d ? d.slice(0, 10) : "-"; }
+function fmtDateTime(d) {
+  if (!d) return "-";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function fmtDuration(hours) {
+  if (hours == null) return null;
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
 function fmtPct(p) { return p == null ? "-" : `${(p * 100).toFixed(0)}%`; }
 function cssVarSafe(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
@@ -775,6 +787,39 @@ async function loadAnomalies() {
 }
 
 // --- Future (Eventbrite/Luma/Meetup events found via a DuckDuckGo search) ---
+function _futureConflictNote(e) {
+  if (!e.conflicts || !e.conflicts.length) return "";
+  const items = e.conflicts.map(c => {
+    const label = c.type === "calendar" ? "your calendar" : `another suggestion (${escapeHtml(c.source || "")})`;
+    return `${escapeHtml(c.title)} on ${label}`;
+  }).join("; ");
+  return `<p class="future-conflict">&#9888; Conflicts with ${items}</p>`;
+}
+
+function _futureEventCard(e) {
+  const when = e.start
+    ? `${fmtDateTime(e.start)}${e.end ? ` – ${fmtDateTime(e.end)}` : ""}${e.duration_hours ? ` (${fmtDuration(e.duration_hours)})` : ""}`
+    : "Date/time unknown";
+  const people = e.suggested_people && e.suggested_people.length
+    ? `<p class="card-note">Consider inviting: ${e.suggested_people.map(escapeHtml).join(", ")}</p>`
+    : "";
+  const fit = e.fit_reasons && e.fit_reasons.length
+    ? `<p class="card-note">${e.fit_reasons.map(escapeHtml).join(" · ")}</p>`
+    : "";
+  return `
+    <div class="future-event${e.has_conflict ? " has-conflict" : ""}">
+      <p>
+        <a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a>
+        <span class="source-meta">${escapeHtml(e.source || "")}</span>
+      </p>
+      <p class="card-note">${escapeHtml(when)}${e.location ? ` &middot; ${escapeHtml(e.location)}` : ""}</p>
+      ${e.snippet ? `<p class="card-note">${escapeHtml(e.snippet)}</p>` : ""}
+      ${fit}
+      ${people}
+      ${_futureConflictNote(e)}
+    </div>`;
+}
+
 async function loadFuture(region) {
   const query = region ? `future?region=${encodeURIComponent(region)}` : "future";
   const data = await api(query);
@@ -785,17 +830,12 @@ async function loadFuture(region) {
 
   const suggestions = document.getElementById("future-suggestions");
   suggestions.innerHTML = data.suggestions.length
-    ? data.suggestions.map(s => `<p>${escapeHtml(s.title)}</p>`).join("")
+    ? data.suggestions.map(_futureEventCard).join("")
     : '<p class="empty-note">Nothing here yet.</p>';
 
   const events = document.getElementById("future-events");
   events.innerHTML = data.events.length
-    ? data.events.map(e => `
-        <p>
-          <a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a>
-          <span class="source-meta">${escapeHtml(e.source || "")}</span>
-          ${e.snippet ? `<br><span class="card-note">${escapeHtml(e.snippet)}</span>` : ""}
-        </p>`).join("")
+    ? data.events.map(_futureEventCard).join("")
     : '<p class="empty-note">Nothing here yet.</p>';
 }
 
