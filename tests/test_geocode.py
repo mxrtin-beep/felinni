@@ -400,3 +400,83 @@ def test_clear_diagnostics_entry_removes_only_that_location(tmp_path):
 
     remaining = geocode.load_diagnostics(diagnostics_path)
     assert remaining == {"B": "reason B"}
+
+
+# --- Real failures a user hit: a UCLA-category address that already has its
+# own city/state/ZIP getting a redundant, conflicting "UCLA, Los Angeles,
+# CA" anchor appended, and a flattened multi-line address missing the comma
+# between the street and city. ---
+
+def test_insert_missing_city_comma_fixes_a_flattened_address():
+    fixed = geocode._insert_missing_city_comma("11024 Strathmore Dr Los Angeles, CA, United States")
+    assert fixed == "11024 Strathmore Dr, Los Angeles, CA, United States"
+
+
+def test_insert_missing_city_comma_handles_multi_word_city():
+    fixed = geocode._insert_missing_city_comma("1 Amgen Center Dr Newbury Park, CA, United States")
+    assert fixed == "1 Amgen Center Dr, Newbury Park, CA, United States"
+
+
+def test_insert_missing_city_comma_is_a_no_op_when_already_well_formed():
+    already_fine = "Broad Art Center 240 Charles E Young Dr N, Los Angeles, CA 90095, United States"
+    assert geocode._insert_missing_city_comma(already_fine) == already_fine
+
+
+def test_looks_like_complete_address_true_for_zip_or_country():
+    assert geocode._looks_like_complete_address("Covel Commons 200 De Neve Dr, Los Angeles, CA 90095, United States")
+    assert geocode._looks_like_complete_address("1 Amgen Center Dr Newbury Park, CA, United States")
+
+
+def test_looks_like_complete_address_false_for_a_bare_building_name():
+    assert not geocode._looks_like_complete_address("North Campus Student Center")
+    assert not geocode._looks_like_complete_address("Boelter 5800")
+
+
+def test_anchor_skipped_for_an_address_that_already_has_its_own_city_state(tmp_path):
+    """A UCLA-category event whose location is already a full mailing
+    address shouldn't get ", UCLA, Los Angeles, CA" tacked onto the end -
+    that redundant, conflicting context is what was breaking an otherwise
+    perfectly resolvable address."""
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    queries_seen = []
+
+    def fake_geocode(query, **kwargs):
+        queries_seen.append(query)
+        return _fake_result()
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = fake_geocode
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["Broad Art Center 240 Charles E Young Dr N, Los Angeles, CA 90095, United States"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path, rate_limit_seconds=0,
+            location_categories={"Broad Art Center 240 Charles E Young Dr N, Los Angeles, CA 90095, United States": "UCLA Classes"},
+            anchors={"ucla": "UCLA, Los Angeles, CA"},
+        )
+
+    assert queries_seen == ["Broad Art Center 240 Charles E Young Dr N, Los Angeles, CA 90095, United States"]
+
+
+def test_bounded_amgen_anchor_also_skipped_for_a_complete_address(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    seen_kwargs = {}
+
+    def fake_geocode(query, **kwargs):
+        seen_kwargs.update(kwargs)
+        return _fake_result()
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = fake_geocode
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["1 Amgen Center Dr Newbury Park, CA, United States"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path, rate_limit_seconds=0,
+            location_categories={"1 Amgen Center Dr Newbury Park, CA, United States": "Work"},
+            anchors={"amgen": {"query": "Amgen, Thousand Oaks, CA", "lat": 34.2064, "lon": -118.8253, "radius_km": 2.0}},
+        )
+
+    assert "bounded" not in seen_kwargs

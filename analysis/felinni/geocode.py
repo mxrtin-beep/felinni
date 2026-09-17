@@ -19,10 +19,25 @@ context appended to the query for locations whose name/category matches a
 keyword), and an adaptive region bias (queries are nudged toward wherever
 your *other* locations this run already resolved to, without excluding
 genuinely distant results like real trips).
+
+Two query-shape fixups run before any of that: a location that already
+looks like a complete mailing address (has its own ZIP or "United States")
+skips the anchor entirely - appending redundant context to an
+already-complete address doesn't help and can make Nominatim's parser fail
+outright instead of just ignoring the extra text - and a missing comma
+between the street and city (common when a calendar app flattens a
+multi-line map address onto one line, e.g. "...Strathmore Dr Los Angeles,
+CA...") is inserted back, since Nominatim leans heavily on commas to tell
+address components apart. Neither fixes a business name glued directly onto
+its own street number with no separator at all ("101 Boxing Club 1714
+Newbury Rd...") - Nominatim's free-text search can still choke on which
+number is the real house number there, and that one still needs a manual
+override.
 """
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -188,7 +203,47 @@ def clear_diagnostics_entry(location: str, path: str | Path = DEFAULT_DIAGNOSTIC
         _save_json(path, diagnostics)
 
 
+_COMPLETE_ADDRESS_RE = re.compile(r"\b\d{5}(-\d{4})?\b|\bunited states\b|\busa\b", re.IGNORECASE)
+
+
+def _looks_like_complete_address(loc: str) -> bool:
+    """True once `loc` already carries its own city/state/ZIP/country -
+    i.e. it's a full mailing address, not a bare building/room name. An
+    anchor exists to give a BARE name ("North Campus Student Center")
+    enough context to resolve - appending that same context to an address
+    that's already complete doesn't help and can actively break it:
+    Nominatim's free-text parser tries to fit every token into one
+    coherent address, and a trailing "..., UCLA, Los Angeles, CA" tacked
+    onto a query that already ends in its own "..., Los Angeles, CA,
+    United States" gives it two conflicting endings to reconcile, which
+    can fail outright instead of just being ignored."""
+    return bool(_COMPLETE_ADDRESS_RE.search(loc))
+
+
+# Calendar apps often hand back a location as "<name> <street address>" with
+# the multi-line address (as shown in a map picker) flattened onto one line -
+# and the line break between the street and the city sometimes turns into a
+# bare space instead of a comma ("...Newbury Park Dr Newbury Park, CA..."
+# has one but "...11024 Strathmore Dr Los Angeles, CA..." doesn't). Nominatim
+# leans heavily on commas to separate address components, so a query missing
+# just this one comma can fail to resolve even though the address itself is
+# perfectly real - inserting it back is usually enough to fix that.
+_STREET_SUFFIXES = (
+    r"St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Rd|Road|Ln|Lane|Way|Ct|Court|"
+    r"Pl|Place|Plaza|Cir|Circle|Pkwy|Parkway|Ter|Terrace|Hwy|Highway|Sq|Square"
+)
+_MISSING_CITY_COMMA_RE = re.compile(
+    rf"\b({_STREET_SUFFIXES})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*),\s*([A-Z]{{2}})\b"
+)
+
+
+def _insert_missing_city_comma(text: str) -> str:
+    return _MISSING_CITY_COMMA_RE.sub(r"\1, \2, \3", text)
+
+
 def _anchor_for(loc: str, category: str | None, anchors: dict) -> str | dict | None:
+    if _looks_like_complete_address(loc):
+        return None
     haystacks = [loc.lower()] + ([category.lower()] if category else [])
     for key, value in anchors.items():
         if any(key.lower() in h for h in haystacks):
@@ -319,7 +374,7 @@ def geocode_locations(
     if on_progress:
         on_progress(0, total)
     for i, loc in enumerate(to_fetch):
-        query = loc
+        query = _insert_missing_city_comma(loc)
         anchor = _anchor_for(loc, location_categories.get(loc), anchors)
         anchor_text = _anchor_query_text(anchor)
         if anchor_text:
