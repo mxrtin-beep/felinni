@@ -150,13 +150,17 @@
           <option value="month">Month</option>
           <option value="week">Week</option>
         </select>
+        <div class="dropdown-check" id="people-picker-dropdown">
+          <button type="button" id="people-picker-toggle" class="dropdown-toggle">People ▾</button>
+          <div class="dropdown-panel" id="people-picker-panel" style="display:none">
+            <div class="controls" style="margin-bottom:8px">
+              <button id="people-picker-all" type="button">All</button>
+              <button id="people-picker-none" type="button">None</button>
+            </div>
+            <div id="people-picker-list" class="dropdown-checklist"></div>
+          </div>
+        </div>
       </div>
-      <p class="card-note">Pick which of your top people to show.</p>
-      <div class="controls" style="margin-bottom:8px">
-        <button id="people-picker-all" type="button">All</button>
-        <button id="people-picker-none" type="button">None</button>
-      </div>
-      <div id="people-picker-list" class="controls" style="flex-wrap:wrap"></div>
       <div id="people-year-chart"></div>
     </div>
     <div class="card">

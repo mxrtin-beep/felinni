@@ -1,4 +1,5 @@
 """Smoke tests for the dashboard's Flask API against the synthetic fixture."""
+import json
 import sys
 import time
 from pathlib import Path
@@ -265,6 +266,33 @@ def test_add_sync_hide_delete_source_via_api(client, monkeypatch, tmp_path):
         assert client.get("/api/sources").get_json() == []
     finally:
         server.DF = original_df
+
+
+def test_source_events_deduped_against_primary_events(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.calendar_sources, "DEFAULT_MANIFEST_PATH", tmp_path / "sources.json")
+    monkeypatch.setattr(server.calendar_sources, "DEFAULT_SOURCES_DIR", tmp_path / "sources")
+    primary_events = [{
+        "id": "primary-1", "title": "Imported Event", "notes": None, "location": None,
+        "startDate": "2024-01-02T17:00:00Z", "endDate": "2024-01-02T18:00:00Z",
+        "isAllDay": False, "calendarTitle": "Personal", "calendarColorHex": None,
+        "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+    }]
+    primary_path = tmp_path / "primary_events.json"
+    primary_path.write_text(json.dumps(primary_events))
+    monkeypatch.setattr(server, "EVENTS_PATH", str(primary_path))
+    original_df = server.DF
+    try:
+        with patch("requests.get", return_value=MagicMock(content=_SAMPLE_IMPORT_ICS, raise_for_status=MagicMock())):
+            resp = client.post("/api/sources", json={
+                "name": "Dup Cal", "provider": "google", "kind": "ics_url",
+                "url": "https://example.com/cal.ics",
+            })
+        assert resp.status_code == 200
+        matches = server.DF[server.DF["title"] == "Imported Event"]
+        assert len(matches) == 1  # the same event from both sources isn't double-counted
+    finally:
+        server.DF = original_df
+        server.EVENTS_PATH = None
 
 
 def test_add_source_events_json_upload_via_api(client, monkeypatch, tmp_path):

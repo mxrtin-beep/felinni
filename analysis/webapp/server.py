@@ -82,6 +82,7 @@ def _reload_dataset() -> None:
     combined = _load_primary_events() + calendar_sources.merged_source_events(
         calendar_sources.DEFAULT_MANIFEST_PATH, calendar_sources.DEFAULT_SOURCES_DIR,
     )
+    combined = calendar_sources.dedupe_events(combined)
     DF = ingest.load_events_from_records(combined)
 
 

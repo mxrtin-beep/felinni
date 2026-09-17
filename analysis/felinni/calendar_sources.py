@@ -330,3 +330,24 @@ def merged_source_events(manifest_path: str | Path = DEFAULT_MANIFEST_PATH, sour
             continue
         combined.extend(load_source_events(entry["id"], sources_dir))
     return combined
+
+
+def dedupe_events(records: list[dict]) -> list[dict]:
+    """Drops events that look like the same real event repeated across
+    sources - e.g. your events.json export and a shared ICS link for the
+    same underlying Apple calendar. Different calendar systems don't share
+    a common event id, so this matches on (title, start, end) instead,
+    case-insensitively on the title - a real duplicate of the same event
+    has identical timing, so this is exact rather than fuzzy. The first
+    occurrence wins; `webapp/server.py` lists the primary events.json
+    before any imported source, so that copy is kept over a duplicate
+    from an import."""
+    seen = set()
+    deduped = []
+    for event in records:
+        key = ((event.get("title") or "").strip().casefold(), event.get("startDate"), event.get("endDate"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(event)
+    return deduped

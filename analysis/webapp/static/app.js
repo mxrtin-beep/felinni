@@ -379,11 +379,19 @@ async function loadPlaces() {
 }
 
 // --- People ---
+function updatePeoplePickerToggleLabel() {
+  const total = document.querySelectorAll("#people-picker-list input").length;
+  const checked = document.querySelectorAll("#people-picker-list input:checked").length;
+  document.getElementById("people-picker-toggle").textContent = `${checked} of ${total} people ▾`;
+}
+
 function populatePeoplePickerList(people) {
   const container = document.getElementById("people-picker-list");
   // Keep whatever the user already had checked across a data refresh;
   // only the very first render defaults to the top 6 (matching the old
-  // fixed top_n=6 behavior).
+  // fixed top_n=6 behavior) - everyone else is available in the dropdown
+  // but starts unchecked, since checking every single person by default
+  // would make the trend chart an unreadable tangle of lines.
   const isFirstRender = !container.dataset.rendered;
   const previouslyChecked = new Set(
     [...container.querySelectorAll("input:checked")].map(cb => cb.value)
@@ -393,6 +401,7 @@ function populatePeoplePickerList(people) {
     return `<label><input type="checkbox" class="people-picker-checkbox" value="${escapeHtml(p.person)}" ${checked ? "checked" : ""}> ${escapeHtml(p.person)}</label>`;
   }).join("");
   container.dataset.rendered = "1";
+  updatePeoplePickerToggleLabel();
 }
 
 async function loadPeople() {
@@ -403,15 +412,33 @@ async function loadPeople() {
   }
   const pickerList = document.getElementById("people-picker-list");
   if (!pickerList.dataset.wired) {
-    pickerList.addEventListener("change", refreshPeopleTrend);
+    pickerList.addEventListener("change", () => {
+      updatePeoplePickerToggleLabel();
+      refreshPeopleTrend();
+    });
     pickerList.dataset.wired = "1";
     document.getElementById("people-picker-all").addEventListener("click", () => {
       pickerList.querySelectorAll("input").forEach(cb => { cb.checked = true; });
+      updatePeoplePickerToggleLabel();
       refreshPeopleTrend();
     });
     document.getElementById("people-picker-none").addEventListener("click", () => {
       pickerList.querySelectorAll("input").forEach(cb => { cb.checked = false; });
+      updatePeoplePickerToggleLabel();
       refreshPeopleTrend();
+    });
+
+    // A dropdown, not an always-open list - toggled on the button, closed
+    // on an outside click (but not a click inside the panel itself).
+    const panel = document.getElementById("people-picker-panel");
+    const toggle = document.getElementById("people-picker-toggle");
+    toggle.addEventListener("click", () => {
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+    });
+    document.addEventListener("click", (e) => {
+      if (!document.getElementById("people-picker-dropdown").contains(e.target)) {
+        panel.style.display = "none";
+      }
     });
   }
 
@@ -420,7 +447,9 @@ async function loadPeople() {
   // never silently prevent the others from rendering.
   const results = await Promise.allSettled([
     (async () => {
-      const people = await api("people?limit=20");
+      // Everyone, not just a top slice - the dropdown should let you pick
+      // any person, and the bar chart above still only shows the top 15.
+      const people = await api("people?limit=1000");
       const sorted = [...people].sort((a, b) => b.total_hours - a.total_hours);
       horizontalBarChart(document.getElementById("people-chart"),
         sorted.slice(0, 15).map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });

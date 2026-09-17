@@ -126,6 +126,12 @@ failure on itself (bad link, network hiccup) rather than losing the
 calendar you just configured, so you can just click **Refresh now** once
 it's fixed.
 
+If the same real event shows up from more than one place - your own
+events.json and a shared/public link for that same Apple calendar, say -
+it's only counted once: events are matched on exact title + start + end
+across every source, and when two match, the one from events.json (or
+whichever was added first) wins over the later duplicate.
+
 Try it against the synthetic fixture first if you don't have a real
 export yet: `python webapp/server.py --events ../data/sample_events.json`.
 

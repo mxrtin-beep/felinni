@@ -206,3 +206,40 @@ def test_sync_all_url_sources_skips_file_based_ones(tmp_path):
         touched = calendar_sources.sync_all_url_sources(manifest_path, sources_dir)
     assert len(touched) == 1
     assert touched[0]["kind"] == "ics_url"
+
+
+def _event_stub(idx, title, start, end):
+    return {
+        "id": f"evt-{idx}", "title": title, "notes": None, "location": None,
+        "startDate": start, "endDate": end, "isAllDay": False,
+        "calendarTitle": "Cal", "calendarColorHex": None, "attendees": [],
+        "isRecurring": False, "url": None, "noteTags": {},
+    }
+
+
+def test_dedupe_events_drops_matching_title_start_end():
+    primary = [_event_stub(1, "Gym", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z")]
+    imported = [
+        _event_stub(2, "Gym", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z"),  # same event, re-imported
+        _event_stub(3, "Coffee", "2024-01-02T09:00:00Z", "2024-01-02T10:00:00Z"),  # genuinely new
+    ]
+    deduped = calendar_sources.dedupe_events(primary + imported)
+    assert len(deduped) == 2
+    assert deduped[0]["id"] == "evt-1"  # the primary copy wins, not the imported duplicate
+    assert {e["title"] for e in deduped} == {"Gym", "Coffee"}
+
+
+def test_dedupe_events_is_case_insensitive_on_title():
+    events = [
+        _event_stub(1, "Gym", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z"),
+        _event_stub(2, "GYM", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z"),
+    ]
+    assert len(calendar_sources.dedupe_events(events)) == 1
+
+
+def test_dedupe_events_keeps_events_with_different_times():
+    events = [
+        _event_stub(1, "Gym", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z"),
+        _event_stub(2, "Gym", "2024-01-02T09:00:00Z", "2024-01-02T10:00:00Z"),
+    ]
+    assert len(calendar_sources.dedupe_events(events)) == 2
