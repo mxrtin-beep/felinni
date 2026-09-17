@@ -110,7 +110,10 @@ def save_override(
     overrides_path.write_text(json.dumps(overrides, indent=2, sort_keys=True))
 
 
-def geocode_one(query: str, user_agent: str = "felinni-calendar-analysis") -> dict | None:
+DEFAULT_TIMEOUT_SECONDS = 10.0
+
+
+def geocode_one(query: str, user_agent: str = "felinni-calendar-analysis", timeout: float = DEFAULT_TIMEOUT_SECONDS) -> dict | None:
     """One-off live geocode of a free-text address/place, e.g. a corrected
     location a user typed into the Map tab. Not cached or rate-limited -
     meant for a single interactive lookup, not a bulk run."""
@@ -120,7 +123,7 @@ def geocode_one(query: str, user_agent: str = "felinni-calendar-analysis") -> di
     except ImportError as e:
         raise ImportError("geocode_one requires geopy: pip install geopy") from e
 
-    geolocator = Nominatim(user_agent=user_agent)
+    geolocator = Nominatim(user_agent=user_agent, timeout=timeout)
     try:
         result = geolocator.geocode(query, addressdetails=True)
     except GeocoderServiceError:
@@ -199,6 +202,7 @@ def geocode_locations(
     overrides_path: str | Path = DEFAULT_OVERRIDES_PATH,
     user_agent: str = "felinni-calendar-analysis",
     rate_limit_seconds: float = 1.0,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
     on_progress=None,
     location_categories: dict[str, str] | None = None,
     anchors: dict[str, str] = DEFAULT_LOCATION_ANCHORS,
@@ -216,6 +220,16 @@ def geocode_locations(
     multi-minute run (~1 request/sec). Locations with a manual override
     are never re-queried regardless of `force` - overrides always win and
     never touch the network.
+
+    `timeout` is how long to wait for each individual Nominatim response
+    before giving up on it (a `GeocoderTimedOut`, caught below like any
+    other failure) - deliberately generous, since geopy's own default is a
+    mere 1 second, far too short for Nominatim's real-world latency under
+    any load. A too-short timeout doesn't fail loudly - it just quietly
+    caches a string of otherwise-perfectly-geocodable locations as
+    unresolved, which is easy to mistake for "there's nothing there" (the
+    location string was too vague, etc.) rather than "the request would
+    have worked if it'd been allowed to finish."
 
     `location_categories` (location -> category, e.g. from
     `df.groupby("location")["category"].agg(...)`) lets a bare building
@@ -235,7 +249,7 @@ def geocode_locations(
     cache_path = Path(cache_path)
     cache = _load_cache(cache_path)
     overrides = _load_json(Path(overrides_path))
-    geolocator = Nominatim(user_agent=user_agent)
+    geolocator = Nominatim(user_agent=user_agent, timeout=timeout)
     location_categories = location_categories or {}
 
     # Overrides are applied unconditionally, including over a previously

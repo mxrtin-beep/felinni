@@ -262,3 +262,40 @@ def test_geocode_one_returns_none_when_not_found():
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
         result = geocode.geocode_one("nonsense query")
     assert result is None
+
+
+def test_geocode_locations_uses_a_generous_default_timeout(tmp_path):
+    """geopy's own Nominatim default timeout is 1 second - far too short
+    for real-world latency, and a location that times out is cached as an
+    unresolved failure indistinguishable from "couldn't find this place at
+    all" (see felinni.geocode's module docstring). A bulk run needs a much
+    longer per-request timeout than geopy's default, or a slow (but
+    otherwise perfectly geocodable) location silently drops out."""
+    cache_path = tmp_path / "cache.json"
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result()
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator) as mock_nominatim:
+        geocode.geocode_locations(["Navy Beach, Lee Vining, CA"], cache_path=cache_path, rate_limit_seconds=0)
+
+    assert mock_nominatim.call_args.kwargs["timeout"] == geocode.DEFAULT_TIMEOUT_SECONDS
+    assert mock_nominatim.call_args.kwargs["timeout"] > 1
+
+
+def test_geocode_locations_timeout_is_overridable(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result()
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator) as mock_nominatim:
+        geocode.geocode_locations(["Nopa"], cache_path=cache_path, rate_limit_seconds=0, timeout=30)
+
+    assert mock_nominatim.call_args.kwargs["timeout"] == 30
+
+
+def test_geocode_one_uses_a_generous_default_timeout():
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result()
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator) as mock_nominatim:
+        geocode.geocode_one("Navy Beach, Lee Vining, CA")
+    assert mock_nominatim.call_args.kwargs["timeout"] == geocode.DEFAULT_TIMEOUT_SECONDS
