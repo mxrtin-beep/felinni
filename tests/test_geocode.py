@@ -41,6 +41,7 @@ def test_anchor_appended_to_query_not_to_cache_key(tmp_path):
         result = geocode.geocode_locations(
             ["North Campus Student Center"],
             cache_path=cache_path,
+            diagnostics_path=tmp_path / "diagnostics.json",
             rate_limit_seconds=0,
             location_categories={"North Campus Student Center": "UCLA Clubs"},
             anchors={"ucla": "UCLA, Los Angeles, CA"},
@@ -67,6 +68,7 @@ def test_dict_anchor_bounds_the_search_to_its_radius(tmp_path):
         geocode.geocode_locations(
             ["Royce Hall"],
             cache_path=cache_path,
+            diagnostics_path=tmp_path / "diagnostics.json",
             rate_limit_seconds=0,
             location_categories={"Royce Hall": "UCLA Clubs"},
             anchors={"ucla": {"query": "UCLA, Los Angeles, CA", "lat": 34.0689, "lon": -118.4452, "radius_km": 3.0}},
@@ -95,6 +97,7 @@ def test_string_anchor_does_not_bound_the_search(tmp_path):
         geocode.geocode_locations(
             ["North Campus Student Center"],
             cache_path=cache_path,
+            diagnostics_path=tmp_path / "diagnostics.json",
             rate_limit_seconds=0,
             location_categories={"North Campus Student Center": "UCLA Clubs"},
             anchors={"ucla": "UCLA, Los Angeles, CA"},
@@ -113,6 +116,7 @@ def test_no_anchor_when_category_does_not_match(tmp_path):
         geocode.geocode_locations(
             ["Nopa"],
             cache_path=cache_path,
+            diagnostics_path=tmp_path / "diagnostics.json",
             rate_limit_seconds=0,
             location_categories={"Nopa": "Social"},
             anchors={"ucla": "UCLA, Los Angeles, CA"},
@@ -133,10 +137,10 @@ def test_failed_geocode_is_retried_on_next_run(tmp_path):
     fake_geolocator.geocode.side_effect = flaky_then_success
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
-        first = geocode.geocode_locations(["Mono Lake"], cache_path=cache_path, rate_limit_seconds=0)
+        first = geocode.geocode_locations(["Mono Lake"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0)
         assert first["Mono Lake"] is None  # cached as a failure...
 
-        second = geocode.geocode_locations(["Mono Lake"], cache_path=cache_path, rate_limit_seconds=0)
+        second = geocode.geocode_locations(["Mono Lake"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0)
         # ...but retried (not treated as permanently resolved) and now succeeds.
         assert second["Mono Lake"] is not None
         assert call_count["n"] == 2
@@ -157,7 +161,7 @@ def test_unwrapped_exception_does_not_abort_the_whole_batch(tmp_path):
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
         result = geocode.geocode_locations(
-            ["Bad Location", "Good Location"], cache_path=cache_path, rate_limit_seconds=0,
+            ["Bad Location", "Good Location"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0,
         )
 
     assert calls == ["Bad Location", "Good Location"]  # kept going past the failure
@@ -171,7 +175,7 @@ def test_successful_geocode_captures_structured_city_and_country(tmp_path):
     fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result(city="Santa Monica", country="United States")
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
-        result = geocode.geocode_locations(["Santa Monica Pier"], cache_path=cache_path, rate_limit_seconds=0)
+        result = geocode.geocode_locations(["Santa Monica Pier"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0)
 
     assert result["Santa Monica Pier"]["city"] == "Santa Monica"
     assert result["Santa Monica Pier"]["country"] == "United States"
@@ -191,7 +195,8 @@ def test_overrides_win_over_cache_and_skip_network(tmp_path):
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
         result = geocode.geocode_locations(
-            ["Santa Monica Pier"], cache_path=cache_path, overrides_path=overrides_path, rate_limit_seconds=0,
+            ["Santa Monica Pier"], cache_path=cache_path, overrides_path=overrides_path,
+            diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0,
         )
 
     assert result["Santa Monica Pier"]["lat"] == 34.0094
@@ -204,7 +209,7 @@ def test_force_reruns_already_cached_locations(tmp_path):
     fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result(lat=2.0, lon=2.0)
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
-        result = geocode.geocode_locations(["Nopa"], cache_path=cache_path, rate_limit_seconds=0, force=True)
+        result = geocode.geocode_locations(["Nopa"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0, force=True)
 
     assert result["Nopa"]["lat"] == 2.0
     fake_geolocator.geocode.assert_called()
@@ -219,7 +224,8 @@ def test_force_does_not_touch_overridden_locations(tmp_path):
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
         result = geocode.geocode_locations(
-            ["Nopa"], cache_path=cache_path, overrides_path=overrides_path, rate_limit_seconds=0, force=True,
+            ["Nopa"], cache_path=cache_path, overrides_path=overrides_path,
+            diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0, force=True,
         )
 
     assert result["Nopa"]["lat"] == 9.0
@@ -276,7 +282,7 @@ def test_geocode_locations_uses_a_generous_default_timeout(tmp_path):
     fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result()
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator) as mock_nominatim:
-        geocode.geocode_locations(["Navy Beach, Lee Vining, CA"], cache_path=cache_path, rate_limit_seconds=0)
+        geocode.geocode_locations(["Navy Beach, Lee Vining, CA"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0)
 
     assert mock_nominatim.call_args.kwargs["timeout"] == geocode.DEFAULT_TIMEOUT_SECONDS
     assert mock_nominatim.call_args.kwargs["timeout"] > 1
@@ -288,7 +294,7 @@ def test_geocode_locations_timeout_is_overridable(tmp_path):
     fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result()
 
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator) as mock_nominatim:
-        geocode.geocode_locations(["Nopa"], cache_path=cache_path, rate_limit_seconds=0, timeout=30)
+        geocode.geocode_locations(["Nopa"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json", rate_limit_seconds=0, timeout=30)
 
     assert mock_nominatim.call_args.kwargs["timeout"] == 30
 
@@ -299,3 +305,98 @@ def test_geocode_one_uses_a_generous_default_timeout():
     with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator) as mock_nominatim:
         geocode.geocode_one("Navy Beach, Lee Vining, CA")
     assert mock_nominatim.call_args.kwargs["timeout"] == geocode.DEFAULT_TIMEOUT_SECONDS
+
+
+def test_diagnostics_records_no_match_reason(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: None  # Nominatim ran fine, found nothing
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["Boelter 5800"], cache_path=cache_path, diagnostics_path=diagnostics_path, rate_limit_seconds=0,
+        )
+
+    diagnostics = geocode.load_diagnostics(diagnostics_path)
+    assert diagnostics["Boelter 5800"] == "Nominatim found no match for this query"
+
+
+def test_diagnostics_distinguishes_timeout_from_service_error_and_network_error(tmp_path):
+    from geopy.exc import GeocoderServiceError, GeocoderTimedOut
+
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+
+    def flaky(query, **kwargs):
+        if query == "Timeout Place":
+            raise GeocoderTimedOut("timed out")
+        if query == "Blocked Place":
+            raise GeocoderServiceError("Non-successful status code 403")
+        raise ConnectionError("dns failure")
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["Timeout Place", "Blocked Place", "Broken Place"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path, rate_limit_seconds=0,
+        )
+
+    diagnostics = geocode.load_diagnostics(diagnostics_path)
+    assert "timed out" in diagnostics["Timeout Place"]
+    assert "403" in diagnostics["Blocked Place"]
+    assert "dns failure" in diagnostics["Broken Place"]
+
+
+def test_diagnostics_includes_the_anchor_augmented_query_when_different(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: None
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["North Campus Student Center"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path, rate_limit_seconds=0,
+            location_categories={"North Campus Student Center": "UCLA Clubs"},
+            anchors={"ucla": "UCLA, Los Angeles, CA"},
+        )
+
+    diagnostics = geocode.load_diagnostics(diagnostics_path)
+    assert "North Campus Student Center, UCLA, Los Angeles, CA" in diagnostics["North Campus Student Center"]
+
+
+def test_diagnostics_entry_cleared_once_a_location_succeeds(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    call_count = {"n": 0}
+
+    def flaky_then_success(query, **kwargs):
+        call_count["n"] += 1
+        return None if call_count["n"] == 1 else _fake_result()
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky_then_success
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(["Mono Lake"], cache_path=cache_path, diagnostics_path=diagnostics_path, rate_limit_seconds=0)
+        assert "Mono Lake" in geocode.load_diagnostics(diagnostics_path)
+
+        geocode.geocode_locations(["Mono Lake"], cache_path=cache_path, diagnostics_path=diagnostics_path, rate_limit_seconds=0)
+        assert "Mono Lake" not in geocode.load_diagnostics(diagnostics_path)
+
+
+def test_load_diagnostics_empty_when_no_file():
+    assert geocode.load_diagnostics(Path("/nonexistent/diagnostics.json")) == {}
+
+
+def test_clear_diagnostics_entry_removes_only_that_location(tmp_path):
+    diagnostics_path = tmp_path / "diagnostics.json"
+    diagnostics_path.write_text(json.dumps({"A": "reason A", "B": "reason B"}))
+
+    geocode.clear_diagnostics_entry("A", diagnostics_path)
+
+    remaining = geocode.load_diagnostics(diagnostics_path)
+    assert remaining == {"B": "reason B"}

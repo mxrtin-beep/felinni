@@ -36,6 +36,14 @@ DEFAULT_CACHE_PATH = _DATA_DIR / "geocode_cache.json"
 # actual addresses.
 DEFAULT_OVERRIDES_PATH = _DATA_DIR / "geocode_overrides.json"
 
+# Why each currently-unresolved location failed on its last attempt (e.g.
+# "timed out after 10s", "Nominatim found no match for this query",
+# "Nominatim service error: ..."). Written by `geocode_locations` alongside
+# the cache so a run that leaves locations unresolved isn't a silent dead
+# end - read it back with `load_diagnostics` to see why, one reason per
+# location, instead of just a raw count of "not geocoded yet."
+DEFAULT_DIAGNOSTICS_PATH = _DATA_DIR / "geocode_diagnostics.json"
+
 # A building/room name alone ("North Campus Student Center") often won't
 # geocode correctly, or geocodes to a same-named place somewhere else in
 # the world entirely - even with anchor text appended to the query,
@@ -69,9 +77,20 @@ def _load_cache(cache_path: Path) -> dict:
     return _load_json(cache_path)
 
 
+def _save_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+
 def _save_cache(cache_path: Path, cache: dict) -> None:
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_path.write_text(json.dumps(cache, indent=2, sort_keys=True))
+    _save_json(cache_path, cache)
+
+
+def load_diagnostics(path: str | Path = DEFAULT_DIAGNOSTICS_PATH) -> dict[str, str]:
+    """{location: reason} for every location that failed to geocode on its
+    last attempt - see `geocode_locations`. Empty if nothing's failed (or
+    nothing's been run yet)."""
+    return _load_json(Path(path))
 
 
 def effective_cache(
@@ -157,6 +176,18 @@ def clear_cache_entries(locations: list[str], cache_path: str | Path = DEFAULT_C
     return removed
 
 
+def clear_diagnostics_entry(location: str, path: str | Path = DEFAULT_DIAGNOSTICS_PATH) -> None:
+    """Drops `location` from the failure diagnostics, e.g. once it's been
+    fixed via a manual override - otherwise it would still show up as
+    "failed" (from its last real attempt) even though it no longer needs
+    one, since an override never touches diagnostics itself."""
+    path = Path(path)
+    diagnostics = _load_json(path)
+    if location in diagnostics:
+        del diagnostics[location]
+        _save_json(path, diagnostics)
+
+
 def _anchor_for(loc: str, category: str | None, anchors: dict) -> str | dict | None:
     haystacks = [loc.lower()] + ([category.lower()] if category else [])
     for key, value in anchors.items():
@@ -200,6 +231,7 @@ def geocode_locations(
     locations: list[str],
     cache_path: str | Path = DEFAULT_CACHE_PATH,
     overrides_path: str | Path = DEFAULT_OVERRIDES_PATH,
+    diagnostics_path: str | Path = DEFAULT_DIAGNOSTICS_PATH,
     user_agent: str = "felinni-calendar-analysis",
     rate_limit_seconds: float = 1.0,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -237,10 +269,21 @@ def geocode_locations(
     DEFAULT_LOCATION_ANCHORS. Independently, once a handful of locations
     in this run have resolved, later ambiguous queries are biased (not
     restricted) toward the region those already cover.
+
+    Every location this run leaves unresolved gets a reason recorded to
+    `diagnostics_path` (see `load_diagnostics`) - a timeout, a Nominatim
+    service error (rate-limited/blocked - the message usually names the
+    HTTP status), or "found no match for this query" (Nominatim responded
+    normally but had nothing for it - often a too-vague/building-only
+    name, see the module docstring). Without this, "N locations aren't
+    geocoded" gives no way to tell a systemic problem (everything timing
+    out or getting blocked) from a pile of genuinely unmatchable location
+    strings - which need different fixes (raise the timeout / wait out a
+    block, vs. add an anchor or a manual override).
     """
     try:
         from geopy.geocoders import Nominatim
-        from geopy.exc import GeocoderServiceError
+        from geopy.exc import GeocoderServiceError, GeocoderTimedOut
     except ImportError as e:
         raise ImportError(
             "geocode_locations requires geopy: pip install geopy"
@@ -249,6 +292,8 @@ def geocode_locations(
     cache_path = Path(cache_path)
     cache = _load_cache(cache_path)
     overrides = _load_json(Path(overrides_path))
+    diagnostics_path = Path(diagnostics_path)
+    diagnostics = _load_json(diagnostics_path)
     geolocator = Nominatim(user_agent=user_agent, timeout=timeout)
     location_categories = location_categories or {}
 
@@ -294,16 +339,27 @@ def geocode_locations(
                 geocode_kwargs.update(viewbox=viewbox, bounded=False)
         try:
             result = geolocator.geocode(query, **geocode_kwargs)
-        except GeocoderServiceError:
+            failure_reason = None if result else "Nominatim found no match for this query"
+        except GeocoderTimedOut:
+            # geopy's GeocoderTimedOut is a GeocoderServiceError subclass,
+            # so it has to be caught first to tell it apart from a real
+            # service error below.
             result = None
-        except Exception:
-            # A network hiccup, timeout, or anything else geopy didn't
-            # wrap in GeocoderServiceError (e.g. a raw connection error)
-            # shouldn't abort the whole batch - previously it did, which
-            # could leave a large run stuck partway through with no
-            # obvious explanation. This location is just retried like any
-            # other failure on the next run.
+            failure_reason = f"timed out after {timeout:g}s"
+        except GeocoderServiceError as e:
+            # Most often a rate limit or a temporary block from Nominatim's
+            # public instance - str(e) usually names the HTTP status.
             result = None
+            failure_reason = f"Nominatim service error: {e}"
+        except Exception as e:
+            # A network hiccup or anything else geopy didn't wrap in
+            # GeocoderServiceError (e.g. a raw connection error) shouldn't
+            # abort the whole batch - previously it did, which could leave
+            # a large run stuck partway through with no obvious
+            # explanation. This location is just retried like any other
+            # failure on the next run.
+            result = None
+            failure_reason = f"network error: {e}"
 
         if result:
             # Structured address fields (felinni.regions' city/country
@@ -317,10 +373,13 @@ def geocode_locations(
                 "city": city, "country": address.get("country"), "neighbourhood": neighbourhood,
             }
             resolved_points.append((result.latitude, result.longitude))
+            diagnostics.pop(loc, None)
         else:
             cache[loc] = None
+            diagnostics[loc] = f'{failure_reason} (query: "{query}")' if query != loc else failure_reason
 
         _save_cache(cache_path, cache)
+        _save_json(diagnostics_path, diagnostics)
         if on_progress:
             on_progress(i + 1, total)
         time.sleep(rate_limit_seconds)

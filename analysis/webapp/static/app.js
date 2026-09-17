@@ -985,7 +985,25 @@ async function loadMap(meta) {
     });
   }
   await refreshMap();
+  await loadGeocodeFailures();
   await pollGeocodeStatus(); // resumes the progress bar if a job was already running
+}
+
+async function loadGeocodeFailures() {
+  const data = await fetch("/api/geocode/failures").then(r => r.json());
+  const card = document.getElementById("geocode-failures-card");
+  if (!data.total_failed) {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "block";
+  document.getElementById("geocode-failures-summary").textContent =
+    `${data.total_failed} location${data.total_failed === 1 ? "" : "s"} failed on ` +
+    `their last geocode attempt: ${data.by_reason.map(([reason, count]) => `${count} ${reason}`).join("; ")}.`;
+
+  document.getElementById("geocode-failures-list").innerHTML = data.failures
+    .map(f => `<p><strong>${escapeHtml(f.location)}</strong> — ${escapeHtml(f.reason)}</p>`)
+    .join("");
 }
 
 function updateGeocodeButton(locationsData) {
@@ -1013,6 +1031,7 @@ async function pollGeocodeStatus() {
       clearInterval(geocodePollTimer);
       geocodePollTimer = null;
       await refreshMap(); // job just finished - show the newly-geocoded points
+      await loadGeocodeFailures(); // ...and why anything left over still isn't
     }
     progressWrap.style.display = "none";
     // A run that stopped early (rather than working through every

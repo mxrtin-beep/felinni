@@ -434,6 +434,25 @@ th.sortable:hover {
   color: var(--text-secondary);
 }
 
+.scroll-list {
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 12px;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+.scroll-list p {
+  padding: 4px 0;
+  margin: 0;
+  border-bottom: 1px solid var(--grid);
+}
+
+.scroll-list p:last-child {
+  border-bottom: none;
+}
+
 .badge {
   display: inline-block;
   font-size: 11px;

@@ -234,6 +234,32 @@ def geocode_status():
         return jsonify(dict(GEOCODE_STATE))
 
 
+@app.get("/api/geocode/failures")
+def geocode_failures():
+    """Why each currently-unresolved location failed on its last attempt
+    (see felinni.geocode.geocode_locations) - a timeout, a Nominatim
+    service error (often a rate limit/temporary block), or a genuine "no
+    match" - grouped so a systemic problem (most failures share one reason)
+    is obvious at a glance instead of just a bare "N not geocoded" count.
+    Only locations still in the current dataset are included, in case the
+    diagnostics file has entries from a since-changed events export."""
+    diagnostics = geocode.load_diagnostics(geocode.DEFAULT_DIAGNOSTICS_PATH)
+    current_locations = set(DF["location"].dropna().unique().tolist())
+    relevant = {loc: reason for loc, reason in diagnostics.items() if loc in current_locations}
+
+    by_reason: dict[str, int] = {}
+    for reason in relevant.values():
+        key = reason.split(" (query:")[0]
+        by_reason[key] = by_reason.get(key, 0) + 1
+
+    failures = [{"location": loc, "reason": reason} for loc, reason in sorted(relevant.items())]
+    return jsonify({
+        "total_failed": len(failures),
+        "by_reason": sorted(by_reason.items(), key=lambda kv: kv[1], reverse=True),
+        "failures": failures,
+    })
+
+
 @app.post("/api/geocode/override")
 def geocode_override():
     """Recode a location from the Map tab: given the exact location string
@@ -260,6 +286,7 @@ def geocode_override():
             return jsonify({"error": f"couldn't find a match for {query!r}"}), 404
 
     geocode.save_override(location_str, entry, geocode.DEFAULT_OVERRIDES_PATH)
+    geocode.clear_diagnostics_entry(location_str, geocode.DEFAULT_DIAGNOSTICS_PATH)
     return jsonify({"location": location_str, "entry": entry})
 
 
