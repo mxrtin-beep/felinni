@@ -8,7 +8,17 @@ explicitly.
 
 Results are cached to disk (default `data/geocode_cache.json`) so repeat
 runs never re-query the same address, and Nominatim's usage policy (max
-~1 request/sec, meaningful User-Agent) is respected.
+~1 request/sec, meaningful User-Agent) is respected. Nominatim is a free,
+best-effort geocoder and it does get things wrong, especially for short or
+building-only names ("B27 Terrace" landing in India) or even well-known
+places when its ranking picks the wrong same-named/similar-token match
+worldwide ("Santa Monica Pier" landing in Europe). Three layers push back
+on that, in order of precedence: `geocode_overrides.json` (exact answers
+you provide, always win and never touch the network), `anchors` (extra
+context appended to the query for locations whose name/category matches a
+keyword), and an adaptive region bias (queries are nudged toward wherever
+your *other* locations this run already resolved to, without excluding
+genuinely distant results like real trips).
 """
 from __future__ import annotations
 
@@ -16,25 +26,38 @@ import json
 import time
 from pathlib import Path
 
-DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "geocode_cache.json"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DEFAULT_CACHE_PATH = _DATA_DIR / "geocode_cache.json"
+
+# Permanent manual corrections: {location string: {"lat":.., "lon":.., "display_name": "..."}}.
+# Entries here always win over both the cache and a fresh Nominatim lookup,
+# and that location is never sent over the network. Use this for anything
+# anchors/bias still can't fix - gitignored, since it may reflect your
+# actual addresses.
+DEFAULT_OVERRIDES_PATH = _DATA_DIR / "geocode_overrides.json"
 
 # A building/room name alone ("North Campus Student Center") often won't
 # geocode correctly, or geocodes to a same-named place somewhere else in
-# the world entirely. When a location's category matches one of these keys
-# (case-insensitive substring), the anchor text is appended to the
-# GEOCODING QUERY only - never to the stored/displayed location - so
-# "North Campus Student Center" searches as "North Campus Student Center,
-# UCLA, Los Angeles, CA" instead of drifting worldwide. Edit this to match
-# your own campus/workplace calendars.
+# the world entirely. When a location's category OR the location text
+# itself matches one of these keys (case-insensitive substring), the
+# anchor text is appended to the GEOCODING QUERY only - never to the
+# stored/displayed location - so "North Campus Student Center" searches as
+# "North Campus Student Center, UCLA, Los Angeles, CA" instead of drifting
+# worldwide. Edit this to match your own campus/workplace calendars.
 DEFAULT_LOCATION_ANCHORS = {
     "ucla": "UCLA, Los Angeles, CA",
+    "amgen": "Amgen, Thousand Oaks, CA",
 }
 
 
-def _load_cache(cache_path: Path) -> dict:
-    if cache_path.exists():
-        return json.loads(cache_path.read_text())
+def _load_json(path: Path) -> dict:
+    if path.exists():
+        return json.loads(path.read_text())
     return {}
+
+
+def _load_cache(cache_path: Path) -> dict:
+    return _load_json(cache_path)
 
 
 def _save_cache(cache_path: Path, cache: dict) -> None:
@@ -42,9 +65,46 @@ def _save_cache(cache_path: Path, cache: dict) -> None:
     cache_path.write_text(json.dumps(cache, indent=2, sort_keys=True))
 
 
+def clear_cache_entries(locations: list[str], cache_path: str | Path = DEFAULT_CACHE_PATH) -> int:
+    """Removes specific locations from the geocode cache so the next
+    `geocode_locations` run re-fetches them - use this to correct a wrong
+    result without deleting the whole cache. Returns how many were found
+    and removed."""
+    cache_path = Path(cache_path)
+    cache = _load_cache(cache_path)
+    removed = 0
+    for loc in locations:
+        if loc in cache:
+            del cache[loc]
+            removed += 1
+    if removed:
+        _save_cache(cache_path, cache)
+    return removed
+
+
+def _anchor_for(loc: str, category: str | None, anchors: dict[str, str]) -> str | None:
+    haystacks = [loc.lower()] + ([category.lower()] if category else [])
+    for key, text in anchors.items():
+        if any(key.lower() in h for h in haystacks):
+            return text
+    return None
+
+
+def _viewbox_from_points(points: list[tuple[float, float]], pad_degrees: float = 3.0):
+    if not points:
+        return None
+    lats = [p[0] for p in points]
+    lons = [p[1] for p in points]
+    return [
+        (min(lats) - pad_degrees, min(lons) - pad_degrees),
+        (max(lats) + pad_degrees, max(lons) + pad_degrees),
+    ]
+
+
 def geocode_locations(
     locations: list[str],
     cache_path: str | Path = DEFAULT_CACHE_PATH,
+    overrides_path: str | Path = DEFAULT_OVERRIDES_PATH,
     user_agent: str = "felinni-calendar-analysis",
     rate_limit_seconds: float = 1.0,
     on_progress=None,
@@ -55,15 +115,18 @@ def geocode_locations(
     {location: {"lat": ..., "lon": ..., "display_name": ...} or None}.
 
     Requires the optional `geopy` dependency and network access. Already
-    cached locations are never re-queried. If given, `on_progress(done,
-    total)` is called once up front with done=0 and again after each
-    location, so a CLI or web caller can show progress on what can be a
-    multi-minute run (~1 request/sec).
+    cached locations are never re-queried (use `clear_cache_entries` to
+    force one). If given, `on_progress(done, total)` is called once up
+    front with done=0 and again after each location, so a CLI or web
+    caller can show progress on what can be a multi-minute run
+    (~1 request/sec).
 
     `location_categories` (location -> category, e.g. from
     `df.groupby("location")["category"].agg(...)`) lets a bare building
     name get an anchor from `anchors` appended to the search query - see
-    DEFAULT_LOCATION_ANCHORS.
+    DEFAULT_LOCATION_ANCHORS. Independently, once a handful of locations
+    in this run have resolved, later ambiguous queries are biased (not
+    restricted) toward the region those already cover.
     """
     try:
         from geopy.geocoders import Nominatim
@@ -75,29 +138,56 @@ def geocode_locations(
 
     cache_path = Path(cache_path)
     cache = _load_cache(cache_path)
+    overrides = _load_json(Path(overrides_path))
     geolocator = Nominatim(user_agent=user_agent)
     location_categories = location_categories or {}
 
-    to_fetch = [loc for loc in dict.fromkeys(locations) if loc and loc not in cache]
+    # Overrides are applied unconditionally, including over a previously
+    # cached (possibly wrong) result, and never touch the network. Values
+    # are validated (not just trusted) since this file is hand-edited.
+    for loc, value in overrides.items():
+        if isinstance(value, dict) and isinstance(value.get("lat"), (int, float)) and isinstance(value.get("lon"), (int, float)):
+            cache[loc] = value
+
+    resolved_points = [(v["lat"], v["lon"]) for v in cache.values() if isinstance(v, dict)]
+
+    # A location that previously failed to geocode (cached as None) is
+    # retried, not treated as permanently resolved - a Nominatim miss is
+    # often transient (rate limiting, a query the anchor/bias improvements
+    # above now handle better), and there's little cost to trying again.
+    to_fetch = [loc for loc in dict.fromkeys(locations) if loc and not cache.get(loc)]
     total = len(to_fetch)
     if on_progress:
         on_progress(0, total)
     for i, loc in enumerate(to_fetch):
         query = loc
-        category = location_categories.get(loc)
-        if category:
-            anchor = next((text for key, text in anchors.items() if key.lower() in category.lower()), None)
-            if anchor:
-                query = f"{loc}, {anchor}"
+        anchor = _anchor_for(loc, location_categories.get(loc), anchors)
+        if anchor:
+            query = f"{loc}, {anchor}"
+
+        viewbox = _viewbox_from_points(resolved_points) if len(resolved_points) >= 5 else None
+        geocode_kwargs = {"addressdetails": True}
+        if viewbox:
+            geocode_kwargs.update(viewbox=viewbox, bounded=False)
         try:
-            result = geolocator.geocode(query)
+            result = geolocator.geocode(query, **geocode_kwargs)
         except GeocoderServiceError:
             result = None
-        cache[loc] = (
-            {"lat": result.latitude, "lon": result.longitude, "display_name": result.address}
-            if result
-            else None
-        )
+
+        if result:
+            # Structured address fields (felinni.regions' city/country
+            # grouping) rather than parsing the free-text display_name,
+            # which reads inconsistently depending on what's near the venue.
+            address = (result.raw or {}).get("address", {}) if hasattr(result, "raw") else {}
+            city = address.get("city") or address.get("town") or address.get("village") or address.get("municipality") or address.get("county")
+            cache[loc] = {
+                "lat": result.latitude, "lon": result.longitude, "display_name": result.address,
+                "city": city, "country": address.get("country"),
+            }
+            resolved_points.append((result.latitude, result.longitude))
+        else:
+            cache[loc] = None
+
         _save_cache(cache_path, cache)
         if on_progress:
             on_progress(i + 1, total)

@@ -109,6 +109,21 @@ def test_date_filter_applies_to_every_tab_not_just_summary(client):
     assert sum(p["visits"] for p in narrowed) < sum(p["visits"] for p in unfiltered)
 
 
+def test_exclude_categories_filter_applies_globally(client):
+    unfiltered = client.get("/api/summary").get_json()
+    excluded = client.get("/api/summary?exclude_categories=Gym").get_json()
+    assert excluded["total_events"] < unfiltered["total_events"]
+
+    places = client.get("/api/places?exclude_categories=Gym").get_json()
+    assert all("Gym" not in p.get("categories", []) for p in places)
+
+
+def test_travel_returns_region_based_shape(client):
+    resp = client.get("/api/travel")
+    body = resp.get_json()
+    assert set(body.keys()) == {"home_region", "region_visits", "region_trips", "tagged_trips", "message"}
+
+
 def test_geocode_job_runs_and_reports_progress(client, monkeypatch):
     calls = []
 

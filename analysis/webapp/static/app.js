@@ -1,12 +1,14 @@
-// Global date-range filter (Overview tab) - every /api/ call includes it,
-// so narrowing the range there narrows every other tab too.
-const GLOBAL_FILTERS = { startDate: "", endDate: "" };
+// Global filters (Overview tab) - every /api/ call includes them, so
+// narrowing the date range or unchecking a category there applies
+// everywhere else too.
+const GLOBAL_FILTERS = { startDate: "", endDate: "", excludeCategories: [] };
 
 function api(path) {
   const [base, query] = path.split("?");
   const params = new URLSearchParams(query || "");
   if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
   if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
+  if (GLOBAL_FILTERS.excludeCategories.length) params.set("exclude_categories", GLOBAL_FILTERS.excludeCategories.join(","));
   const qs = params.toString();
   return fetch(`/api/${base}${qs ? `?${qs}` : ""}`).then(r => r.json());
 }
@@ -58,6 +60,17 @@ async function loadMeta() {
     GLOBAL_FILTERS.endDate = meta.max_date;
   }
   categoryColors = buildCategoryColors(meta.categories, meta.category_colors);
+
+  const categoryList = document.getElementById("category-filter-list");
+  if (!categoryList.dataset.populated) {
+    categoryList.innerHTML = meta.categories.map(c => `
+      <label style="display:flex;align-items:center;gap:4px;font-weight:normal">
+        <input type="checkbox" class="category-checkbox" value="${c}" checked>
+        <span class="swatch" style="background:${categoryColors[c] || cssVarSafe("--text-muted")}"></span>${c}
+      </label>
+    `).join("");
+    categoryList.dataset.populated = "1";
+  }
   return meta;
 }
 
@@ -122,6 +135,23 @@ function wireGlobalDateFilter() {
     const meta = await api("meta");
     startInput.value = meta.min_date;
     endInput.value = meta.max_date;
+    onChange();
+  });
+}
+
+function wireCategoryFilter() {
+  const checkboxes = () => [...document.querySelectorAll(".category-checkbox")];
+  const onChange = () => {
+    GLOBAL_FILTERS.excludeCategories = checkboxes().filter(cb => !cb.checked).map(cb => cb.value);
+    reloadAll();
+  };
+  document.getElementById("category-filter-list").addEventListener("change", onChange);
+  document.getElementById("category-filter-all").addEventListener("click", () => {
+    checkboxes().forEach(cb => { cb.checked = true; });
+    onChange();
+  });
+  document.getElementById("category-filter-none").addEventListener("click", () => {
+    checkboxes().forEach(cb => { cb.checked = false; });
     onChange();
   });
 }
@@ -279,20 +309,38 @@ async function loadTravel() {
   const note = document.getElementById("travel-note");
   note.textContent = data.message || "";
   note.style.display = data.message ? "block" : "none";
+
+  const statGrid = document.getElementById("travel-stats");
+  statGrid.innerHTML = "";
+  statGrid.appendChild(statTile("Home region", data.home_region || "-"));
+  statGrid.appendChild(statTile("Regions visited", data.region_visits.length));
+  statGrid.appendChild(statTile("Trips away from home", data.region_trips.length));
+
+  table(document.getElementById("travel-region-trips"),
+    [
+      { key: "region", label: "Region" },
+      { key: "start", label: "Start", format: fmtDate },
+      { key: "end", label: "End", format: fmtDate },
+      { key: "duration_days", label: "Days", num: true, format: v => v?.toFixed(1) },
+    ], data.region_trips);
+
+  table(document.getElementById("travel-regions-table"),
+    [
+      { key: "region", label: "Region" },
+      { key: "visits", label: "Events", num: true },
+      { key: "total_hours", label: "Hours", num: true, format: v => Math.round(v) },
+      { key: "n_locations", label: "Places", num: true },
+      { key: "first_seen", label: "First seen", format: fmtDate },
+      { key: "last_seen", label: "Last seen", format: fmtDate },
+    ], data.region_visits);
+
   table(document.getElementById("travel-timeline"),
     [
       { key: "destination", label: "Destination" },
       { key: "start", label: "Start", format: fmtDate },
       { key: "end", label: "End", format: fmtDate },
       { key: "duration_days", label: "Days", num: true, format: v => v?.toFixed(1) },
-    ], data.trips);
-  table(document.getElementById("travel-places-table"),
-    [
-      { key: "destination", label: "Destination" },
-      { key: "trips", label: "Trips", num: true },
-      { key: "first_visit", label: "First visit", format: fmtDate },
-      { key: "last_visit", label: "Last visit", format: fmtDate },
-    ], data.places);
+    ], data.tagged_trips);
 }
 
 // --- Time & Spend ---
@@ -582,4 +630,5 @@ async function refreshMap() {
     loadAnomalies(),
   ]);
   wireGlobalDateFilter();
+  wireCategoryFilter();
 })();

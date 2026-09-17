@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, geocode, habits, ingest, recurring, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -42,10 +42,12 @@ def static_assets(filename):
 
 
 def _get_df() -> pd.DataFrame:
-    """The dataset for this request: DF narrowed to the global date-range
-    filter every tab sends (start_date/end_date, both optional, inclusive).
-    This is what makes the Overview date range apply everywhere - every
-    other endpoint's own filters (category, person, ...) stack on top of it.
+    """The dataset for this request: DF narrowed to the global filters every
+    tab sends - the date range (start_date/end_date, inclusive) and any
+    categories unchecked in the Overview's category list
+    (exclude_categories, comma-separated). This is what makes those two
+    controls apply everywhere - every other endpoint's own filters
+    (a habit's category, the Map's person/year filters, ...) stack on top.
     """
     df = DF
     start_date = request.args.get("start_date")
@@ -54,6 +56,10 @@ def _get_df() -> pd.DataFrame:
     end_date = request.args.get("end_date")
     if end_date:
         df = df[df["start"] < pd.Timestamp(end_date) + pd.Timedelta(days=1)]
+    exclude_categories = request.args.get("exclude_categories")
+    if exclude_categories:
+        excluded = {c.casefold() for c in exclude_categories.split(",") if c}
+        df = df[~df["category"].str.casefold().isin(excluded)]
     return df
 
 
@@ -245,18 +251,29 @@ def recurring_view():
 @app.get("/api/travel")
 def travel_view():
     df = _get_df()
-    trips = records(travel.trip_timeline(df))
+    cache = _load_geocode_cache()
+
+    region_visits = regions.visits_by_region(df, cache)
+    region_trips = records(regions.trips_away_from_home(df, cache))
+    home = regions.home_region(region_visits)
+
     message = None
-    if not trips:
+    if not cache:
         message = (
-            "No events matched a travel category (Travel/Flight/Trip/Vacation/...) "
-            "or a title like \"Flight to...\"/\"Trip to...\"/\"Vacation\". "
-            "Tag trips with one of those categories, or via a Category: Travel note, "
-            "to see them here."
+            "No locations geocoded yet, so trips can't be grouped by region. "
+            "Click \"Geocode locations\" on the Map tab first."
         )
+
+    # A secondary, tag-based view: catches trips tagged Travel/Flight/... in
+    # your calendar even if their location isn't geocoded (or at all, if
+    # you haven't geocoded anything yet).
+    tagged_trips = records(travel.trip_timeline(df))
+
     return jsonify({
-        "trips": trips,
-        "places": records(travel.places_visited(df).reset_index()),
+        "home_region": home,
+        "region_visits": records(region_visits.reset_index()),
+        "region_trips": region_trips,
+        "tagged_trips": tagged_trips,
         "message": message,
     })
 

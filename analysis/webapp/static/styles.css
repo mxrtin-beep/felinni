@@ -100,6 +100,7 @@ nav.tabs {
 nav.tabs button {
   background: none;
   border: none;
+  border-radius: 0;
   padding: 10px 14px;
   font-size: 13px;
   color: var(--text-secondary);

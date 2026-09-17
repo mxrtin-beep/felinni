@@ -58,6 +58,11 @@ def main():
 
     p_geo = sub.add_parser("geocode", help="Geocode every unique location via OpenStreetMap Nominatim (needs network; powers the dashboard's map)")
     p_geo.add_argument("--cache", default=None, help="Cache file path (default: data/geocode_cache.json)")
+    p_geo.add_argument(
+        "--clear", nargs="+", default=None, metavar="LOCATION",
+        help="Remove these exact location strings from the cache first, forcing them to be re-geocoded "
+             "(useful when one came back wrong - e.g. --clear \"Santa Monica Pier\" \"B27 Terrace\")",
+    )
 
     args = parser.parse_args()
     df = ingest.load_events(args.events)
@@ -98,6 +103,9 @@ def main():
     elif args.command == "geocode":
         from felinni import geocode
         cache_path = args.cache or geocode.DEFAULT_CACHE_PATH
+        if args.clear:
+            removed = geocode.clear_cache_entries(args.clear, cache_path=cache_path)
+            print(f"Cleared {removed}/{len(args.clear)} cached entries for re-geocoding.")
         unique_locations = df["location"].dropna().unique().tolist()
         location_categories = df.groupby("location")["category"].agg(lambda s: s.mode().iat[0]).to_dict()
 

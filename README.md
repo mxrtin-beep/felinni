@@ -83,13 +83,14 @@ endpoint or the module directly if you want them.
 Try it against the synthetic fixture first if you don't have a real
 export yet: `python webapp/server.py --events ../data/sample_events.json`.
 
-### Date range filter
+### Date range and category filters
 
-The Overview tab has a From/To date range that applies to every other
-tab — narrow it and Places, People, Habits, everything else recomputes
-over just that window. Each tab's own filters (a habit's category, the
-Map's person/year filters, ...) stack on top of it. Reset puts it back to
-your calendar's full span.
+The Overview tab has a From/To date range and a checkbox per category,
+both of which apply to every other tab — narrow the range or uncheck
+"Birthdays" (or anything else) and Places, People, Habits, everything
+else recomputes accordingly. Each tab's own filters (a habit's category,
+the Map's person/year filters, ...) stack on top of these. Reset/All put
+things back to your calendar's full span and every category.
 
 ### Map tab
 
@@ -113,15 +114,36 @@ python cli.py --events ../events.json geocode
 ```
 
 Either way, results are cached to `data/geocode_cache.json`; re-running
-only geocodes newly-seen locations.
+only geocodes newly-seen locations. A location that failed to geocode is
+always retried on the next run rather than stuck as a permanent failure -
+Nominatim misses are often transient.
 
-A bare building/room name with no street address (e.g. "North Campus
-Student Center") often geocodes to a same-named place worldwide instead
-of the right one. If its category matches a key in
-`felinni.geocode.DEFAULT_LOCATION_ANCHORS`, that entry's anchor text
-(e.g. `"UCLA, Los Angeles, CA"`) is appended to the *geocoding query only*
-— the stored/displayed location string is untouched. Edit that dict to
-match your own campus/workplace calendars.
+Nominatim (the free geocoder behind this) does get things wrong,
+especially for a bare building/room name with no street address (e.g.
+"North Campus Student Center" landing in a same-named place worldwide) or
+even well-known places when its ranking picks a wrong match (a real
+report: "Santa Monica Pier" landing in Europe). Three ways to fix it:
+
+- **Anchors**: if a location's category matches a key in
+  `felinni.geocode.DEFAULT_LOCATION_ANCHORS` (ships with `ucla` and
+  `amgen` examples), that entry's text (e.g. `"UCLA, Los Angeles, CA"`) is
+  appended to the *geocoding query only* — the stored/displayed location
+  is untouched. Edit that dict to match your own campus/workplace.
+- **Region bias**: once ~5 locations in a run have resolved, later
+  ambiguous queries are nudged (not restricted) toward that region -
+  helps exactly the "well-known place, wrong match" case, automatically,
+  for anyone.
+- **Manual overrides**: for anything still wrong, copy
+  `data/geocode_overrides.example.json` to `data/geocode_overrides.json`
+  (gitignored) and add an exact `{"lat":, "lon":}` for that location
+  string — overrides always win and never touch the network.
+
+To fix a location that's already cached wrong, either add it to
+`geocode_overrides.json`, or force just that entry to be re-geocoded:
+
+```bash
+python cli.py --events ../events.json geocode --clear "Santa Monica Pier" "B27 Terrace"
+```
 
 ### Category colors
 
@@ -159,7 +181,8 @@ are a thin JSON wrapper over the same functions.
 | Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Repeating events falling off pace (Book Club, Poker Night, ...) | `felinni.recurring` | Auto-detects every named recurring series from Calendar's own repeat rule (`is_recurring`) - no need to pick one, unlike `felinni.habits` above. Flags each as active/slowing down/stopped relative to its own historical cadence |
-| Travel timeline, places visited | `felinni.travel` | Collapses consecutive same-destination events into one trip |
+| Trips away from home, regions visited, by geography | `felinni.regions` | Groups by geocoded city/country, so a trip counts whether or not you tagged it - home is inferred as your most-visited region |
+| Travel timeline from tagged events only | `felinni.travel` | Secondary cross-check behind the above; collapses consecutive same-destination events into one trip |
 | Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented; all-day events are excluded since they don't carry a real duration |
 | Seasonality by month/season | `felinni.seasonality` | Only counts timed events — all-day entries (birthdays, holidays, vacations) are excluded |
 | Unusually packed/empty weeks, in both directions and broken down by category | `felinni.anomalies` | Z-score on weekly scheduled hours (overall and per-category, each against its own baseline); all-day events excluded, same reasoning |
@@ -192,7 +215,7 @@ analysis/
     ingest.py                events.json -> pandas DataFrame
     geocode.py                optional Nominatim geocoding, disk-cached
     location.py, social.py, habits.py, travel.py, spending.py,
-    seasonality.py, anomalies.py, breaks.py, recurring.py, dating_link.py
+    seasonality.py, anomalies.py, breaks.py, recurring.py, regions.py, dating_link.py
   webapp/
     server.py                 Flask API wrapping felinni's analysis functions
     serialize.py               DataFrame -> JSON-safe records
@@ -203,9 +226,12 @@ tests/
   test_analysis.py
   test_ingest.py             junk-location filtering, title-based people parsing, calendar colors
   test_breaks_and_trends.py  category anomalies, notable breaks, pandas-version-alias regressions
-  test_geocode.py            location-anchor query construction
+  test_geocode.py            anchors, region bias, overrides, failed-geocode retry
+  test_regions.py            geographic-region grouping for the Travel tab
+  test_recurring.py          repeating-event cadence/status detection
   test_webapp.py             smoke tests for the dashboard's API, incl. the geocode job
 data/
-  sample_events.json         generated fixture (committed for convenience)
-  geocode_cache.json         built by `cli.py geocode`, gitignored (your location history stays local)
+  sample_events.json           generated fixture (committed for convenience)
+  geocode_cache.json            built by `cli.py geocode`, gitignored (your location history stays local)
+  geocode_overrides.example.json  committed template - copy to geocode_overrides.json (gitignored) to use it
 ```

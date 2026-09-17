@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>felinni</title>
+<title>Felinni</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="styles.css">
@@ -35,6 +35,15 @@
         <label>To <input type="date" id="global-end-date"></label>
         <button id="global-range-reset" type="button">Reset</button>
       </div>
+    </div>
+    <div class="card">
+      <h2>Categories</h2>
+      <p class="card-note">Uncheck any you don't want counted anywhere - applies across every tab too.</p>
+      <div class="controls" style="margin-bottom:8px">
+        <button id="category-filter-all" type="button">All</button>
+        <button id="category-filter-none" type="button">None</button>
+      </div>
+      <div id="category-filter-list" class="controls" style="flex-wrap:wrap"></div>
     </div>
     <div class="stat-grid" id="overview-stats"></div>
     <div class="card">
@@ -132,13 +141,20 @@
 
   <section class="panel" id="panel-travel">
     <p class="card-note" id="travel-note" style="display:none"></p>
+    <div class="stat-grid" id="travel-stats"></div>
     <div class="card">
-      <h2>Trip timeline</h2>
-      <div id="travel-timeline"></div>
+      <h2>Trips away from home</h2>
+      <p class="card-note">Any stretch of time spent in a region other than home - no Travel tag needed, just geocoded locations.</p>
+      <div id="travel-region-trips"></div>
     </div>
     <div class="card">
-      <h2>Places visited</h2>
-      <div id="travel-places-table"></div>
+      <h2>All regions visited</h2>
+      <div id="travel-regions-table"></div>
+    </div>
+    <div class="card">
+      <h2>Tagged trips</h2>
+      <p class="card-note">Events tagged Travel/Flight/Trip/Vacation/... - a cross-check, catches trips even before you've geocoded anything.</p>
+      <div id="travel-timeline"></div>
     </div>
   </section>
 
