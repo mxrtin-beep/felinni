@@ -241,10 +241,15 @@ def geocode_failures():
     service error (often a rate limit/temporary block), or a genuine "no
     match" - grouped so a systemic problem (most failures share one reason)
     is obvious at a glance instead of just a bare "N not geocoded" count.
-    Only locations still in the current dataset are included, in case the
-    diagnostics file has entries from a since-changed events export."""
-    diagnostics = geocode.load_diagnostics(geocode.DEFAULT_DIAGNOSTICS_PATH)
+    `approximate` is a separate, less alarming list: locations that DO have
+    a pin (placed at a campus/workplace anchor's own coordinates, e.g.
+    "Boelter 5800" at "UCLA, Los Angeles, CA") because their own address
+    couldn't be resolved, not a failure to report on. Only locations still
+    in the current dataset are included in either list, in case the
+    underlying file has entries from a since-changed events export."""
     current_locations = set(DF["location"].dropna().unique().tolist())
+
+    diagnostics = geocode.load_diagnostics(geocode.DEFAULT_DIAGNOSTICS_PATH)
     relevant = {loc: reason for loc, reason in diagnostics.items() if loc in current_locations}
 
     by_reason: dict[str, int] = {}
@@ -253,10 +258,19 @@ def geocode_failures():
         by_reason[key] = by_reason.get(key, 0) + 1
 
     failures = [{"location": loc, "reason": reason} for loc, reason in sorted(relevant.items())]
+
+    approximations = geocode.load_approximations(geocode.DEFAULT_APPROXIMATIONS_PATH)
+    approximate = [
+        {"location": loc, "placed_at": placed_at}
+        for loc, placed_at in sorted(approximations.items())
+        if loc in current_locations
+    ]
+
     return jsonify({
         "total_failed": len(failures),
         "by_reason": sorted(by_reason.items(), key=lambda kv: kv[1], reverse=True),
         "failures": failures,
+        "approximate": approximate,
     })
 
 
@@ -287,6 +301,7 @@ def geocode_override():
 
     geocode.save_override(location_str, entry, geocode.DEFAULT_OVERRIDES_PATH)
     geocode.clear_diagnostics_entry(location_str, geocode.DEFAULT_DIAGNOSTICS_PATH)
+    geocode.clear_approximation_entry(location_str, geocode.DEFAULT_APPROXIMATIONS_PATH)
     return jsonify({"location": location_str, "entry": entry})
 
 

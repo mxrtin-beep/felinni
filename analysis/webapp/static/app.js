@@ -992,18 +992,44 @@ async function loadMap(meta) {
 async function loadGeocodeFailures() {
   const data = await fetch("/api/geocode/failures").then(r => r.json());
   const card = document.getElementById("geocode-failures-card");
-  if (!data.total_failed) {
+  const hasApproximate = data.approximate && data.approximate.length;
+  if (!data.total_failed && !hasApproximate) {
     card.style.display = "none";
     return;
   }
   card.style.display = "block";
-  document.getElementById("geocode-failures-summary").textContent =
-    `${data.total_failed} location${data.total_failed === 1 ? "" : "s"} failed on ` +
-    `their last geocode attempt: ${data.by_reason.map(([reason, count]) => `${count} ${reason}`).join("; ")}.`;
 
-  document.getElementById("geocode-failures-list").innerHTML = data.failures
-    .map(f => `<p><strong>${escapeHtml(f.location)}</strong> — ${escapeHtml(f.reason)}</p>`)
-    .join("");
+  const failuresSummary = document.getElementById("geocode-failures-summary");
+  const failuresList = document.getElementById("geocode-failures-list");
+  if (data.total_failed) {
+    failuresSummary.style.display = "block";
+    failuresList.style.display = "block";
+    failuresSummary.textContent =
+      `${data.total_failed} location${data.total_failed === 1 ? "" : "s"} failed on ` +
+      `their last geocode attempt: ${data.by_reason.map(([reason, count]) => `${count} ${reason}`).join("; ")}.`;
+    failuresList.innerHTML = data.failures
+      .map(f => `<p><strong>${escapeHtml(f.location)}</strong> — ${escapeHtml(f.reason)}</p>`)
+      .join("");
+  } else {
+    failuresSummary.style.display = "none";
+    failuresList.style.display = "none";
+  }
+
+  const approxSummary = document.getElementById("geocode-approximate-summary");
+  const approxList = document.getElementById("geocode-approximate-list");
+  if (hasApproximate) {
+    approxSummary.style.display = "block";
+    approxList.style.display = "block";
+    approxSummary.textContent =
+      `${data.approximate.length} location${data.approximate.length === 1 ? "" : "s"} couldn't be pinned exactly, ` +
+      `so ${data.approximate.length === 1 ? "it's" : "they're"} placed at the nearest known campus/workplace instead:`;
+    approxList.innerHTML = data.approximate
+      .map(a => `<p><strong>${escapeHtml(a.location)}</strong> — placed at ${escapeHtml(a.placed_at)}</p>`)
+      .join("");
+  } else {
+    approxSummary.style.display = "none";
+    approxList.style.display = "none";
+  }
 }
 
 function updateGeocodeButton(locationsData) {

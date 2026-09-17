@@ -1,8 +1,8 @@
 """"Future" tab: upcoming events worth going to, pulled from Eventbrite,
-Luma, Meetup, Camber, and anywhere else DuckDuckGo turns up for your home
-region, with start/end/duration/location, conflict alerts against your own
-calendar, and people suggestions - ranked by fit with your calendar
-history.
+Luma, Meetup, Camber, Partiful, Posh, and anywhere else DuckDuckGo turns up
+for your home region, with start/end/duration/location, conflict alerts
+against your own calendar, and people suggestions - ranked by fit with your
+calendar history.
 
 None of Eventbrite/Luma/Meetup has a public API that's usable without
 registering for a developer key/OAuth app, so instead of gating this behind
@@ -55,13 +55,15 @@ import urllib.parse
 
 import pandas as pd
 
-PLATFORMS = ("eventbrite", "luma", "meetup", "camber")
+PLATFORMS = ("eventbrite", "luma", "meetup", "camber", "partiful", "posh")
 
 PLATFORM_DOMAINS = {
     "eventbrite": "eventbrite.com",
     "luma": "lu.ma",
     "meetup": "meetup.com",
     "camber": "camberplaces.substack.com",
+    "partiful": "partiful.com",
+    "posh": "posh.vip",
 }
 
 # Most platforms' site: query is just their domain, but Camber's events live
@@ -103,9 +105,14 @@ _JSONLD_RE = re.compile(
 
 # A specific event page vs. a listing/browse/search page for a whole
 # region on the same platform - only the former is a real, single
-# happening. Platforms not listed here (other_web_events' arbitrary
-# domains) are validated purely by whether a real Event was actually found
-# on the page instead (see `other_web_events`).
+# happening. Platforms not listed here (Camber, Partiful, Posh, and
+# other_web_events' arbitrary domains) fall through to `_is_event_url`'s
+# "no pattern registered -> allow" default and rely on `_looks_like_listing`
+# instead: Partiful/Posh's exact event-URL shape isn't confirmed here (both
+# are largely invite-based, so relatively little is publicly indexed to
+# begin with), and a wrong guess at a restrictive pattern would silently
+# filter out every real result rather than just letting a few extra
+# listing pages through.
 _EVENT_URL_PATTERNS = {
     "eventbrite": re.compile(r"eventbrite\.[a-z.]+/e/", re.I),
     "meetup": re.compile(r"meetup\.com/[^/]+/events/\d+", re.I),

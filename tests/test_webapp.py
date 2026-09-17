@@ -156,6 +156,7 @@ def test_geocode_override_saves_and_reflects_immediately(client, monkeypatch, tm
     overrides_path = tmp_path / "overrides.json"
     monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
     monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", tmp_path / "diagnostics.json")
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", tmp_path / "approximations.json")
 
     resp = client.post("/api/geocode/override", json={
         "location": "Royce 160", "lat": 34.0722, "lon": -118.4441, "display_name": "Royce Hall, UCLA",
@@ -179,6 +180,7 @@ def test_geocode_override_clears_any_prior_failure_diagnostics(client, monkeypat
     diagnostics_path.write_text(json.dumps({"Royce 160": "Nominatim found no match for this query"}))
     monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
     monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", diagnostics_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", tmp_path / "approximations.json")
 
     resp = client.post("/api/geocode/override", json={
         "location": "Royce 160", "lat": 34.0722, "lon": -118.4441,
@@ -187,19 +189,45 @@ def test_geocode_override_clears_any_prior_failure_diagnostics(client, monkeypat
     assert "Royce 160" not in server.geocode.load_diagnostics(diagnostics_path)
 
 
+def test_geocode_override_clears_any_prior_approximation(client, monkeypatch, tmp_path):
+    overrides_path = tmp_path / "overrides.json"
+    approximations_path = tmp_path / "approximations.json"
+    approximations_path.write_text(json.dumps({"Boelter 5800": "UCLA, Los Angeles, CA"}))
+    monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", tmp_path / "diagnostics.json")
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", approximations_path)
+
+    resp = client.post("/api/geocode/override", json={
+        "location": "Boelter 5800", "lat": 34.0689, "lon": -118.4452,
+    })
+    assert resp.status_code == 200
+    assert "Boelter 5800" not in server.geocode.load_approximations(approximations_path)
+
+
 def test_geocode_failures_groups_by_reason_and_filters_to_current_locations(client, monkeypatch, tmp_path):
     diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
     events = [{
         "id": "evt-1", "title": "Something", "notes": None, "location": "Boelter 5800",
         "startDate": "2024-01-01T09:00:00Z", "endDate": "2024-01-01T10:00:00Z",
         "isAllDay": False, "calendarTitle": "School", "calendarColorHex": None,
         "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+    }, {
+        "id": "evt-2", "title": "Something Else", "notes": None, "location": "Ackerman 2408",
+        "startDate": "2024-01-02T09:00:00Z", "endDate": "2024-01-02T10:00:00Z",
+        "isAllDay": False, "calendarTitle": "School", "calendarColorHex": None,
+        "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
     }]
     diagnostics_path.write_text(json.dumps({
-        "Boelter 5800": "Nominatim found no match for this query",
+        "Ackerman 2408": "Nominatim found no match for this query",
         "A Stale Location Not In The Current Dataset": "timed out after 10s",
     }))
+    approximations_path.write_text(json.dumps({
+        "Boelter 5800": "UCLA, Los Angeles, CA",
+        "A Stale Approximation Not In The Current Dataset": "UCLA, Los Angeles, CA",
+    }))
     monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", diagnostics_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", approximations_path)
     original_df = server.DF
     try:
         server.DF = ingest.load_events_from_records(events)
@@ -208,8 +236,9 @@ def test_geocode_failures_groups_by_reason_and_filters_to_current_locations(clie
         server.DF = original_df
 
     assert body["total_failed"] == 1  # the stale location isn't in the current dataset
-    assert body["failures"] == [{"location": "Boelter 5800", "reason": "Nominatim found no match for this query"}]
+    assert body["failures"] == [{"location": "Ackerman 2408", "reason": "Nominatim found no match for this query"}]
     assert body["by_reason"] == [["Nominatim found no match for this query", 1]]
+    assert body["approximate"] == [{"location": "Boelter 5800", "placed_at": "UCLA, Los Angeles, CA"}]
 
 
 def test_geocode_job_runs_and_reports_progress(client, monkeypatch):

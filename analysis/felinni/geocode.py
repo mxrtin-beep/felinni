@@ -59,6 +59,15 @@ DEFAULT_OVERRIDES_PATH = _DATA_DIR / "geocode_overrides.json"
 # location, instead of just a raw count of "not geocoded yet."
 DEFAULT_DIAGNOSTICS_PATH = _DATA_DIR / "geocode_diagnostics.json"
 
+# {location: anchor query text} for every location that couldn't be
+# resolved on its own but was placed at a dict-form anchor's own
+# coordinates instead (see `geocode_locations` - e.g. "Boelter 5800" ends
+# up pinned at "UCLA, Los Angeles, CA" rather than left off the map
+# entirely). Kept separate from `DEFAULT_DIAGNOSTICS_PATH`: these DO have a
+# usable (if approximate) pin, so they're not a "failure" the way an
+# unresolved location is - just worth flagging as inexact.
+DEFAULT_APPROXIMATIONS_PATH = _DATA_DIR / "geocode_approximations.json"
+
 # A building/room name alone ("North Campus Student Center") often won't
 # geocode correctly, or geocodes to a same-named place somewhere else in
 # the world entirely - even with anchor text appended to the query,
@@ -105,6 +114,13 @@ def load_diagnostics(path: str | Path = DEFAULT_DIAGNOSTICS_PATH) -> dict[str, s
     """{location: reason} for every location that failed to geocode on its
     last attempt - see `geocode_locations`. Empty if nothing's failed (or
     nothing's been run yet)."""
+    return _load_json(Path(path))
+
+
+def load_approximations(path: str | Path = DEFAULT_APPROXIMATIONS_PATH) -> dict[str, str]:
+    """{location: anchor query text} for every location placed at an
+    anchor's own coordinates rather than its own resolved address - see
+    `geocode_locations` and DEFAULT_APPROXIMATIONS_PATH."""
     return _load_json(Path(path))
 
 
@@ -203,6 +219,16 @@ def clear_diagnostics_entry(location: str, path: str | Path = DEFAULT_DIAGNOSTIC
         _save_json(path, diagnostics)
 
 
+def clear_approximation_entry(location: str, path: str | Path = DEFAULT_APPROXIMATIONS_PATH) -> None:
+    """Drops `location` from the approximate-placement list, e.g. once a
+    manual override gives it a real (non-anchor) position."""
+    path = Path(path)
+    approximations = _load_json(path)
+    if location in approximations:
+        del approximations[location]
+        _save_json(path, approximations)
+
+
 _COMPLETE_ADDRESS_RE = re.compile(r"\b\d{5}(-\d{4})?\b|\bunited states\b|\busa\b", re.IGNORECASE)
 
 
@@ -287,6 +313,7 @@ def geocode_locations(
     cache_path: str | Path = DEFAULT_CACHE_PATH,
     overrides_path: str | Path = DEFAULT_OVERRIDES_PATH,
     diagnostics_path: str | Path = DEFAULT_DIAGNOSTICS_PATH,
+    approximations_path: str | Path = DEFAULT_APPROXIMATIONS_PATH,
     user_agent: str = "felinni-calendar-analysis",
     rate_limit_seconds: float = 1.0,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -325,6 +352,15 @@ def geocode_locations(
     in this run have resolved, later ambiguous queries are biased (not
     restricted) toward the region those already cover.
 
+    If a location still can't be resolved on its own (even with an anchor's
+    context appended) but did match a dict-form anchor with known
+    coordinates, it's placed at that anchor's own coordinates rather than
+    left off the map entirely - e.g. "Boelter 5800" (a UCLA room number
+    that isn't its own addressable point) ends up pinned at "UCLA, Los
+    Angeles, CA" instead of nowhere. This is recorded to
+    `approximations_path` (see `load_approximations`), not the failure
+    diagnostics, since it does now have a usable pin - just an inexact one.
+
     Every location this run leaves unresolved gets a reason recorded to
     `diagnostics_path` (see `load_diagnostics`) - a timeout, a Nominatim
     service error (rate-limited/blocked - the message usually names the
@@ -349,6 +385,8 @@ def geocode_locations(
     overrides = _load_json(Path(overrides_path))
     diagnostics_path = Path(diagnostics_path)
     diagnostics = _load_json(diagnostics_path)
+    approximations_path = Path(approximations_path)
+    approximations = _load_json(approximations_path)
     geolocator = Nominatim(user_agent=user_agent, timeout=timeout)
     location_categories = location_categories or {}
 
@@ -378,7 +416,7 @@ def geocode_locations(
         anchor = _anchor_for(loc, location_categories.get(loc), anchors)
         anchor_text = _anchor_query_text(anchor)
         if anchor_text:
-            query = f"{loc}, {anchor_text}"
+            query = f"{query}, {anchor_text}"
 
         geocode_kwargs = {"addressdetails": True}
         bounded_viewbox = _anchor_viewbox(anchor)
@@ -416,6 +454,9 @@ def geocode_locations(
             result = None
             failure_reason = f"network error: {e}"
 
+        anchor_lat, anchor_lon = (anchor.get("lat"), anchor.get("lon")) if isinstance(anchor, dict) else (None, None)
+        has_anchor_coords = isinstance(anchor_lat, (int, float)) and isinstance(anchor_lon, (int, float))
+
         if result:
             # Structured address fields (felinni.regions' city/country
             # grouping) rather than parsing the free-text display_name,
@@ -429,12 +470,31 @@ def geocode_locations(
             }
             resolved_points.append((result.latitude, result.longitude))
             diagnostics.pop(loc, None)
+            approximations.pop(loc, None)
+        elif has_anchor_coords:
+            # Couldn't resolve the specific address even with the anchor's
+            # context appended, but the anchor itself has known coordinates
+            # (a campus/workplace, not just a query-text nudge) - plot this
+            # at the anchor's own location rather than leaving it off the
+            # map entirely. Not a "failure" in the diagnostics sense: there
+            # IS a usable pin now, just an approximate one.
+            anchor_label = anchor.get("query") or loc
+            cache[loc] = {
+                "lat": anchor_lat, "lon": anchor_lon,
+                "display_name": f"{anchor_label} (approximate - couldn't resolve the exact address)",
+                "city": None, "country": None, "neighbourhood": None,
+            }
+            resolved_points.append((anchor_lat, anchor_lon))
+            diagnostics.pop(loc, None)
+            approximations[loc] = anchor_label
         else:
             cache[loc] = None
             diagnostics[loc] = f'{failure_reason} (query: "{query}")' if query != loc else failure_reason
+            approximations.pop(loc, None)
 
         _save_cache(cache_path, cache)
         _save_json(diagnostics_path, diagnostics)
+        _save_json(approximations_path, approximations)
         if on_progress:
             on_progress(i + 1, total)
         time.sleep(rate_limit_seconds)

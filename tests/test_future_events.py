@@ -162,6 +162,33 @@ def test_platform_events_returns_empty_list_on_network_error():
         assert future_events.platform_events("luma") == []
 
 
+@pytest.mark.parametrize("platform,domain", [("partiful", "partiful.com"), ("posh", "posh.vip")])
+def test_partiful_and_posh_query_their_own_domain(platform, domain):
+    with patch("requests.post", return_value=_mock_response("")) as mock_post:
+        future_events.platform_events(platform, region="Los Angeles, CA")
+
+    query = mock_post.call_args.kwargs["data"]["q"]
+    assert f"site:{domain}" in query
+
+
+def test_partiful_result_is_kept_without_a_registered_url_pattern():
+    """Partiful/Posh have no _EVENT_URL_PATTERNS entry (their exact
+    event-URL shape isn't confirmed), so _is_event_url should default to
+    allowing any result on the domain rather than filtering everything out."""
+    ddg_html = """
+    <div class="result"><div class="result__body">
+      <h2 class="result__title"><a class="result__a" href="https://partiful.com/e/abc123">Someone's Birthday Party</a></h2>
+      <a class="result__snippet" href="https://partiful.com/e/abc123">You're invited!</a>
+    </div></div>
+    """
+    with patch("requests.post", return_value=_mock_response(ddg_html)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        events = future_events.platform_events("partiful", region="Los Angeles, CA")
+
+    assert len(events) == 1
+    assert events[0]["source"] == "partiful"
+
+
 def test_camber_query_scopes_to_the_la_happenings_section():
     with patch("requests.post", return_value=_mock_response("")) as mock_post:
         future_events.platform_events("camber", region="Los Angeles, CA")

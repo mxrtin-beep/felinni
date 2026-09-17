@@ -67,7 +67,14 @@ tab's own filters stack on top.
   (OpenStreetMap Nominatim, cached to disk, ~1/sec). Nearby cities group
   into one metro area for trip-counting, with a neighborhood drill-down for
   your home area. Wrong pin? Fix it inline from the **Fix a location** card
-  — no re-geocoding needed.
+  — no re-geocoding needed. A location that can't be resolved on its own
+  but matches a campus/workplace anchor with known coordinates (see
+  `DEFAULT_LOCATION_ANCHORS` in `felinni/geocode.py`) is placed there
+  instead of left off the map — e.g. "Boelter 5800" (a UCLA room number,
+  not its own addressable point) lands at "UCLA, Los Angeles, CA." Anything
+  that still fails, or was only placed approximately, shows up with its
+  reason in the **Geocoding notes** card, instead of a bare "N not
+  geocoded" count with no way to tell why.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server
@@ -75,8 +82,9 @@ tab's own filters stack on top.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
 - **Future** — one ranked list of upcoming events from Eventbrite, Luma,
-  Meetup, Camber (the "LA Happenings" newsletter), and anywhere else
-  DuckDuckGo turns up for your home region (or any region you type in),
+  Meetup, Camber (the "LA Happenings" newsletter), Partiful, Posh, and
+  anywhere else DuckDuckGo turns up for your home region (or any region
+  you type in),
   enriched with start/end time, duration, and location straight from each
   event's own page — no API key/OAuth needed. (Camber's a Substack roundup
   rather than a per-event platform, so its results usually keep their date
