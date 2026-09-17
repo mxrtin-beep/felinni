@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Felinni</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>felinni</h1>
+  <p class="subtitle" id="subtitle">Loading your calendar…</p>
+</header>
+<nav class="tabs" id="tabs">
+  <button data-panel="overview" class="active">Overview</button>
+  <button data-panel="places">Places</button>
+  <button data-panel="map">Map</button>
+  <button data-panel="people">People</button>
+  <button data-panel="habits">Habits</button>
+  <button data-panel="travel">Travel</button>
+  <button data-panel="time">Time &amp; Spend</button>
+  <button data-panel="seasonality">Seasonality</button>
+  <!-- Anomalies tab hidden for now - the flagging wasn't reading as useful
+       signal in practice; felinni.anomalies/api/anomalies are still there,
+       revisit before re-enabling this nav button + panel-anomalies below. -->
+  <button data-panel="future">Future</button>
+</nav>
+<main>
+
+  <section class="panel active" id="panel-overview">
+    <div class="card">
+      <h2>Import calendars</h2>
+      <p class="card-note">
+        Pull in a calendar from Apple, Google, Outlook, or anywhere else -
+        merges into every tab alongside events.json. Google/Outlook: their
+        calendar settings have a "secret address in iCal format" /
+        "publish this calendar" link you can paste below. Apple: an
+        iCloud calendar's public sharing link works the same way, or
+        upload the events.json from the exporter above. ICS-link
+        calendars refresh automatically every 30 minutes while the server
+        is running, plus "Refresh now"; uploaded files need a re-upload to
+        update.
+      </p>
+      <div class="controls">
+        <label>Name <input type="text" id="source-name" placeholder="e.g. Work Google Calendar"></label>
+        <label>Provider
+          <select id="source-provider">
+            <option value="apple">Apple</option>
+            <option value="google">Google</option>
+            <option value="outlook">Outlook</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label>Import via
+          <select id="source-kind">
+            <option value="ics_url">Secret ICS link</option>
+            <option value="ics_file">Upload .ics file</option>
+            <option value="events_json">Upload events.json (Apple exporter)</option>
+          </select>
+        </label>
+      </div>
+      <div class="controls" id="source-url-row">
+        <label>ICS link <input type="text" id="source-url" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" style="min-width:340px"></label>
+      </div>
+      <div class="controls" id="source-file-row" style="display:none">
+        <label>File <input type="file" id="source-file" accept=".ics,.json"></label>
+      </div>
+      <div class="controls">
+        <button id="source-add-btn" type="button">Add calendar</button>
+      </div>
+      <p class="card-note" id="source-add-status"></p>
+      <div id="sources-list"></div>
+    </div>
+    <div class="card">
+      <h2>Date range</h2>
+      <p class="card-note">Applies across every tab.</p>
+      <div class="controls">
+        <label>From <input type="date" id="global-start-date"></label>
+        <label>To <input type="date" id="global-end-date"></label>
+        <button id="global-range-reset" type="button">Reset</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Categories</h2>
+      <p class="card-note">Uncheck any you don't want counted anywhere - applies across every tab too.</p>
+      <div class="controls" style="margin-bottom:8px">
+        <button id="category-filter-all" type="button">All</button>
+        <button id="category-filter-none" type="button">None</button>
+      </div>
+      <div id="category-filter-list" class="controls" style="flex-wrap:wrap"></div>
+    </div>
+    <div class="stat-grid" id="overview-stats"></div>
+    <div class="card">
+      <h2>Top places by visits</h2>
+      <div id="overview-places-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Phases of Life</h2>
+      <div id="phases-list"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-places">
+    <div class="card">
+      <h2>Place frequency</h2>
+      <div id="places-chart"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-map">
+    <div class="card">
+      <h2>Locations</h2>
+      <p class="card-note" id="map-note">Filter by category, person, or year range. Circle size = visit count.</p>
+      <div class="controls">
+        <label>Category <select id="map-category"><option value="">All</option></select></label>
+        <label>Person <select id="map-person"><option value="">All</option></select></label>
+        <label>From <select id="map-start-year"></select></label>
+        <label>To <select id="map-end-year"></select></label>
+        <button id="map-geocode-btn" type="button">Geocode locations</button>
+        <label><input type="checkbox" id="map-geocode-force"> Redo already-geocoded locations</label>
+      </div>
+      <div class="controls" id="map-geocode-progress" style="display:none">
+        <div class="progress-track"><div class="progress-fill" id="map-geocode-fill"></div></div>
+        <span id="map-geocode-label" style="font-size:12px;color:var(--text-secondary)"></span>
+      </div>
+      <p class="card-note" id="map-geocode-error" style="display:none;color:var(--status-critical)"></p>
+      <div class="legend" id="map-legend"></div>
+      <div id="map" style="height:480px;border-radius:8px;overflow:hidden"></div>
+    </div>
+    <div class="card">
+      <h2>Fix a location</h2>
+      <p class="card-note">Wrong pin, or missing entirely? Pick the location and give a corrected address (or exact coordinates) - it always wins over the cache and the map updates right away.</p>
+      <div class="controls">
+        <label>Location <select id="fix-location-select"></select></label>
+        <label>Corrected address <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA" style="min-width:280px"></label>
+        <button id="fix-location-btn" type="button">Fix</button>
+      </div>
+      <p class="card-note" id="fix-location-status"></p>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-people">
+    <div class="card">
+      <h2>Time spent with each person</h2>
+      <div id="people-chart"></div>
+    </div>
+    <div class="card">
+      <div class="controls">
+        <h2 style="margin:0">Events over time, top people</h2>
+        <select id="people-granularity">
+          <option value="year">Year</option>
+          <option value="month">Month</option>
+          <option value="week">Week</option>
+        </select>
+        <div class="dropdown-check" id="people-picker-dropdown">
+          <button type="button" id="people-picker-toggle" class="dropdown-toggle">People ▾</button>
+          <div class="dropdown-panel" id="people-picker-panel" style="display:none">
+            <div class="controls" style="margin-bottom:8px">
+              <button id="people-picker-all" type="button">All</button>
+              <button id="people-picker-none" type="button">None</button>
+            </div>
+            <div id="people-picker-list" class="dropdown-checklist"></div>
+          </div>
+        </div>
+      </div>
+      <div id="people-year-chart"></div>
+      <div class="range-slider" id="people-trend-range">
+        <div class="range-slider-track"></div>
+        <div class="range-slider-fill"></div>
+        <div class="range-slider-handle" data-handle="low" tabindex="0"></div>
+        <div class="range-slider-handle" data-handle="high" tabindex="0"></div>
+      </div>
+      <div class="controls" style="justify-content:space-between;font-size:11px;color:var(--text-secondary)">
+        <span id="people-trend-range-low-label"></span>
+        <span id="people-trend-range-high-label"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Growing vs. fading</h2>
+      <p class="card-note">Linear trend in events/year. Negative = seeing them less over time.</p>
+      <div id="trends-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-habits">
+    <div class="card">
+      <div class="controls">
+        <label>Category <select id="habit-category"></select></label>
+      </div>
+      <h2>Weekly activity</h2>
+      <p class="card-note">Each cell is one week; filled = at least one event that week.</p>
+      <div id="habit-strip"></div>
+    </div>
+    <div class="stat-grid" id="habit-stats"></div>
+    <div class="card">
+      <h2>Consistency by year</h2>
+      <div id="habit-consistency-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Longest streaks and gaps</h2>
+      <div id="habit-streaks-table"></div>
+    </div>
+    <div class="card">
+      <h2>Repeating events</h2>
+      <div id="recurring-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-travel">
+    <p class="card-note" id="travel-note" style="display:none"></p>
+    <div class="stat-grid" id="travel-stats"></div>
+    <div class="card">
+      <h2>Trips away from home</h2>
+      <p class="card-note">Any stretch of time spent in a region other than home - no Travel tag needed, just geocoded locations.</p>
+      <div id="travel-region-trips"></div>
+    </div>
+    <div class="card">
+      <h2>All metro areas visited</h2>
+      <p class="card-note">Nearby cities (e.g. LA, Santa Monica, Pasadena) are grouped into one metro area - see below to drill into any one of them.</p>
+      <div id="travel-regions-table"></div>
+    </div>
+    <div class="card">
+      <div class="controls">
+        <h2 style="margin:0">Neighborhoods</h2>
+        <select id="travel-metro-select"></select>
+      </div>
+      <p class="card-note">A finer breakdown within one metro area - defaults to home.</p>
+      <div id="travel-neighborhoods-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-time">
+    <div class="card">
+      <h2>Time by category</h2>
+      <div id="time-chart"></div>
+      <div id="time-table" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-seasonality">
+    <div class="card">
+      <div class="controls">
+        <label>Category <select id="season-category"><option value="">All</option></select></label>
+      </div>
+      <h2>Average events by month</h2>
+      <div id="season-month-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Average events by season</h2>
+      <div id="season-season-chart"></div>
+    </div>
+  </section>
+
+  <!--
+  <section class="panel" id="panel-anomalies">
+    <div class="card">
+      <h2>Weekly scheduled hours</h2>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--series-1)"></span>Typical</span>
+        <span><span class="swatch" style="background:var(--series-2)"></span>Packed</span>
+        <span><span class="swatch" style="background:var(--series-3)"></span>Empty</span>
+      </div>
+      <div id="anomalies-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Flagged weeks</h2>
+      <div id="anomalies-table"></div>
+    </div>
+    <div class="card">
+      <h2>Anomalies by category</h2>
+      <div id="anomalies-category-table"></div>
+    </div>
+  </section>
+  -->
+
+  <section class="panel" id="panel-future">
+    <div class="card">
+      <h2>Future <span class="badge planned">Coming soon</span></h2>
+      <p class="card-note">
+        The idea: use your own history - the categories, people, places, and
+        times you already gravitate toward - to surface upcoming events
+        worth going to, pulled from Eventbrite, Luma, and Meetup. Nothing
+        below is wired up yet (each needs its own API access, which isn't
+        configured), but here's the shape of it.
+      </p>
+      <p class="card-note" id="future-note"></p>
+    </div>
+    <div class="card">
+      <h2>Suggested for you</h2>
+      <p class="card-note">Would rank upcoming events by fit with your habits - category overlap, your usual day/time, places you already frequent, people you tend to see.</p>
+      <div id="future-suggestions"><p class="empty-note">Nothing here yet - no platforms connected.</p></div>
+    </div>
+    <div class="card">
+      <div class="controls" style="justify-content:space-between">
+        <h2 style="margin:0">Upcoming events</h2>
+        <button type="button" id="future-connect-btn" disabled>Connect a platform</button>
+      </div>
+      <p class="card-note">Pulled from Eventbrite, Luma, and Meetup once connected - needs each platform's own API access (Eventbrite/Luma: an API key, Meetup: OAuth), none of which is configured yet.</p>
+      <div id="future-events"><p class="empty-note">Nothing here yet.</p></div>
+    </div>
+  </section>
+
+</main>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
