@@ -1020,6 +1020,9 @@ function updateGeocodeButton(locationsData) {
   }
 }
 
+let geocodePollTicks = 0;
+const GEOCODE_FAILURES_REFRESH_EVERY_N_TICKS = 5; // ~5s at the 1s poll interval - live, but not refetching every single tick
+
 async function pollGeocodeStatus() {
   const status = await fetch("/api/geocode/status").then(r => r.json());
   const btn = document.getElementById("map-geocode-btn");
@@ -1030,6 +1033,7 @@ async function pollGeocodeStatus() {
     if (geocodePollTimer) {
       clearInterval(geocodePollTimer);
       geocodePollTimer = null;
+      geocodePollTicks = 0;
       await refreshMap(); // job just finished - show the newly-geocoded points
       await loadGeocodeFailures(); // ...and why anything left over still isn't
     }
@@ -1053,6 +1057,14 @@ async function pollGeocodeStatus() {
   const pct = status.total ? Math.round((status.done / status.total) * 100) : 0;
   document.getElementById("map-geocode-fill").style.width = pct + "%";
   document.getElementById("map-geocode-label").textContent = status.total ? `${status.done} / ${status.total}` : "Starting…";
+
+  // A run already in progress (e.g. this tab was reloaded mid-run) still
+  // has a live diagnostics file worth showing, not just once the whole
+  // batch finishes - refreshed periodically rather than every single tick.
+  geocodePollTicks += 1;
+  if (geocodePollTicks % GEOCODE_FAILURES_REFRESH_EVERY_N_TICKS === 0) {
+    await loadGeocodeFailures();
+  }
 
   if (!geocodePollTimer) {
     geocodePollTimer = setInterval(pollGeocodeStatus, 1000);
