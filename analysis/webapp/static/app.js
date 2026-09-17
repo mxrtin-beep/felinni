@@ -774,20 +774,38 @@ async function loadAnomalies() {
     ], data.by_category.slice(0, 30));
 }
 
-// --- Future (skeleton - Eventbrite/Luma/Meetup, nothing wired up yet) ---
-async function loadFuture() {
-  const data = await api("future");
+// --- Future (Eventbrite/Luma/Meetup events found via a DuckDuckGo search) ---
+async function loadFuture(region) {
+  const query = region ? `future?region=${encodeURIComponent(region)}` : "future";
+  const data = await api(query);
   document.getElementById("future-note").textContent = data.message || "";
+
+  const regionInput = document.getElementById("future-region-input");
+  if (regionInput && !regionInput.value) regionInput.value = data.region || "";
 
   const suggestions = document.getElementById("future-suggestions");
   suggestions.innerHTML = data.suggestions.length
     ? data.suggestions.map(s => `<p>${escapeHtml(s.title)}</p>`).join("")
-    : '<p class="empty-note">Nothing here yet - no platforms connected.</p>';
+    : '<p class="empty-note">Nothing here yet.</p>';
 
   const events = document.getElementById("future-events");
   events.innerHTML = data.events.length
-    ? data.events.map(e => `<p>${escapeHtml(e.title)} <span class="source-meta">${escapeHtml(e.source || "")}</span></p>`).join("")
+    ? data.events.map(e => `
+        <p>
+          <a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a>
+          <span class="source-meta">${escapeHtml(e.source || "")}</span>
+          ${e.snippet ? `<br><span class="card-note">${escapeHtml(e.snippet)}</span>` : ""}
+        </p>`).join("")
     : '<p class="empty-note">Nothing here yet.</p>';
+}
+
+function wireFutureRegionSearch() {
+  const btn = document.getElementById("future-region-btn");
+  const input = document.getElementById("future-region-input");
+  if (!btn || !input) return;
+  const run = () => loadFuture(input.value.trim() || undefined);
+  btn.addEventListener("click", run);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
 }
 
 // --- Category colors (shared across Map, Habits, Time & Spend) ---
@@ -1097,4 +1115,5 @@ async function refreshMap() {
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();
+  wireFutureRegionSearch();
 })();

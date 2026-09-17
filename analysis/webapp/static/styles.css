@@ -199,7 +199,7 @@ main {
   font-size: 13px;
 }
 
-select, input[type="number"] {
+select, input[type="number"], input[type="text"] {
   font: inherit;
   font-size: 13px;
   padding: 5px 8px;

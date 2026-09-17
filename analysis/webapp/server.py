@@ -472,17 +472,34 @@ def anomalies_view():
 
 @app.get("/api/future")
 def future_view():
-    """Skeleton for the Future tab - always empty for now (see
-    felinni.future_events). `events` merges every platform's results into
-    one list (each tagged with its "source") rather than a separate
-    section per platform, since none is connected yet anyway."""
+    """Future tab: events found for Eventbrite/Luma/Meetup via a DuckDuckGo
+    search (see felinni.future_events - no platform API key/OAuth needed).
+    `region` defaults to your geocoded home metro, falling back to
+    felinni.future_events.DEFAULT_REGION if nothing's been geocoded yet;
+    `?region=` overrides either for a one-off search elsewhere. `events`
+    merges every platform's results into one list (each tagged with its
+    "source") rather than a separate section per platform."""
+    df = _get_df()
+    cache = _load_geocode_cache()
+    home = regions.home_region(regions.visits_by_region(df, cache))
+    region = request.args.get("region") or home or future_events.DEFAULT_REGION
+
     events = []
     for platform in future_events.PLATFORMS:
-        events.extend(future_events.platform_events(platform))
+        events.extend(future_events.platform_events(platform, region=region))
+
+    message = None
+    if not events:
+        message = (
+            f"No results from Eventbrite/Luma/Meetup for \"{region}\" right now - "
+            "try a different region, or DuckDuckGo may be rate-limiting this search."
+        )
+
     return jsonify({
-        "suggestions": future_events.suggestions_for(_get_df()),
+        "region": region,
+        "suggestions": future_events.suggestions_for(df),
         "events": events,
-        "message": "Upcoming events aren't wired up yet - each platform needs its own API access, which isn't configured.",
+        "message": message,
     })
 
 

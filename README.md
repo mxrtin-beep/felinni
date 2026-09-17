@@ -74,9 +74,11 @@ tab's own filters stack on top.
   runs. Duplicate events across sources are matched and only counted once.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
-- **Future** — a skeleton for suggesting upcoming events (Eventbrite/Luma/
-  Meetup) ranked by fit with your habits. Not implemented — no API access
-  is configured for any of the three — just laid out for later.
+- **Future** — upcoming events from Eventbrite, Luma, and Meetup for your
+  home region (or any region you type in), found via a DuckDuckGo search —
+  no API key/OAuth needed for any of the three. Ranking results by fit with
+  your habits is still a skeleton (search snippets don't carry a reliable
+  date/category to score against your history with).
 
 ### Or skip the browser
 

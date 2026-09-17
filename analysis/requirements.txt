@@ -5,6 +5,8 @@ flask>=3.0
 # Optional, only needed for felinni.geocode / mapping:
 geopy>=2.4
 folium>=0.15
-# Optional, only needed for felinni.calendar_sources (importing Google/Outlook/Apple ICS calendars):
+# requests is used by felinni.calendar_sources (importing Google/Outlook/Apple
+# ICS calendars) and felinni.future_events (the Future tab's DuckDuckGo search):
 requests>=2.31
+# Optional, only needed for felinni.calendar_sources:
 icalendar>=5.0
