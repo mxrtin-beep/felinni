@@ -49,12 +49,14 @@ def recurring_series(
         else:
             status = "stopped"
 
+        first_seen = dates.min()
         rows.append({
             "title": title,
             "category": group["category"].mode().iat[0],
             "occurrences": len(dates),
-            "first_seen": dates.min(),
+            "first_seen": first_seen,
             "last_seen": last_seen,
+            "streak_days": (last_seen - first_seen).days,
             "median_interval_days": median_interval,
             "days_since_last": days_since,
             "status": status,
@@ -63,7 +65,7 @@ def recurring_series(
     if not rows:
         return pd.DataFrame(columns=[
             "title", "category", "occurrences", "first_seen", "last_seen",
-            "median_interval_days", "days_since_last", "status", "cadence",
+            "streak_days", "median_interval_days", "days_since_last", "status", "cadence",
         ])
 
     result = pd.DataFrame(rows)

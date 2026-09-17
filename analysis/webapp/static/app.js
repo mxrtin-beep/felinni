@@ -13,6 +13,12 @@ function api(path) {
   return fetch(`/api/${base}${qs ? `?${qs}` : ""}`).then(r => r.json());
 }
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str == null ? "" : String(str);
+  return div.innerHTML;
+}
+
 function table(container, columns, rows) {
   container.innerHTML = "";
   if (!rows.length) {
@@ -193,8 +199,9 @@ async function loadPeople() {
   const results = await Promise.allSettled([
     (async () => {
       const people = await api("people?limit=15");
+      const sorted = [...people].sort((a, b) => b.total_hours - a.total_hours);
       horizontalBarChart(document.getElementById("people-chart"),
-        people.map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
+        sorted.map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
     })(),
     refreshPeopleTrend(),
     (async () => {
@@ -261,7 +268,7 @@ async function refreshHabit() {
   statGrid.appendChild(statTile("Longest gap", longestGap ? `${longestGap.weeks} wks` : "-"));
 
   columnChart(document.getElementById("habit-consistency-chart"),
-    data.consistency.map(c => ({ label: String(c.year), value: c.consistency * 100 })), { valueLabel: "% weeks active" });
+    data.consistency.map(c => ({ label: String(c.year), value: c.consistency * 100 })), { valueLabel: "% weeks active", separators: true });
 
   table(document.getElementById("habit-streaks-table"),
     [
@@ -283,6 +290,7 @@ async function loadRecurringEvents() {
       { key: "title", label: "Event" },
       { key: "category", label: "Category" },
       { key: "cadence", label: "Usual cadence" },
+      { key: "streak_days", label: "Streak (days)", num: true },
       { key: "last_seen", label: "Last seen", format: fmtDate },
       { key: "days_since_last", label: "Days since", num: true, format: v => Math.round(v) },
       { key: "status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
@@ -290,6 +298,32 @@ async function loadRecurringEvents() {
 }
 
 // --- Travel ---
+function populateTravelMetroSelect(regionVisits, homeRegion) {
+  const select = document.getElementById("travel-metro-select");
+  if (!select.dataset.wired) {
+    select.addEventListener("change", refreshTravelNeighborhoods);
+    select.dataset.wired = "1";
+  }
+  const previous = select.value;
+  select.innerHTML = regionVisits.map(r => `<option value="${escapeHtml(r.region)}">${escapeHtml(r.region)}</option>`).join("");
+  const metros = regionVisits.map(r => r.region);
+  if (metros.includes(previous)) select.value = previous;
+  else if (metros.includes(homeRegion)) select.value = homeRegion;
+}
+
+async function refreshTravelNeighborhoods() {
+  const select = document.getElementById("travel-metro-select");
+  const metro = select.value;
+  const data = await api(`travel/neighborhoods${metro ? `?metro=${encodeURIComponent(metro)}` : ""}`);
+  table(document.getElementById("travel-neighborhoods-table"),
+    [
+      { key: "neighborhood", label: "Neighborhood" },
+      { key: "visits", label: "Events", num: true },
+      { key: "total_hours", label: "Hours", num: true, format: v => Math.round(v) },
+      { key: "n_locations", label: "Places", num: true },
+    ], data.neighborhoods);
+}
+
 async function loadTravel() {
   const data = await api("travel");
   const note = document.getElementById("travel-note");
@@ -298,13 +332,13 @@ async function loadTravel() {
 
   const statGrid = document.getElementById("travel-stats");
   statGrid.innerHTML = "";
-  statGrid.appendChild(statTile("Home region", data.home_region || "-"));
-  statGrid.appendChild(statTile("Regions visited", data.region_visits.length));
+  statGrid.appendChild(statTile("Home metro", data.home_region || "-"));
+  statGrid.appendChild(statTile("Metro areas visited", data.region_visits.length));
   statGrid.appendChild(statTile("Trips away from home", data.region_trips.length));
 
   table(document.getElementById("travel-region-trips"),
     [
-      { key: "region", label: "Region" },
+      { key: "region", label: "Metro area" },
       { key: "start", label: "Start", format: fmtDate },
       { key: "end", label: "End", format: fmtDate },
       { key: "duration_days", label: "Days", num: true, format: v => v?.toFixed(1) },
@@ -312,13 +346,16 @@ async function loadTravel() {
 
   table(document.getElementById("travel-regions-table"),
     [
-      { key: "region", label: "Region" },
+      { key: "region", label: "Metro area" },
       { key: "visits", label: "Events", num: true },
       { key: "total_hours", label: "Hours", num: true, format: v => Math.round(v) },
       { key: "n_locations", label: "Places", num: true },
       { key: "first_seen", label: "First seen", format: fmtDate },
       { key: "last_seen", label: "Last seen", format: fmtDate },
     ], data.region_visits);
+
+  populateTravelMetroSelect(data.region_visits, data.home_region);
+  await refreshTravelNeighborhoods();
 
   table(document.getElementById("travel-timeline"),
     [
@@ -426,6 +463,15 @@ function buildCategoryColors(categories, realColors) {
 // --- Map ---
 let leafletMap, markerLayer;
 let hasSetInitialMapView = false;
+// The points fitBounds should show once the map is actually visible. The
+// Map panel is `display:none` until its tab is clicked, so the very first
+// fitBounds call (fired from the initial reloadAll(), before any tab click)
+// runs against a zero-size container - Leaflet computes a bogus zoom/center
+// from that (an over-zoomed view on an arbitrary patch of ocean) rather than
+// erroring, so the initial fit needs to be redone once the container has a
+// real size.
+let lastMapFitTargets = null;
+let hasFitMapWhileVisible = false;
 
 /** Coarse grid-clusters locations (by degree-sized bins) and returns the
  * [lat, lon] points belonging to whichever bin holds the most visits - a
@@ -499,10 +545,21 @@ async function loadMap(meta) {
       if (resp.ok) await pollGeocodeStatus();
     });
 
+    document.getElementById("fix-location-btn").addEventListener("click", fixSelectedLocation);
+
     // Leaflet measures the container on init; the Map tab may have been
     // hidden (display:none) at that point, so its size reads as zero.
     document.querySelector('button[data-panel="map"]').addEventListener("click", () => {
-      setTimeout(() => leafletMap.invalidateSize(), 0);
+      setTimeout(() => {
+        leafletMap.invalidateSize();
+        // First time the tab is actually visible: redo the initial fit,
+        // since the one that ran on page load (container hidden, 0x0) was
+        // computed against a bogus viewport size.
+        if (!hasFitMapWhileVisible && lastMapFitTargets && lastMapFitTargets.length) {
+          leafletMap.fitBounds(lastMapFitTargets, { padding: [30, 30], maxZoom: 12 });
+          hasFitMapWhileVisible = true;
+        }
+      }, 0);
     });
   }
   await refreshMap();
@@ -548,6 +605,49 @@ async function pollGeocodeStatus() {
   }
 }
 
+function populateFixLocationSelect(allLocations) {
+  const select = document.getElementById("fix-location-select");
+  const previous = select.value;
+  select.innerHTML = allLocations.map(loc => `<option value="${escapeHtml(loc)}">${escapeHtml(loc)}</option>`).join("");
+  if (allLocations.includes(previous)) select.value = previous;
+}
+
+async function fixSelectedLocation() {
+  const status = document.getElementById("fix-location-status");
+  const location = document.getElementById("fix-location-select").value;
+  const query = document.getElementById("fix-location-query").value.trim();
+  if (!location) {
+    status.textContent = "Pick a location first.";
+    return;
+  }
+  if (!query) {
+    status.textContent = "Enter a corrected address to look up.";
+    return;
+  }
+  status.textContent = "Looking up…";
+  const btn = document.getElementById("fix-location-btn");
+  btn.disabled = true;
+  try {
+    const resp = await fetch("/api/geocode/override", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location, query }),
+    });
+    const body = await resp.json();
+    if (!resp.ok) {
+      status.textContent = body.error || "Couldn't fix that location.";
+      return;
+    }
+    status.textContent = `Fixed: ${location} → ${body.entry.display_name || `${body.entry.lat}, ${body.entry.lon}`}`;
+    document.getElementById("fix-location-query").value = "";
+    await refreshMap();
+  } catch (e) {
+    status.textContent = "Request failed - is the server running?";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function refreshMap() {
   const category = document.getElementById("map-category").value;
   const person = document.getElementById("map-person").value;
@@ -562,6 +662,7 @@ async function refreshMap() {
   const data = await api(`locations?${params.toString()}`);
   markerLayer.clearLayers();
   updateGeocodeButton(data);
+  populateFixLocationSelect(data.all_locations || []);
 
   const note = document.getElementById("map-note");
   if (data.geocoded_places === 0) {
@@ -583,8 +684,12 @@ async function refreshMap() {
     const marker = L.circleMarker([loc.lat, loc.lon], {
       radius, color, fillColor: color, fillOpacity: 0.6, weight: 1,
     });
+    const titlesHtml = (loc.titles || []).length
+      ? `<br><em>${loc.titles.map(escapeHtml).join(", ")}</em>`
+      : "";
+    const addressHtml = loc.display_name ? `<br><span style="color:var(--text-secondary)">${escapeHtml(loc.display_name)}</span>` : "";
     marker.bindPopup(
-      `<strong>${loc.location}</strong><br>${loc.visits} visits (${fmtDate(loc.first_seen)} – ${fmtDate(loc.last_seen)})<br>${(loc.categories || []).join(", ")}`
+      `<strong>${escapeHtml(loc.location)}</strong>${addressHtml}<br>${loc.visits} visits (${fmtDate(loc.first_seen)} – ${fmtDate(loc.last_seen)})<br>${(loc.categories || []).join(", ")}${titlesHtml}`
     );
     marker.addTo(markerLayer);
     bounds.push([loc.lat, loc.lon]);
@@ -594,9 +699,11 @@ async function refreshMap() {
     // First render: default to the densest cluster of places (typically
     // "home") rather than zooming out to fit every far-flung trip too.
     const dense = densestClusterPoints(data.locations);
-    leafletMap.fitBounds(dense.length ? dense : bounds, { padding: [30, 30], maxZoom: 12 });
+    lastMapFitTargets = dense.length ? dense : bounds;
+    leafletMap.fitBounds(lastMapFitTargets, { padding: [30, 30], maxZoom: 12 });
     hasSetInitialMapView = true;
   } else if (bounds.length) {
+    lastMapFitTargets = bounds;
     leafletMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
   }
 }

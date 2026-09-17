@@ -139,12 +139,28 @@ report: "Santa Monica Pier" landing in Europe). Three ways to fix it:
   (gitignored) and add an exact `{"lat":, "lon":}` for that location
   string — overrides always win and never touch the network.
 
-To fix a location that's already cached wrong, either add it to
-`geocode_overrides.json`, or force just that entry to be re-geocoded:
+To fix a location that's already cached wrong, easiest is right from the
+Map tab: the **Fix a location** card lets you pick the location and type a
+corrected address, which is looked up once and saved as an override -
+takes effect on the map immediately, no re-geocode run needed. The same
+thing is also available by hand: add it to `geocode_overrides.json`, or
+force just that entry to be re-geocoded:
 
 ```bash
 python cli.py --events ../events.json geocode --clear "Santa Monica Pier" "B27 Terrace"
 ```
+
+### Travel tab: metro areas and neighborhoods
+
+The Travel tab groups nearby cities into one metro area (LA, Santa Monica,
+and Pasadena all count as one trip's worth of geography, not three) rather
+than listing every geocoded city separately. A metro's label defaults to
+its most-visited city + country; to rename one to something more natural
+("Bay Area", "Greater Toronto", "DC"), edit `felinni.regions.METRO_AREA_NAMES`.
+The **Neighborhoods** card drills into any one metro area (defaulting to
+home) for a finer breakdown - useful for wherever you actually live, e.g.
+splitting "Los Angeles" into Downtown/West LA/the Valley/Orange County,
+using Nominatim's neighborhood-level data where available.
 
 ### Category colors
 
@@ -182,7 +198,7 @@ are a thin JSON wrapper over the same functions.
 | Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Repeating events falling off pace (Book Club, Poker Night, ...) | `felinni.recurring` | Auto-detects every named recurring series from Calendar's own repeat rule (`is_recurring`) - no need to pick one, unlike `felinni.habits` above. Flags each as active/slowing down/stopped relative to its own historical cadence |
-| Trips away from home, regions visited, by geography | `felinni.regions` | Groups by geocoded city/country, so a trip counts whether or not you tagged it - home is inferred as your most-visited region |
+| Trips away from home, metro areas visited, by geography | `felinni.regions` | Groups nearby cities (within ~80km) into one metro area, so a trip counts whether or not you tagged it - home is inferred as your most-visited metro. `neighborhoods_for_metro` gives a finer breakdown within any one metro (e.g. splitting "Los Angeles" into its neighborhoods) - on the dashboard, the Travel tab's Neighborhoods card |
 | Travel timeline from tagged events only | `felinni.travel` | Secondary cross-check behind the above; collapses consecutive same-destination events into one trip |
 | Time (and estimated spend) by category | `felinni.spending` | You supply the per-visit cost assumptions in `DEFAULT_COST_PER_VISIT` — nothing is invented; all-day events are excluded since they don't carry a real duration |
 | Seasonality by month/season | `felinni.seasonality` | Only counts timed events — all-day entries (birthdays, holidays, vacations) are excluded |

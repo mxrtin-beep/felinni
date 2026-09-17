@@ -173,7 +173,7 @@ function horizontalBarChart(container, data, { valueLabel = "", color, addressLi
 }
 
 /** Vertical column chart: data = [{label, value}], one series, baseline-anchored. */
-function columnChart(container, data, { valueLabel = "", color, highlight } = {}) {
+function columnChart(container, data, { valueLabel = "", color, highlight, separators = false } = {}) {
   container.innerHTML = "";
   if (!data.length) {
     container.innerHTML = '<p class="empty-note">No data yet.</p>';
@@ -202,6 +202,12 @@ function columnChart(container, data, { valueLabel = "", color, highlight } = {}
     const barH = Math.max((d.value / max) * chartH, d.value > 0 ? 2 : 0);
     const x = padLeft + i * step + (step - bw) / 2;
     const y = padTop + chartH - barH;
+    // A light divider before each bar (skipping the very first) - a visual
+    // separator between periods, e.g. one per year.
+    if (separators && i > 0) {
+      const sepX = padLeft + i * step;
+      svg.appendChild(el("line", { x1: sepX, x2: sepX, y1: padTop, y2: padTop + chartH, stroke: cssVar("--grid"), "stroke-width": 1, opacity: 0.6 }));
+    }
     const fill = highlight && highlight(d) ? highlight(d) : barColor;
     const rect = el("rect", { x, y, width: bw, height: barH, rx: 4, ry: 4, fill });
     rect.addEventListener("mousemove", (evt) => showTooltip(evt, `<strong>${d.label}</strong><br>${formatNumber(d.value)} ${valueLabel}`));
@@ -388,6 +394,23 @@ function timelineChart(container, groups) {
   const maxYear = new Date(maxTime).getUTCFullYear();
   const yearSpan = Math.max(maxYear - minYear, 1);
   const yearStep = Math.max(1, Math.ceil((yearSpan * 40) / chartW)); // thin out labels on a long span
+  // Quarter separators (season boundaries) - lighter/dashed so the solid
+  // year gridlines still read as the primary structure. Skipped on a long
+  // span where every quarter tick would just be visual noise.
+  const showQuarters = yearStep === 1 && chartW / Math.max(yearSpan * 4, 1) > 6;
+  if (showQuarters) {
+    for (let y = minYear; y <= maxYear + 1; y++) {
+      for (const month of [3, 6, 9]) {
+        const t = Date.UTC(y, month, 1);
+        if (t < minTime || t > maxTime) continue;
+        const x = xScale(t);
+        svg.appendChild(el("line", {
+          x1: x, x2: x, y1: padTop, y2: height - padBottom,
+          stroke: cssVar("--grid"), "stroke-width": 1, "stroke-dasharray": "2,3", opacity: 0.5,
+        }));
+      }
+    }
+  }
   for (let y = minYear; y <= maxYear; y++) {
     const t = Date.UTC(y, 0, 1);
     if (t < minTime || t > maxTime) continue;

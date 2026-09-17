@@ -68,6 +68,15 @@ def test_slowing_down_series_is_flagged_between_active_and_stopped(tmp_path):
     assert row["status"] == "slowing down"
 
 
+def test_streak_days_spans_first_to_last_occurrence(tmp_path):
+    start = pd.Timestamp("2024-01-01")
+    events = [_recurring_event(i, "Book Club", start + pd.Timedelta(weeks=i)) for i in range(10)]
+    df = _load(tmp_path, events)
+    result = recurring.recurring_series(df, as_of=start + pd.Timedelta(weeks=9, days=2))
+    row = result[result["title"] == "Book Club"].iloc[0]
+    assert row["streak_days"] == 9 * 7
+
+
 def test_series_with_too_few_occurrences_is_skipped(tmp_path):
     start = pd.Timestamp("2024-01-01")
     events = [_recurring_event(i, "New Thing", start + pd.Timedelta(weeks=i)) for i in range(2)]

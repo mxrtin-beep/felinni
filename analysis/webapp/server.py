@@ -102,14 +102,28 @@ def breaks_view():
 
 
 def _load_geocode_cache() -> dict:
-    if geocode.DEFAULT_CACHE_PATH.exists():
-        return json.loads(geocode.DEFAULT_CACHE_PATH.read_text())
-    return {}
+    return geocode.effective_cache(geocode.DEFAULT_CACHE_PATH, geocode.DEFAULT_OVERRIDES_PATH)
 
 
 def _geocoded_count() -> int:
     cache = _load_geocode_cache()
     return sum(1 for v in cache.values() if v)
+
+
+def _location_titles(events, top_n: int = 6) -> dict:
+    """Location -> a short list of the event titles seen there (most
+    frequent first, "(3x)" suffix for repeats), so the map popup can show
+    what actually happens at a place, not just its visit count."""
+    located = events.dropna(subset=["location"])
+    located = located[located["location"].str.strip() != ""]
+    out = {}
+    for loc, group in located.groupby("location"):
+        counts = group["title"].value_counts()
+        out[loc] = [
+            f"{title} ({count}×)" if count > 1 else title
+            for title, count in counts.head(top_n).items()
+        ]
+    return out
 
 
 @app.get("/api/places")
@@ -145,12 +159,19 @@ def locations_view():
     cache = _load_geocode_cache()
     freq["lat"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lat"))
     freq["lon"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lon"))
+    freq["display_name"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("display_name"))
+    titles_by_location = _location_titles(events)
+    freq["titles"] = freq["location"].map(lambda loc: titles_by_location.get(loc, []))
     geocoded = freq.dropna(subset=["lat", "lon"])
 
     return jsonify({
         "total_places": int(len(freq)),
         "geocoded_places": int(len(geocoded)),
         "locations": records(geocoded),
+        # Every distinct location string (geocoded or not), for the "fix a
+        # location" picker - you should be able to recode one that failed
+        # to geocode at all, not just one that resolved somewhere wrong.
+        "all_locations": sorted(freq["location"].tolist()),
     })
 
 
@@ -186,6 +207,35 @@ def geocode_start():
 def geocode_status():
     with _geocode_lock:
         return jsonify(dict(GEOCODE_STATE))
+
+
+@app.post("/api/geocode/override")
+def geocode_override():
+    """Recode a location from the Map tab: given the exact location string
+    and either a corrected address to look up (`query`) or an exact
+    `lat`/`lon`, saves it to `geocode_overrides.json`, which always wins
+    over the cache/network on every future run and takes effect on the map
+    immediately (no re-geocode needed)."""
+    payload = request.get_json(force=True, silent=True) or {}
+    location_str = (payload.get("location") or "").strip()
+    if not location_str:
+        return jsonify({"error": "location is required"}), 400
+
+    if isinstance(payload.get("lat"), (int, float)) and isinstance(payload.get("lon"), (int, float)):
+        entry = {"lat": payload["lat"], "lon": payload["lon"], "display_name": payload.get("display_name") or location_str}
+    else:
+        query = (payload.get("query") or "").strip()
+        if not query:
+            return jsonify({"error": "query or lat/lon is required"}), 400
+        try:
+            entry = geocode.geocode_one(query)
+        except ImportError as e:
+            return jsonify({"error": str(e)}), 500
+        if not entry:
+            return jsonify({"error": f"couldn't find a match for {query!r}"}), 404
+
+    geocode.save_override(location_str, entry, geocode.DEFAULT_OVERRIDES_PATH)
+    return jsonify({"location": location_str, "entry": entry})
 
 
 @app.get("/api/stopped-going")
@@ -276,6 +326,22 @@ def travel_view():
         "tagged_trips": tagged_trips,
         "message": message,
     })
+
+
+@app.get("/api/travel/neighborhoods")
+def travel_neighborhoods():
+    """Finer breakdown within one metro area - defaults to home if `metro`
+    isn't given - for the Travel tab's drill-down (e.g. LA split into
+    Downtown/West LA/the Valley/Orange County instead of stopping at "Los
+    Angeles" as one blob)."""
+    df = _get_df()
+    cache = _load_geocode_cache()
+    region_visits = regions.visits_by_region(df, cache)
+    metro = request.args.get("metro") or regions.home_region(region_visits)
+    if not metro:
+        return jsonify({"metro": None, "neighborhoods": []})
+    neighborhoods = regions.neighborhoods_for_metro(df, cache, metro)
+    return jsonify({"metro": metro, "neighborhoods": records(neighborhoods.reset_index())})
 
 
 @app.get("/api/time-by-category")

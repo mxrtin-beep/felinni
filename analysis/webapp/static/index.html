@@ -81,6 +81,16 @@
       <div class="legend" id="map-legend"></div>
       <div id="map" style="height:480px;border-radius:8px;overflow:hidden"></div>
     </div>
+    <div class="card">
+      <h2>Fix a location</h2>
+      <p class="card-note">Wrong pin, or missing entirely? Pick the location and give a corrected address (or exact coordinates) - it always wins over the cache and the map updates right away.</p>
+      <div class="controls">
+        <label>Location <select id="fix-location-select"></select></label>
+        <label>Corrected address <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA" style="min-width:280px"></label>
+        <button id="fix-location-btn" type="button">Fix</button>
+      </div>
+      <p class="card-note" id="fix-location-status"></p>
+    </div>
   </section>
 
   <section class="panel" id="panel-people">
@@ -126,7 +136,6 @@
     </div>
     <div class="card">
       <h2>Repeating events</h2>
-      <p class="card-note">Named recurring series from your calendar's own repeat rules, flagged if they're falling off their usual pace.</p>
       <div id="recurring-table"></div>
     </div>
   </section>
@@ -140,8 +149,17 @@
       <div id="travel-region-trips"></div>
     </div>
     <div class="card">
-      <h2>All regions visited</h2>
+      <h2>All metro areas visited</h2>
+      <p class="card-note">Nearby cities (e.g. LA, Santa Monica, Pasadena) are grouped into one metro area - see below to drill into any one of them.</p>
       <div id="travel-regions-table"></div>
+    </div>
+    <div class="card">
+      <div class="controls">
+        <h2 style="margin:0">Neighborhoods</h2>
+        <select id="travel-metro-select"></select>
+      </div>
+      <p class="card-note">A finer breakdown within one metro area - defaults to home.</p>
+      <div id="travel-neighborhoods-table"></div>
     </div>
     <div class="card">
       <h2>Tagged trips</h2>

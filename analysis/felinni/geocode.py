@@ -65,6 +65,69 @@ def _save_cache(cache_path: Path, cache: dict) -> None:
     cache_path.write_text(json.dumps(cache, indent=2, sort_keys=True))
 
 
+def effective_cache(
+    cache_path: str | Path = DEFAULT_CACHE_PATH,
+    overrides_path: str | Path = DEFAULT_OVERRIDES_PATH,
+) -> dict:
+    """The geocode cache with manual overrides layered on top - what the map
+    (and anything else reading location coordinates) should actually use.
+    Overrides always win, and this never touches the network, so a
+    correction saved via `save_override` shows up immediately without
+    waiting for a full `geocode_locations` run."""
+    cache = dict(_load_cache(Path(cache_path)))
+    overrides = _load_json(Path(overrides_path))
+    for loc, value in overrides.items():
+        if isinstance(value, dict) and isinstance(value.get("lat"), (int, float)) and isinstance(value.get("lon"), (int, float)):
+            cache[loc] = value
+    return cache
+
+
+def save_override(
+    location: str,
+    entry: dict,
+    overrides_path: str | Path = DEFAULT_OVERRIDES_PATH,
+) -> None:
+    """Records a manual correction for `location` - used by the Map tab's
+    "fix a location" form. `entry` must at least have numeric "lat"/"lon";
+    "display_name" is kept if present so the map popup still shows an
+    address. Always wins over both the cache and future Nominatim lookups
+    for that exact location string."""
+    if not isinstance(entry.get("lat"), (int, float)) or not isinstance(entry.get("lon"), (int, float)):
+        raise ValueError("override entry needs numeric lat/lon")
+    overrides_path = Path(overrides_path)
+    overrides = _load_json(overrides_path)
+    overrides[location] = entry
+    overrides_path.parent.mkdir(parents=True, exist_ok=True)
+    overrides_path.write_text(json.dumps(overrides, indent=2, sort_keys=True))
+
+
+def geocode_one(query: str, user_agent: str = "felinni-calendar-analysis") -> dict | None:
+    """One-off live geocode of a free-text address/place, e.g. a corrected
+    location a user typed into the Map tab. Not cached or rate-limited -
+    meant for a single interactive lookup, not a bulk run."""
+    try:
+        from geopy.geocoders import Nominatim
+        from geopy.exc import GeocoderServiceError
+    except ImportError as e:
+        raise ImportError("geocode_one requires geopy: pip install geopy") from e
+
+    geolocator = Nominatim(user_agent=user_agent)
+    try:
+        result = geolocator.geocode(query, addressdetails=True)
+    except GeocoderServiceError:
+        result = None
+    if not result:
+        return None
+
+    address = (result.raw or {}).get("address", {}) if hasattr(result, "raw") else {}
+    city = address.get("city") or address.get("town") or address.get("village") or address.get("municipality") or address.get("county")
+    neighbourhood = address.get("suburb") or address.get("neighbourhood") or address.get("quarter") or address.get("city_district") or address.get("borough")
+    return {
+        "lat": result.latitude, "lon": result.longitude, "display_name": result.address,
+        "city": city, "country": address.get("country"), "neighbourhood": neighbourhood,
+    }
+
+
 def clear_cache_entries(locations: list[str], cache_path: str | Path = DEFAULT_CACHE_PATH) -> int:
     """Removes specific locations from the geocode cache so the next
     `geocode_locations` run re-fetches them - use this to correct a wrong
@@ -180,9 +243,10 @@ def geocode_locations(
             # which reads inconsistently depending on what's near the venue.
             address = (result.raw or {}).get("address", {}) if hasattr(result, "raw") else {}
             city = address.get("city") or address.get("town") or address.get("village") or address.get("municipality") or address.get("county")
+            neighbourhood = address.get("suburb") or address.get("neighbourhood") or address.get("quarter") or address.get("city_district") or address.get("borough")
             cache[loc] = {
                 "lat": result.latitude, "lon": result.longitude, "display_name": result.address,
-                "city": city, "country": address.get("country"),
+                "city": city, "country": address.get("country"), "neighbourhood": neighbourhood,
             }
             resolved_points.append((result.latitude, result.longitude))
         else:

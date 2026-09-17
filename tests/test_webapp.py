@@ -31,6 +31,7 @@ def client():
     "/api/person-trend?granularity=week",
     "/api/habit?category=Gym",
     "/api/travel",
+    "/api/travel/neighborhoods",
     "/api/time-by-category",
     "/api/seasonality",
     "/api/seasonality?category=Gym",
@@ -122,6 +123,26 @@ def test_travel_returns_region_based_shape(client):
     resp = client.get("/api/travel")
     body = resp.get_json()
     assert set(body.keys()) == {"home_region", "region_visits", "region_trips", "tagged_trips", "message"}
+
+
+def test_geocode_override_saves_and_reflects_immediately(client, monkeypatch, tmp_path):
+    overrides_path = tmp_path / "overrides.json"
+    monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+
+    resp = client.post("/api/geocode/override", json={
+        "location": "Royce 160", "lat": 34.0722, "lon": -118.4441, "display_name": "Royce Hall, UCLA",
+    })
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["entry"]["lat"] == 34.0722
+
+    cache = server._load_geocode_cache()
+    assert cache["Royce 160"]["lat"] == 34.0722
+
+
+def test_geocode_override_requires_location(client):
+    resp = client.post("/api/geocode/override", json={"lat": 1, "lon": 2})
+    assert resp.status_code == 400
 
 
 def test_geocode_job_runs_and_reports_progress(client, monkeypatch):

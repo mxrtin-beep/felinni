@@ -100,3 +100,67 @@ def test_trips_away_from_home_empty_without_geocoding(tmp_path):
     df = _load(tmp_path, events)
     trips = regions.trips_away_from_home(df, {})
     assert trips.empty
+
+
+def _metro_coords():
+    return {
+        # Downtown LA and Santa Monica are ~25km apart - one metro.
+        "Downtown Office": {"lat": 34.0522, "lon": -118.2437, "city": "Los Angeles", "country": "United States",
+                             "neighbourhood": "Downtown", "display_name": "Downtown Office, Los Angeles"},
+        "Beach House": {"lat": 34.0195, "lon": -118.4912, "city": "Santa Monica", "country": "United States",
+                        "neighbourhood": "Santa Monica", "display_name": "Beach House, Santa Monica"},
+        # San Diego is ~180km from LA - a distinct metro.
+        "SD Hotel": {"lat": 32.7157, "lon": -117.1611, "city": "San Diego", "country": "United States",
+                     "display_name": "SD Hotel, San Diego"},
+    }
+
+
+def test_nearby_cities_are_grouped_into_one_metro(tmp_path):
+    events = [
+        _event(1, "Work", "2024-01-01T09:00:00Z", "Downtown Office"),
+        _event(2, "Work", "2024-01-02T09:00:00Z", "Downtown Office"),
+        _event(3, "Beach", "2024-01-06T09:00:00Z", "Beach House"),
+    ]
+    df = _load(tmp_path, events)
+    visits = regions.visits_by_region(df, _metro_coords())
+    # One combined metro (labeled after the higher-visit city), not two.
+    assert len(visits) == 1
+    assert visits.index[0] == "Los Angeles, United States"
+    assert visits.iloc[0]["visits"] == 3
+
+
+def test_distant_city_is_a_separate_metro(tmp_path):
+    events = [
+        _event(1, "Work", "2024-01-01T09:00:00Z", "Downtown Office"),
+        _event(2, "Trip", "2024-06-01T09:00:00Z", "SD Hotel"),
+    ]
+    df = _load(tmp_path, events)
+    visits = regions.visits_by_region(df, _metro_coords())
+    assert set(visits.index) == {"Los Angeles, United States", "San Diego, United States"}
+
+
+def test_metro_area_names_override_applies_friendly_label(tmp_path, monkeypatch):
+    monkeypatch.setitem(regions.METRO_AREA_NAMES, "Los Angeles, United States", "Greater LA")
+    events = [_event(1, "Work", "2024-01-01T09:00:00Z", "Downtown Office")]
+    df = _load(tmp_path, events)
+    visits = regions.visits_by_region(df, _metro_coords())
+    assert "Greater LA" in visits.index
+
+
+def test_neighborhoods_for_metro_uses_neighbourhood_field(tmp_path):
+    events = [
+        _event(1, "Work", "2024-01-01T09:00:00Z", "Downtown Office"),
+        _event(2, "Work", "2024-01-02T09:00:00Z", "Downtown Office"),
+        _event(3, "Beach", "2024-01-06T09:00:00Z", "Beach House"),
+    ]
+    df = _load(tmp_path, events)
+    neighborhoods = regions.neighborhoods_for_metro(df, _metro_coords(), "Los Angeles, United States")
+    assert set(neighborhoods.index) == {"Downtown", "Santa Monica"}
+    assert neighborhoods.loc["Downtown", "visits"] == 2
+
+
+def test_neighborhoods_for_metro_empty_for_unknown_metro(tmp_path):
+    events = [_event(1, "Work", "2024-01-01T09:00:00Z", "Downtown Office")]
+    df = _load(tmp_path, events)
+    neighborhoods = regions.neighborhoods_for_metro(df, _metro_coords(), "Nowhere")
+    assert neighborhoods.empty

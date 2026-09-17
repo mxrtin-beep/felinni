@@ -121,3 +121,42 @@ def test_overrides_win_over_cache_and_skip_network(tmp_path):
         )
 
     assert result["Santa Monica Pier"]["lat"] == 34.0094
+
+
+def test_save_override_then_effective_cache_reflects_it(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    overrides_path = tmp_path / "overrides.json"
+    cache_path.write_text(json.dumps({"Royce 160": {"lat": 37.3, "lon": -120.5, "display_name": "wrong, Merced"}}))
+
+    geocode.save_override(
+        "Royce 160", {"lat": 34.0722, "lon": -118.4441, "display_name": "Royce Hall, UCLA"},
+        overrides_path=overrides_path,
+    )
+
+    effective = geocode.effective_cache(cache_path=cache_path, overrides_path=overrides_path)
+    assert effective["Royce 160"]["lat"] == 34.0722
+    assert effective["Royce 160"]["display_name"] == "Royce Hall, UCLA"
+
+
+def test_save_override_rejects_non_numeric_coordinates(tmp_path):
+    overrides_path = tmp_path / "overrides.json"
+    import pytest
+    with pytest.raises(ValueError):
+        geocode.save_override("Somewhere", {"display_name": "no coords"}, overrides_path=overrides_path)
+
+
+def test_geocode_one_returns_structured_result():
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result(city="Santa Monica", country="United States")
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_one("Santa Monica Pier, Santa Monica, CA")
+    assert result["city"] == "Santa Monica"
+    assert result["lat"] == 34.07
+
+
+def test_geocode_one_returns_none_when_not_found():
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: None
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_one("nonsense query")
+    assert result is None
