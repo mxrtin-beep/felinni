@@ -19,17 +19,45 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+/** Renders a sortable table: click a header to sort by it (ascending),
+ * click again to reverse. Sort state is remembered on the container
+ * itself, so it survives the next `table()` call for the same container
+ * (e.g. a data refresh) instead of resetting on every reload. Pass a
+ * column with `sortable: false` to exclude just that one from sorting
+ * (e.g. a column whose value is a rendering detail, not real data). */
 function table(container, columns, rows) {
-  container.innerHTML = "";
   if (!rows.length) {
     container.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
     return;
   }
+  const sortState = container._sortState || { key: null, dir: 1 };
+  container._sortState = sortState;
+
+  let sortedRows = rows;
+  if (sortState.key) {
+    const key = sortState.key, dir = sortState.dir;
+    sortedRows = [...rows].sort((a, b) => {
+      const av = a[key], bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "string") return av.localeCompare(bv) * dir;
+      return (av > bv ? 1 : av < bv ? -1 : 0) * dir;
+    });
+  }
+
+  container.innerHTML = "";
   const t = document.createElement("table");
   const thead = document.createElement("thead");
-  thead.innerHTML = "<tr>" + columns.map(c => `<th class="${c.num ? 'num' : ''}">${c.label}</th>`).join("") + "</tr>";
+  thead.innerHTML = "<tr>" + columns.map(c => {
+    const sortable = c.sortable !== false;
+    const isSorted = sortable && sortState.key === c.key;
+    const arrow = isSorted ? (sortState.dir === 1 ? " ▲" : " ▼") : "";
+    const classes = [c.num ? "num" : "", sortable ? "sortable" : ""].filter(Boolean).join(" ");
+    return `<th class="${classes}"${sortable ? ` data-key="${c.key}"` : ""}>${c.label}${arrow}</th>`;
+  }).join("") + "</tr>";
   const tbody = document.createElement("tbody");
-  rows.forEach(row => {
+  sortedRows.forEach(row => {
     const tr = document.createElement("tr");
     tr.innerHTML = columns.map(c => `<td class="${c.num ? 'num' : ''}">${c.format ? c.format(row[c.key]) : (row[c.key] ?? "-")}</td>`).join("");
     tbody.appendChild(tr);
@@ -37,6 +65,15 @@ function table(container, columns, rows) {
   t.appendChild(thead);
   t.appendChild(tbody);
   container.appendChild(t);
+
+  thead.querySelectorAll("th[data-key]").forEach(th => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.key;
+      if (sortState.key === key) sortState.dir *= -1;
+      else { sortState.key = key; sortState.dir = 1; }
+      table(container, columns, rows);
+    });
+  });
 }
 
 function fmtHours(h) { return h == null ? "-" : `${Math.round(h)}h`; }
@@ -186,11 +223,40 @@ async function loadPlaces() {
 }
 
 // --- People ---
+function populatePeoplePickerList(people) {
+  const container = document.getElementById("people-picker-list");
+  // Keep whatever the user already had checked across a data refresh;
+  // only the very first render defaults to the top 6 (matching the old
+  // fixed top_n=6 behavior).
+  const isFirstRender = !container.dataset.rendered;
+  const previouslyChecked = new Set(
+    [...container.querySelectorAll("input:checked")].map(cb => cb.value)
+  );
+  container.innerHTML = people.map((p, i) => {
+    const checked = isFirstRender ? i < 6 : previouslyChecked.has(p.person);
+    return `<label><input type="checkbox" class="people-picker-checkbox" value="${escapeHtml(p.person)}" ${checked ? "checked" : ""}> ${escapeHtml(p.person)}</label>`;
+  }).join("");
+  container.dataset.rendered = "1";
+}
+
 async function loadPeople() {
   const select = document.getElementById("people-granularity");
   if (!select.dataset.wired) {
     select.addEventListener("change", refreshPeopleTrend);
     select.dataset.wired = "1";
+  }
+  const pickerList = document.getElementById("people-picker-list");
+  if (!pickerList.dataset.wired) {
+    pickerList.addEventListener("change", refreshPeopleTrend);
+    pickerList.dataset.wired = "1";
+    document.getElementById("people-picker-all").addEventListener("click", () => {
+      pickerList.querySelectorAll("input").forEach(cb => { cb.checked = true; });
+      refreshPeopleTrend();
+    });
+    document.getElementById("people-picker-none").addEventListener("click", () => {
+      pickerList.querySelectorAll("input").forEach(cb => { cb.checked = false; });
+      refreshPeopleTrend();
+    });
   }
 
   // Independent pieces of this tab, run with allSettled rather than
@@ -198,12 +264,13 @@ async function loadPeople() {
   // never silently prevent the others from rendering.
   const results = await Promise.allSettled([
     (async () => {
-      const people = await api("people?limit=15");
+      const people = await api("people?limit=20");
       const sorted = [...people].sort((a, b) => b.total_hours - a.total_hours);
       horizontalBarChart(document.getElementById("people-chart"),
-        sorted.map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
+        sorted.slice(0, 15).map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
+      populatePeoplePickerList(sorted);
+      await refreshPeopleTrend();
     })(),
-    refreshPeopleTrend(),
     (async () => {
       const trends = await api("trends");
       table(document.getElementById("trends-table"),
@@ -225,7 +292,8 @@ function formatPeriodLabel(period, granularity) {
 
 async function refreshPeopleTrend() {
   const granularity = document.getElementById("people-granularity").value;
-  const rows = await api(`person-trend?top_n=6&granularity=${granularity}`);
+  const selected = [...document.querySelectorAll(".people-picker-checkbox:checked")].map(cb => cb.value);
+  const rows = await api(`person-trend?granularity=${granularity}&people=${encodeURIComponent(selected.join(","))}`);
   const periods = [...new Set(rows.map(r => r.period))].sort();
   const indexOf = Object.fromEntries(periods.map((p, i) => [p, i]));
   const byPerson = {};
@@ -494,6 +562,7 @@ function densestClusterPoints(locations, binSizeDegrees = 5) {
   return best ? best.points : [];
 }
 let geocodePollTimer = null;
+let lastLocationsData = null;
 
 function renderMapLegend(categories) {
   const legend = document.getElementById("map-legend");
@@ -541,11 +610,18 @@ async function loadMap(meta) {
       document.getElementById(id).addEventListener("change", refreshMap));
 
     document.getElementById("map-geocode-btn").addEventListener("click", async () => {
-      const resp = await fetch("/api/geocode/start", { method: "POST" });
+      const force = document.getElementById("map-geocode-force").checked;
+      const resp = await fetch("/api/geocode/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
       if (resp.ok) await pollGeocodeStatus();
     });
 
     document.getElementById("fix-location-btn").addEventListener("click", fixSelectedLocation);
+
+    document.getElementById("map-geocode-force").addEventListener("change", () => updateGeocodeButton(lastLocationsData));
 
     // Leaflet measures the container on init; the Map tab may have been
     // hidden (display:none) at that point, so its size reads as zero.
@@ -569,7 +645,9 @@ async function loadMap(meta) {
 function updateGeocodeButton(locationsData) {
   const btn = document.getElementById("map-geocode-btn");
   if (btn.disabled && geocodePollTimer) return; // a job is running - leave it to the poller
-  if (locationsData && locationsData.total_places > 0 && locationsData.total_places === locationsData.geocoded_places) {
+  const forceChecked = document.getElementById("map-geocode-force").checked;
+  const allDone = locationsData && locationsData.total_places > 0 && locationsData.total_places === locationsData.geocoded_places;
+  if (allDone && !forceChecked) {
     btn.disabled = true;
     btn.textContent = "All locations geocoded";
   } else {
@@ -661,6 +739,7 @@ async function refreshMap() {
 
   const data = await api(`locations?${params.toString()}`);
   markerLayer.clearLayers();
+  lastLocationsData = data;
   updateGeocodeButton(data);
   populateFixLocationSelect(data.all_locations || []);
 

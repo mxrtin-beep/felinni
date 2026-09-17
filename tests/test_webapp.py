@@ -125,6 +125,22 @@ def test_travel_returns_region_based_shape(client):
     assert set(body.keys()) == {"home_region", "region_visits", "region_trips", "tagged_trips", "message"}
 
 
+def test_person_trend_explicit_people_param_overrides_top_n(client):
+    default_rows = client.get("/api/person-trend").get_json()
+    default_people = {r["person"] for r in default_rows}
+    one_person = next(iter(default_people))
+
+    filtered = client.get(f"/api/person-trend?people={one_person}").get_json()
+    assert filtered
+    assert {r["person"] for r in filtered} == {one_person}
+
+
+def test_person_trend_empty_people_param_returns_no_rows(client):
+    resp = client.get("/api/person-trend?people=")
+    assert resp.status_code == 200
+    assert resp.get_json() == []
+
+
 def test_geocode_override_saves_and_reflects_immediately(client, monkeypatch, tmp_path):
     overrides_path = tmp_path / "overrides.json"
     monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
@@ -178,3 +194,28 @@ def test_geocode_job_runs_and_reports_progress(client, monkeypatch):
 
     assert calls, "fake geocode_locations was never invoked"
     assert status["error"] is None
+
+
+def test_geocode_start_passes_through_force_flag(client, monkeypatch):
+    seen_kwargs = {}
+
+    def fake_geocode_locations(locations, cache_path=None, on_progress=None, **kwargs):
+        seen_kwargs.update(kwargs)
+        if on_progress:
+            on_progress(0, 0)
+        return {}
+
+    monkeypatch.setattr(server.geocode, "geocode_locations", fake_geocode_locations)
+
+    resp = client.post("/api/geocode/start", json={"force": True})
+    assert resp.status_code == 200
+    assert resp.get_json()["force"] is True
+
+    for _ in range(50):
+        if not client.get("/api/geocode/status").get_json()["running"]:
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("geocode job never finished")
+
+    assert seen_kwargs.get("force") is True

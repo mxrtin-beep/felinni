@@ -78,6 +78,46 @@ def _people_for(row_attendees: list[str], note_tags: dict[str, list[str]], title
     return sorted(people)
 
 
+def _most_common_last_names(all_people_lists: list[list[str]]) -> dict[str, str]:
+    """First name -> its most common "First Last" form across every event,
+    used to guess a last name for a bare first-name tag. Names with no
+    space (nothing to learn a last name from) never contribute."""
+    from collections import Counter
+
+    counters: dict[str, Counter] = {}
+    for people in all_people_lists:
+        for name in people:
+            first, _, rest = name.partition(" ")
+            if rest:
+                counters.setdefault(first, Counter())[name] += 1
+    return {first: counter.most_common(1)[0][0] for first, counter in counters.items()}
+
+
+def _resolve_first_name_aliases(all_people_lists: list[list[str]]) -> list[list[str]]:
+    """You often refer to the same person as both "Alice" and "Alice
+    Smith" across different events, which otherwise splits one person into
+    two in every people-based analysis. When a bare first name shows up in
+    a *group* event (someone else is also on it), it's rewritten to that
+    first name's most common full form elsewhere in the calendar - group
+    events are usually tagged more casually (first names only), while a
+    1:1 event's title/attendee is more reliably the exact name you use for
+    that person, so a first-name-only entry there is left alone rather
+    than risk conflating two different people who share a first name."""
+    last_name_for = _most_common_last_names(all_people_lists)
+    resolved = []
+    for people in all_people_lists:
+        is_group = len(people) > 1
+        rewritten = [
+            last_name_for[name] if is_group and " " not in name and name in last_name_for else name
+            for name in people
+        ]
+        # dedupe in case resolving now matches a full name already in the
+        # same list (e.g. tagged once as "Alice" via the title and once as
+        # "Alice Smith" via attendees).
+        resolved.append(sorted(dict.fromkeys(rewritten)))
+    return resolved
+
+
 def _category_for(calendar_title: str, note_tags: dict[str, list[str]]) -> str:
     tagged = note_tags.get("category")
     if tagged:
@@ -127,6 +167,7 @@ def load_events(path: str | Path) -> pd.DataFrame:
     df["people"] = [
         _people_for(att, tags, title) for att, tags, title in zip(df["attendees"], note_tags, df["title"])
     ]
+    df["people"] = _resolve_first_name_aliases(df["people"].tolist())
     df["n_people"] = df["people"].apply(len)
 
     # Older exports (before CalendarExporter captured calendar colors) won't

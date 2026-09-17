@@ -40,7 +40,13 @@ that carry structure:
   Bob`, or just name them at the end of the title, e.g. "Dinner with John
   Doe, Jane Doe, and McLovin" — parsed automatically if nothing else tagged
   people on that event (and only when what follows "with" looks like an
-  actual name list, so "lunch with the whole team" is left alone).
+  actual name list, so "lunch with the whole team" is left alone). If you
+  refer to someone inconsistently (sometimes "Alice", sometimes "Alice
+  Smith"), a bare first name tagged on a *group* event is resolved to that
+  first name's most common full form elsewhere in your calendar, so it
+  doesn't get counted as a separate person. A first name on a 1:1 event is
+  left alone instead - there's no other name on that event to confirm
+  which "Alice" it is.
 - **Location**: the event's Location field, or a `Location: <place>` note
   line (useful when the title has the info but Location is blank). A
   location that's actually a meeting link (Zoom/Meet/Teams/Webex) or a
@@ -69,8 +75,9 @@ python webapp/server.py --events ../events.json
 Open **http://127.0.0.1:5000**. It's a single page with tabs — Overview,
 Places, Map, People, Habits, Travel, Time & Spend, Seasonality, Anomalies —
 each backed by one of the analyses below, with charts and tables you can
-click through instead of running commands. It's a plain Flask dev server
-reading your local `events.json`, nothing leaves your machine.
+click through instead of running commands. Every table is sortable - click
+a column header to sort by it, click again to reverse. It's a plain Flask
+dev server reading your local `events.json`, nothing leaves your machine.
 
 The Overview tab also has a **Phases of Life** timeline — one row per
 category, with a bar for each long (8+ week) stretch it was consistently
@@ -115,9 +122,12 @@ python cli.py --events ../events.json geocode
 ```
 
 Either way, results are cached to `data/geocode_cache.json`; re-running
-only geocodes newly-seen locations. A location that failed to geocode is
-always retried on the next run rather than stuck as a permanent failure -
-Nominatim misses are often transient.
+only geocodes newly-seen locations by default. A location that failed to
+geocode is always retried on the next run rather than stuck as a
+permanent failure - Nominatim misses are often transient. Check **Redo
+already-geocoded locations** before clicking the button to force every
+location to be re-queried instead (a manual override always wins and is
+never re-queried, even with this checked).
 
 Nominatim (the free geocoder behind this) does get things wrong,
 especially for a bare building/room name with no street address (e.g.
@@ -195,7 +205,7 @@ are a thin JSON wrapper over the same functions.
 | Ask | Module | Notes |
 |---|---|---|
 | Map every place, cluster by neighborhood, radius of life over time, places you stopped going to | `felinni.location` | Neighborhood clustering and radius-of-life need geocoded coordinates (`felinni.geocode`, opt-in, uses OpenStreetMap Nominatim, cached to disk). "Stopped going to" is CLI/library only (`cli.py stopped-going`) - not on the dashboard |
-| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week |
+| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week, with a checkbox picker for which of your top 20 people to plot (defaults to your top 6) |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Repeating events falling off pace (Book Club, Poker Night, ...) | `felinni.recurring` | Auto-detects every named recurring series from Calendar's own repeat rule (`is_recurring`) - no need to pick one, unlike `felinni.habits` above. Flags each as active/slowing down/stopped relative to its own historical cadence |
 | Trips away from home, metro areas visited, by geography | `felinni.regions` | Groups nearby cities (within ~80km) into one metro area, so a trip counts whether or not you tagged it - home is inferred as your most-visited metro. `neighborhoods_for_metro` gives a finer breakdown within any one metro (e.g. splitting "Los Angeles" into its neighborhoods) - on the dashboard, the Travel tab's Neighborhoods card |

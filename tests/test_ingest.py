@@ -92,6 +92,43 @@ def test_trailing_emoji_does_not_break_group_parsing(tmp_path):
     assert sorted(df.iloc[0]["people"]) == ["Alice", "Bob", "Carla"]
 
 
+def test_bare_first_name_in_group_event_gets_most_common_last_name(tmp_path):
+    events = [
+        _event(1, "Dinner with Alice Smith"),
+        _event(2, "Dinner with Alice Smith"),
+        _event(3, "Coffee with Alice Rodriguez"),
+        # Group event tagged casually with just a first name.
+        _event(4, "Game night with Alice, Bob"),
+    ]
+    df = _load(tmp_path, events)
+    game_night = df[df["title"] == "Game night with Alice, Bob"].iloc[0]
+    assert sorted(game_night["people"]) == ["Alice Smith", "Bob"]
+
+
+def test_bare_first_name_in_solo_event_is_left_alone(tmp_path):
+    events = [
+        _event(1, "Dinner with Alice Smith"),
+        _event(2, "Dinner with Alice Smith"),
+        # A 1:1 event tagged with just the first name - not enough context
+        # to assume it's the same "Alice Smith", so left as-is.
+        _event(3, "Coffee with Alice"),
+    ]
+    df = _load(tmp_path, events)
+    coffee = df[df["title"] == "Coffee with Alice"].iloc[0]
+    assert coffee["people"] == ["Alice"]
+
+
+def test_first_name_resolution_dedupes_when_already_tagged_in_full(tmp_path):
+    events = [
+        _event(1, "Dinner with Alice Smith"),
+        _event(2, "Dinner with Alice Smith"),
+        _event(3, "Game night with Alice, Alice Smith, Bob"),
+    ]
+    df = _load(tmp_path, events)
+    game_night = df[df["title"] == "Game night with Alice, Alice Smith, Bob"].iloc[0]
+    assert sorted(game_night["people"]) == ["Alice Smith", "Bob"]
+
+
 def test_time_by_category_excludes_all_day_events(tmp_path):
     events = [
         _event(1, "Vacation", location=None, is_all_day=True, category="Travel", calendar="Travel"),

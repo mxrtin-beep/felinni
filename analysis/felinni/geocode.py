@@ -173,16 +173,20 @@ def geocode_locations(
     on_progress=None,
     location_categories: dict[str, str] | None = None,
     anchors: dict[str, str] = DEFAULT_LOCATION_ANCHORS,
+    force: bool = False,
 ) -> dict[str, dict | None]:
     """Geocode a list of unique location strings, returning
     {location: {"lat": ..., "lon": ..., "display_name": ...} or None}.
 
     Requires the optional `geopy` dependency and network access. Already
-    cached locations are never re-queried (use `clear_cache_entries` to
-    force one). If given, `on_progress(done, total)` is called once up
-    front with done=0 and again after each location, so a CLI or web
-    caller can show progress on what can be a multi-minute run
-    (~1 request/sec).
+    cached locations are never re-queried by default (use
+    `clear_cache_entries` to force just one, or `force=True` here to
+    re-query every location in this run). If given, `on_progress(done,
+    total)` is called once up front with done=0 and again after each
+    location, so a CLI or web caller can show progress on what can be a
+    multi-minute run (~1 request/sec). Locations with a manual override
+    are never re-queried regardless of `force` - overrides always win and
+    never touch the network.
 
     `location_categories` (location -> category, e.g. from
     `df.groupby("location")["category"].agg(...)`) lets a bare building
@@ -214,11 +218,15 @@ def geocode_locations(
 
     resolved_points = [(v["lat"], v["lon"]) for v in cache.values() if isinstance(v, dict)]
 
-    # A location that previously failed to geocode (cached as None) is
-    # retried, not treated as permanently resolved - a Nominatim miss is
-    # often transient (rate limiting, a query the anchor/bias improvements
-    # above now handle better), and there's little cost to trying again.
-    to_fetch = [loc for loc in dict.fromkeys(locations) if loc and not cache.get(loc)]
+    if force:
+        # Re-query everything except locations pinned by a manual override.
+        to_fetch = [loc for loc in dict.fromkeys(locations) if loc and loc not in overrides]
+    else:
+        # A location that previously failed to geocode (cached as None) is
+        # retried, not treated as permanently resolved - a Nominatim miss is
+        # often transient (rate limiting, a query the anchor/bias improvements
+        # above now handle better), and there's little cost to trying again.
+        to_fetch = [loc for loc in dict.fromkeys(locations) if loc and not cache.get(loc)]
     total = len(to_fetch)
     if on_progress:
         on_progress(0, total)

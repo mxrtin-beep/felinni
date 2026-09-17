@@ -175,7 +175,7 @@ def locations_view():
     })
 
 
-def _run_geocode_job():
+def _run_geocode_job(force: bool = False):
     def on_progress(done, total):
         with _geocode_lock:
             GEOCODE_STATE["done"] = done
@@ -184,7 +184,7 @@ def _run_geocode_job():
     try:
         unique_locations = DF["location"].dropna().unique().tolist()
         location_categories = DF.groupby("location")["category"].agg(lambda s: s.mode().iat[0]).to_dict()
-        geocode.geocode_locations(unique_locations, on_progress=on_progress, location_categories=location_categories)
+        geocode.geocode_locations(unique_locations, on_progress=on_progress, location_categories=location_categories, force=force)
     except Exception as e:
         with _geocode_lock:
             GEOCODE_STATE["error"] = str(e)
@@ -195,12 +195,14 @@ def _run_geocode_job():
 
 @app.post("/api/geocode/start")
 def geocode_start():
+    payload = request.get_json(force=True, silent=True) or {}
+    force = bool(payload.get("force"))
     with _geocode_lock:
         if GEOCODE_STATE["running"]:
             return jsonify({"error": "already running"}), 409
         GEOCODE_STATE.update({"running": True, "done": 0, "total": 0, "error": None})
-    threading.Thread(target=_run_geocode_job, daemon=True).start()
-    return jsonify({"started": True})
+    threading.Thread(target=_run_geocode_job, args=(force,), daemon=True).start()
+    return jsonify({"started": True, "force": force})
 
 
 @app.get("/api/geocode/status")
@@ -260,13 +262,20 @@ def trends():
 
 @app.get("/api/person-trend")
 def person_trend():
-    top_n = request.args.get("top_n", 6, type=int)
     granularity = request.args.get("granularity", "year")
     if granularity not in ("year", "month", "week"):
         return jsonify({"error": "granularity must be year, month, or week"}), 400
     df = _get_df()
     pivot = social.person_trend_by_period(df, granularity)
-    top_people = social.person_frequency(df).head(top_n).index.tolist()
+    # `people` (explicit, comma-separated, possibly empty) lets the
+    # dashboard's checkbox picker show exactly who was asked for -
+    # including nobody, if every checkbox is unchecked. Omitting the param
+    # entirely falls back to the original top-N-by-events default.
+    if "people" in request.args:
+        top_people = [p.strip() for p in request.args.get("people", "").split(",") if p.strip()]
+    else:
+        top_n = request.args.get("top_n", 6, type=int)
+        top_people = social.person_frequency(df).head(top_n).index.tolist()
     rows = []
     for person in top_people:
         if person not in pivot.columns:

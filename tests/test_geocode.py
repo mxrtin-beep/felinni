@@ -123,6 +123,34 @@ def test_overrides_win_over_cache_and_skip_network(tmp_path):
     assert result["Santa Monica Pier"]["lat"] == 34.0094
 
 
+def test_force_reruns_already_cached_locations(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_text(json.dumps({"Nopa": {"lat": 1.0, "lon": 1.0, "display_name": "old"}}))
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result(lat=2.0, lon=2.0)
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(["Nopa"], cache_path=cache_path, rate_limit_seconds=0, force=True)
+
+    assert result["Nopa"]["lat"] == 2.0
+    fake_geolocator.geocode.assert_called()
+
+
+def test_force_does_not_touch_overridden_locations(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    overrides_path = tmp_path / "overrides.json"
+    overrides_path.write_text(json.dumps({"Nopa": {"lat": 9.0, "lon": 9.0, "display_name": "pinned"}}))
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = AssertionError("overridden location should never be queried")
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["Nopa"], cache_path=cache_path, overrides_path=overrides_path, rate_limit_seconds=0, force=True,
+        )
+
+    assert result["Nopa"]["lat"] == 9.0
+
+
 def test_save_override_then_effective_cache_reflects_it(tmp_path):
     cache_path = tmp_path / "cache.json"
     overrides_path = tmp_path / "overrides.json"

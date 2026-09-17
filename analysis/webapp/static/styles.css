@@ -214,6 +214,16 @@ td.num, th.num {
   font-variant-numeric: tabular-nums;
 }
 
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th.sortable:hover {
+  color: var(--text-primary);
+}
+
 .legend {
   display: flex;
   gap: 14px;
