@@ -22,7 +22,9 @@
   <button data-panel="travel">Travel</button>
   <button data-panel="time">Time &amp; Spend</button>
   <button data-panel="seasonality">Seasonality</button>
-  <button data-panel="anomalies">Anomalies</button>
+  <!-- Anomalies tab hidden for now - the flagging wasn't reading as useful
+       signal in practice; felinni.anomalies/api/anomalies are still there,
+       revisit before re-enabling this nav button + panel-anomalies below. -->
   <button data-panel="future">Future</button>
 </nav>
 <main>
@@ -251,6 +253,7 @@
     </div>
   </section>
 
+  <!--
   <section class="panel" id="panel-anomalies">
     <div class="card">
       <h2>Weekly scheduled hours</h2>
@@ -270,6 +273,7 @@
       <div id="anomalies-category-table"></div>
     </div>
   </section>
+  -->
 
   <section class="panel" id="panel-future">
     <div class="card">

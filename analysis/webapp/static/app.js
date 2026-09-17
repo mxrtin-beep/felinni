@@ -367,7 +367,7 @@ async function reloadAll() {
     loadTravel(),
     loadTime(),
     refreshSeasonality(),
-    loadAnomalies(),
+    // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
     loadFuture(),
   ]);
 }
@@ -1093,7 +1093,6 @@ async function refreshMap() {
     loadTravel(),
     loadTime(),
     loadSeasonality(meta),
-    loadAnomalies(),
     loadFuture(),
   ]);
   wireGlobalDateFilter();
