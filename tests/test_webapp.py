@@ -44,6 +44,7 @@ def client():
     "/api/breaks",
     "/api/recurring",
     "/api/sources",
+    "/api/future",
 ])
 def test_endpoint_returns_200_json(client, path):
     resp = client.get(path)
@@ -120,6 +121,16 @@ def test_exclude_categories_filter_applies_globally(client):
 
     places = client.get("/api/places?exclude_categories=Gym").get_json()
     assert all("Gym" not in p.get("categories", []) for p in places)
+
+
+def test_future_returns_empty_skeleton(client):
+    resp = client.get("/api/future")
+    body = resp.get_json()
+    assert body["suggestions"] == []
+    assert set(body["platforms"].keys()) == {"eventbrite", "luma", "meetup"}
+    for info in body["platforms"].values():
+        assert info == {"connected": False, "events": []}
+    assert body["message"]
 
 
 def test_travel_returns_region_based_shape(client):

@@ -326,6 +326,7 @@ th.sortable:hover {
 .badge.active { background: rgba(12, 163, 12, 0.15); color: var(--status-good); }
 .badge.slowing-down { background: rgba(250, 178, 25, 0.20); color: #9a6b00; }
 .badge.stopped { background: rgba(208, 59, 59, 0.15); color: var(--status-critical); }
+.badge.planned { background: var(--grid); color: var(--text-secondary); font-weight: 500; margin-left: 8px; vertical-align: middle; }
 
 button {
   font: inherit;

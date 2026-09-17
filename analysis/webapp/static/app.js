@@ -368,6 +368,7 @@ async function reloadAll() {
     loadTime(),
     refreshSeasonality(),
     loadAnomalies(),
+    loadFuture(),
   ]);
 }
 
@@ -688,6 +689,25 @@ async function loadAnomalies() {
     ], data.by_category.slice(0, 30));
 }
 
+// --- Future (skeleton - Eventbrite/Luma/Meetup, nothing wired up yet) ---
+async function loadFuture() {
+  const data = await api("future");
+  document.getElementById("future-note").textContent = data.message || "";
+
+  const suggestions = document.getElementById("future-suggestions");
+  suggestions.innerHTML = data.suggestions.length
+    ? data.suggestions.map(s => `<p>${escapeHtml(s.title)}</p>`).join("")
+    : '<p class="empty-note">Nothing here yet - no platforms connected.</p>';
+
+  Object.entries(data.platforms).forEach(([platform, info]) => {
+    const container = document.getElementById(`future-${platform}`);
+    if (!container) return;
+    container.innerHTML = info.events.length
+      ? info.events.map(e => `<p>${escapeHtml(e.title)}</p>`).join("")
+      : '<p class="empty-note">Nothing here yet.</p>';
+  });
+}
+
 // --- Category colors (shared across Map, Habits, Time & Spend) ---
 let categoryColors = {};
 
@@ -986,6 +1006,7 @@ async function refreshMap() {
     loadTime(),
     loadSeasonality(meta),
     loadAnomalies(),
+    loadFuture(),
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();

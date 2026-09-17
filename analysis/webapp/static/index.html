@@ -23,6 +23,7 @@
   <button data-panel="time">Time &amp; Spend</button>
   <button data-panel="seasonality">Seasonality</button>
   <button data-panel="anomalies">Anomalies</button>
+  <button data-panel="future">Future</button>
 </nav>
 <main>
 
@@ -261,6 +262,49 @@
     <div class="card">
       <h2>Anomalies by category</h2>
       <div id="anomalies-category-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-future">
+    <div class="card">
+      <h2>Future <span class="badge planned">Coming soon</span></h2>
+      <p class="card-note">
+        The idea: use your own history - the categories, people, places, and
+        times you already gravitate toward - to surface upcoming events
+        worth going to, pulled from Eventbrite, Luma, and Meetup. Nothing
+        below is wired up yet (each needs its own API access, which isn't
+        configured), but here's the shape of it.
+      </p>
+      <p class="card-note" id="future-note"></p>
+    </div>
+    <div class="card">
+      <h2>Suggested for you</h2>
+      <p class="card-note">Would rank upcoming events by fit with your habits - category overlap, your usual day/time, places you already frequent, people you tend to see.</p>
+      <div id="future-suggestions"><p class="empty-note">Nothing here yet - no platforms connected.</p></div>
+    </div>
+    <div class="card">
+      <div class="controls" style="justify-content:space-between">
+        <h2 style="margin:0">Eventbrite</h2>
+        <button type="button" class="future-connect-btn" data-platform="eventbrite" disabled>Connect</button>
+      </div>
+      <p class="card-note">Needs an Eventbrite API key - not configured.</p>
+      <div id="future-eventbrite"><p class="empty-note">Nothing here yet.</p></div>
+    </div>
+    <div class="card">
+      <div class="controls" style="justify-content:space-between">
+        <h2 style="margin:0">Luma</h2>
+        <button type="button" class="future-connect-btn" data-platform="luma" disabled>Connect</button>
+      </div>
+      <p class="card-note">Needs a Luma API key - not configured.</p>
+      <div id="future-luma"><p class="empty-note">Nothing here yet.</p></div>
+    </div>
+    <div class="card">
+      <div class="controls" style="justify-content:space-between">
+        <h2 style="margin:0">Meetup</h2>
+        <button type="button" class="future-connect-btn" data-platform="meetup" disabled>Connect</button>
+      </div>
+      <p class="card-note">Needs Meetup OAuth access - not configured.</p>
+      <div id="future-meetup"><p class="empty-note">Nothing here yet.</p></div>
     </div>
   </section>
 

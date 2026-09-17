@@ -73,11 +73,22 @@ python webapp/server.py --events ../events.json
 ```
 
 Open **http://127.0.0.1:5000**. It's a single page with tabs — Overview,
-Places, Map, People, Habits, Travel, Time & Spend, Seasonality, Anomalies —
-each backed by one of the analyses below, with charts and tables you can
-click through instead of running commands. Every table is sortable - click
-a column header to sort by it, click again to reverse. It's a plain Flask
-dev server reading your local `events.json`, nothing leaves your machine.
+Places, Map, People, Habits, Travel, Time & Spend, Seasonality, Anomalies,
+Future — each backed by one of the analyses below, with charts and tables
+you can click through instead of running commands. Every table is
+sortable - click a column header to sort by it, click again to reverse.
+It's a plain Flask dev server reading your local `events.json`, nothing
+leaves your machine.
+
+### Future tab (skeleton, not implemented)
+
+Lays out what "suggest upcoming events worth going to, from Eventbrite/
+Luma/Meetup, ranked by fit with your own history" would look like -
+`felinni.future_events` and `/api/future` always return empty data, and
+the tab's Connect buttons are disabled. Nothing here calls out to any of
+those three - each needs its own API access (Eventbrite/Luma: an API key,
+Meetup: OAuth) that isn't configured. It's there so a real integration has
+a shape to build into rather than starting from a blank tab.
 
 The Overview tab also has a **Phases of Life** timeline — one row per
 category, with a bar for each long (8+ week) stretch it was consistently
@@ -249,7 +260,7 @@ are a thin JSON wrapper over the same functions.
 | Ask | Module | Notes |
 |---|---|---|
 | Map every place, cluster by neighborhood, radius of life over time, places you stopped going to | `felinni.location` | Neighborhood clustering and radius-of-life need geocoded coordinates (`felinni.geocode`, opt-in, uses OpenStreetMap Nominatim, cached to disk). "Stopped going to" is CLI/library only (`cli.py stopped-going`) - not on the dashboard |
-| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week, with a checkbox picker for which of your top 20 people to plot (defaults to your top 6) |
+| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week, with a dropdown checklist of everyone to plot (defaults to your top 6 checked) |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Repeating events falling off pace (Book Club, Poker Night, ...) | `felinni.recurring` | Auto-detects every named recurring series from Calendar's own repeat rule (`is_recurring`) - no need to pick one, unlike `felinni.habits` above. Flags each as active/slowing down/stopped relative to its own historical cadence |
 | Trips away from home, metro areas visited, by geography | `felinni.regions` | Groups nearby cities (within ~80km) into one metro area, so a trip counts whether or not you tagged it - home is inferred as your most-visited metro. `neighborhoods_for_metro` gives a finer breakdown within any one metro (e.g. splitting "Los Angeles" into its neighborhoods) - on the dashboard, the Travel tab's Neighborhoods card |
@@ -259,6 +270,7 @@ are a thin JSON wrapper over the same functions.
 | Unusually packed/empty weeks, in both directions and broken down by category | `felinni.anomalies` | Z-score on weekly scheduled hours (overall and per-category, each against its own baseline); all-day events excluded, same reasoning |
 | Phases of Life (category phases), plus quiet stretches and home-base changes | `felinni.breaks` | Only "Phases of Life" (active category streaks) shows in the dashboard; the other two are available via `/api/breaks` |
 | Link "first date" events to a Hinge/iMessage timestamp table | `felinni.dating_link` | Matches by tagged person + nearest timestamp within a configurable window |
+| Suggested upcoming events from Eventbrite/Luma/Meetup | `felinni.future_events` | Skeleton only, not implemented - see "Future tab" above |
 
 ## Testing without a real calendar
 
@@ -286,6 +298,7 @@ analysis/
     ingest.py                events.json -> pandas DataFrame
     geocode.py                optional Nominatim geocoding, disk-cached
     calendar_sources.py        optional Google/Outlook/Apple ICS import, manifest + disk-cached per source
+    future_events.py           skeleton only, not implemented - see "Future tab" above
     location.py, social.py, habits.py, travel.py, spending.py,
     seasonality.py, anomalies.py, breaks.py, recurring.py, regions.py, dating_link.py
   webapp/
@@ -300,6 +313,7 @@ tests/
   test_breaks_and_trends.py  category anomalies, notable breaks, pandas-version-alias regressions
   test_geocode.py            anchors, region bias, overrides, failed-geocode retry
   test_calendar_sources.py   ICS parsing, source manifest add/sync/hide/delete
+  test_future_events.py      pins down the Future tab skeleton's always-empty shape
   test_regions.py            geographic-region grouping for the Travel tab
   test_recurring.py          repeating-event cadence/status detection
   test_webapp.py             smoke tests for the dashboard's API, incl. the geocode job

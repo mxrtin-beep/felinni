@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, calendar_sources, future_events, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -468,6 +468,23 @@ def anomalies_view():
     flagged = anomalies.anomalous_weeks(df, z).reset_index().rename(columns={"index": "week"})
     by_category = records(anomalies.category_anomalies(df, z))
     return jsonify({"weekly": records(weekly), "anomalies": records(flagged), "by_category": by_category})
+
+
+@app.get("/api/future")
+def future_view():
+    """Skeleton for the Future tab - always empty for now (see
+    felinni.future_events). Each platform is reported not-connected since
+    none has API access configured; the shape (suggestions + one entry per
+    platform) is what a real integration would fill in later."""
+    platforms = {
+        platform: {"connected": False, "events": future_events.platform_events(platform)}
+        for platform in future_events.PLATFORMS
+    }
+    return jsonify({
+        "suggestions": future_events.suggestions_for(_get_df()),
+        "platforms": platforms,
+        "message": "Future event suggestions aren't wired up yet - each platform needs its own API access, which isn't configured.",
+    })
 
 
 def _background_sync_loop(interval_seconds: float) -> None:
