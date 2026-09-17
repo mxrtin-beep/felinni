@@ -9,7 +9,17 @@ import pandas as pd
 
 
 def _exploded_people(df: pd.DataFrame) -> pd.DataFrame:
-    with_people = df[df["n_people"] > 0].copy()
+    """All-day entries (a full-day placeholder like a birthday, or a
+    multi-day trip logged as one block) don't carry a real "time spent
+    together" the way a timed event does - an all-day event's nominal
+    24-hour duration would otherwise wildly inflate a person's hours, and
+    counting it as one "event" seeing them is misleading too. Excluded
+    here (not per-caller) so every social analysis - frequency, hours,
+    trends - gets this consistently, the same reasoning already applied
+    in felinni.seasonality/.anomalies/.spending. Applies regardless of
+    where an event came from (events.json or an imported calendar source),
+    since both flow through the same `is_all_day` field."""
+    with_people = df[~df["is_all_day"] & (df["n_people"] > 0)].copy()
     return with_people.explode("people").rename(columns={"people": "person"})
 
 

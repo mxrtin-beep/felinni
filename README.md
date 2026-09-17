@@ -270,7 +270,7 @@ are a thin JSON wrapper over the same functions.
 | Ask | Module | Notes |
 |---|---|---|
 | Map every place, cluster by neighborhood, radius of life over time, places you stopped going to | `felinni.location` | Neighborhood clustering and radius-of-life need geocoded coordinates (`felinni.geocode`, opt-in, uses OpenStreetMap Nominatim, cached to disk). "Stopped going to" is CLI/library only (`cli.py stopped-going`) - not on the dashboard |
-| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. The dashboard's trend chart is switchable between year/month/week, with a dropdown checklist of everyone to plot (defaults to your top 6 checked) |
+| Frequency of seeing people, growing/fading relationships, social time split | `felinni.social` | Needs attendees, `People:`/`With:` note tags, or a trailing "with A, B, and C" in the title. All-day events are excluded (same reasoning as seasonality/anomalies/spending below) - a full-day placeholder or multi-day trip block doesn't carry a real "time spent" the way a timed event does, and would otherwise inflate someone's hours. The dashboard's trend chart is switchable between year/month/week, with a dropdown checklist of everyone to plot (defaults to your top 6 checked) |
 | Habit streaks/drop-offs, correlate with busy weeks | `felinni.habits` | Pass any category as the "habit" (Gym, Therapy, ...) |
 | Repeating events falling off pace (Book Club, Poker Night, ...) | `felinni.recurring` | Auto-detects every named recurring series from Calendar's own repeat rule (`is_recurring`) - no need to pick one, unlike `felinni.habits` above. Flags each as active/slowing down/stopped relative to its own historical cadence |
 | Trips away from home, metro areas visited, by geography | `felinni.regions` | Groups nearby cities (within ~80km) into one metro area, so a trip counts whether or not you tagged it - home is inferred as your most-visited metro. `neighborhoods_for_metro` gives a finer breakdown within any one metro (e.g. splitting "Los Angeles" into its neighborhoods) - on the dashboard, the Travel tab's Neighborhoods card |
@@ -324,6 +324,7 @@ tests/
   test_geocode.py            anchors, region bias, overrides, failed-geocode retry
   test_calendar_sources.py   ICS parsing, source manifest add/sync/hide/delete
   test_future_events.py      pins down the Future tab skeleton's always-empty shape
+  test_social.py             all-day events excluded from time-with-a-person/frequency
   test_regions.py            geographic-region grouping for the Travel tab
   test_recurring.py          repeating-event cadence/status detection
   test_webapp.py             smoke tests for the dashboard's API, incl. the geocode job
