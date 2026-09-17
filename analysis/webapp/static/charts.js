@@ -175,8 +175,15 @@ function horizontalBarChart(container, data, { valueLabel = "", color, addressLi
   container.appendChild(svg);
 }
 
-/** Vertical column chart: data = [{label, value}], one series, baseline-anchored. */
-function columnChart(container, data, { valueLabel = "", color, highlight, separators = false } = {}) {
+/** Vertical column chart: data = [{label, value}], one series, baseline-anchored.
+ * `flagColor(d)` (distinct from `highlight`, which recolors every bar for
+ * per-category coloring) marks a handful of specific data points as
+ * noteworthy - returns a color to flag that point, or a falsy value for
+ * an ordinary one. A flagged point gets a fixed-size marker dot above its
+ * bar, so it stays visible even when the bar itself is only 1-2px wide
+ * (a long history) or barely tall (a near-zero value) - a color-only
+ * change on a thin bar is easy to miss entirely. */
+function columnChart(container, data, { valueLabel = "", color, highlight, flagColor, separators = false } = {}) {
   container.innerHTML = "";
   if (!data.length) {
     container.innerHTML = '<p class="empty-note">No data yet.</p>';
@@ -211,11 +218,21 @@ function columnChart(container, data, { valueLabel = "", color, highlight, separ
       const sepX = padLeft + i * step;
       svg.appendChild(el("line", { x1: sepX, x2: sepX, y1: padTop, y2: padTop + chartH, stroke: cssVar("--grid"), "stroke-width": 1, opacity: 0.6 }));
     }
-    const fill = highlight && highlight(d) ? highlight(d) : barColor;
+    const flagged = flagColor && flagColor(d);
+    const fill = flagged || (highlight && highlight(d)) || barColor;
     const rect = el("rect", { x, y, width: bw, height: barH, rx: 4, ry: 4, fill });
     rect.addEventListener("mousemove", (evt) => showTooltip(evt, `<strong>${d.label}</strong><br>${formatNumber(d.value)} ${valueLabel}`));
     rect.addEventListener("mouseleave", hideTooltip);
     svg.appendChild(rect);
+    if (flagged) {
+      const dot = el("circle", {
+        cx: x + bw / 2, cy: Math.max(y - 6, padTop + 4), r: 4,
+        fill: flagged, stroke: cssVar("--surface-1"), "stroke-width": 1.5,
+      });
+      dot.addEventListener("mousemove", (evt) => showTooltip(evt, `<strong>${d.label}</strong><br>${formatNumber(d.value)} ${valueLabel}`));
+      dot.addEventListener("mouseleave", hideTooltip);
+      svg.appendChild(dot);
+    }
     if (i % labelEvery === 0) {
       svg.appendChild(el("text", { x: x + bw / 2, y: height - 8, "text-anchor": "middle", fill: cssVar("--text-muted"), "font-size": 10 })).textContent = d.label;
     }

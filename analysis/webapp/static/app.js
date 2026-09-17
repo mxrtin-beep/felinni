@@ -750,7 +750,7 @@ async function loadAnomalies() {
     data.weekly.map(w => ({ label: w.week.slice(0, 7), value: w.total_hours, week: w.week })),
     {
       valueLabel: "hours",
-      highlight: d => {
+      flagColor: d => {
         const label = flagByWeek.get(d.week);
         if (label === "packed") return cssVarSafe("--series-2");
         if (label === "empty") return cssVarSafe("--series-3");
