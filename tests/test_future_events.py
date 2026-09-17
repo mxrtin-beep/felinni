@@ -162,6 +162,35 @@ def test_platform_events_returns_empty_list_on_network_error():
         assert future_events.platform_events("luma") == []
 
 
+def test_camber_query_scopes_to_the_la_happenings_section():
+    with patch("requests.post", return_value=_mock_response("")) as mock_post:
+        future_events.platform_events("camber", region="Los Angeles, CA")
+
+    query = mock_post.call_args.kwargs["data"]["q"]
+    assert "site:camberplaces.substack.com/s/la-happenings" in query
+
+
+def test_camber_result_is_kept_even_without_a_confirmed_date():
+    """Camber is a Substack roundup, not a per-event page - there's no
+    schema.org Event markup to enrich it with, so (unlike other_web_events'
+    domain-agnostic results) it shouldn't be dropped just for lacking a
+    parsed date."""
+    ddg_html = """
+    <div class="result"><div class="result__body">
+      <h2 class="result__title"><a class="result__a" href="https://camberplaces.substack.com/p/la-happenings-nov-3">LA Happenings, Nov 3</a></h2>
+      <a class="result__snippet" href="https://camberplaces.substack.com/p/la-happenings-nov-3">This week's roundup of things to do.</a>
+    </div></div>
+    """
+    with patch("requests.post", return_value=_mock_response(ddg_html)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        events = future_events.platform_events("camber", region="Los Angeles, CA")
+
+    assert len(events) == 1
+    assert events[0]["source"] == "camber"
+    assert events[0]["start"] is None
+    assert events[0]["url"] == "https://camberplaces.substack.com/p/la-happenings-nov-3"
+
+
 def test_platform_events_respects_max_results():
     with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
          patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):

@@ -75,9 +75,12 @@ tab's own filters stack on top.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
 - **Future** — one ranked list of upcoming events from Eventbrite, Luma,
-  Meetup, and anywhere else DuckDuckGo turns up for your home region (or
-  any region you type in), enriched with start/end time, duration, and
-  location straight from each event's own page — no API key/OAuth needed.
+  Meetup, Camber (the "LA Happenings" newsletter), and anywhere else
+  DuckDuckGo turns up for your home region (or any region you type in),
+  enriched with start/end time, duration, and location straight from each
+  event's own page — no API key/OAuth needed. (Camber's a Substack roundup
+  rather than a per-event platform, so its results usually keep their date
+  unknown — there's no event page to enrich them from.)
   Skips browse/listing pages ("Discover LA Events") in favor of actual
   single events, picks the soonest occurrence for a "multiple dates"
   listing rather than blending across them, and flags anything that

@@ -499,8 +499,8 @@ def anomalies_view():
 
 @app.get("/api/future")
 def future_view():
-    """Future tab: events found for Eventbrite/Luma/Meetup plus anywhere
-    else DuckDuckGo turns up, via a DuckDuckGo search, enriched with
+    """Future tab: events found for Eventbrite/Luma/Meetup/Camber plus
+    anywhere else DuckDuckGo turns up, via a DuckDuckGo search, enriched with
     start/end/duration/location from each event's own page (see
     felinni.future_events - no platform API key/OAuth needed). `region`
     defaults to your geocoded home metro, falling back to
@@ -528,7 +528,7 @@ def future_view():
     message = None
     if not events:
         message = (
-            f"No results from Eventbrite/Luma/Meetup/other sites for \"{region}\" right now - "
+            f"No results from Eventbrite/Luma/Meetup/Camber/other sites for \"{region}\" right now - "
             "try a different region, or DuckDuckGo may be rate-limiting this search."
         )
 

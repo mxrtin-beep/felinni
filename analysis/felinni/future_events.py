@@ -1,10 +1,10 @@
 """"Future" tab: upcoming events worth going to, pulled from Eventbrite,
-Luma, Meetup, and anywhere else DuckDuckGo turns up for your home region,
-with start/end/duration/location, conflict alerts against your own
+Luma, Meetup, Camber, and anywhere else DuckDuckGo turns up for your home
+region, with start/end/duration/location, conflict alerts against your own
 calendar, and people suggestions - ranked by fit with your calendar
 history.
 
-None of the three named platforms has a public API that's usable without
+None of Eventbrite/Luma/Meetup has a public API that's usable without
 registering for a developer key/OAuth app, so instead of gating this behind
 "sign up for a Meetup app", event *discovery* scrapes DuckDuckGo's HTML
 search results page (no key required, no account, no rate-limit approval)
@@ -17,6 +17,16 @@ without a site: filter, keeping only results that actually resolve to a
 real schema.org Event on their own page - which is what lets "and anywhere
 else" work without an ever-growing hardcoded domain list, and without
 mistaking a random blog post for a real listing.
+
+Camber is different from the other three: it's a Substack newsletter (the
+"LA Happenings" section at camberplaces.substack.com/s/la-happenings)
+curating a roundup of local events in one post, not a platform with a
+machine-readable page per event - so there's no schema.org Event markup to
+enrich a Camber result with, and it'll almost always come through with
+start/end left unknown, same as any other page enrichment can't parse a
+date out of. It's kept as its own named platform (not folded into
+`other_web_events`, which requires a confirmed date) since a Camber
+roundup is still worth surfacing as a link even without one.
 
 A result whose page has no such block (or fails to fetch) falls back to a
 plain-text date parsed out of the search result's own title/snippet - not
@@ -45,12 +55,22 @@ import urllib.parse
 
 import pandas as pd
 
-PLATFORMS = ("eventbrite", "luma", "meetup")
+PLATFORMS = ("eventbrite", "luma", "meetup", "camber")
 
 PLATFORM_DOMAINS = {
     "eventbrite": "eventbrite.com",
     "luma": "lu.ma",
     "meetup": "meetup.com",
+    "camber": "camberplaces.substack.com",
+}
+
+# Most platforms' site: query is just their domain, but Camber's events live
+# under one specific newsletter section rather than the whole Substack -
+# DuckDuckGo's site: operator accepts a path suffix too, so this narrows the
+# search without narrowing the URL-match check above (a domain match is
+# still enough there; a Camber post's exact path can vary).
+PLATFORM_QUERY_SITE = {
+    "camber": "camberplaces.substack.com/s/la-happenings",
 }
 
 DEFAULT_REGION = "Los Angeles, CA"
@@ -331,7 +351,8 @@ def platform_events(platform: str, region: str = DEFAULT_REGION, max_results: in
         raise ValueError(f"unknown platform: {platform!r} (expected one of {PLATFORMS})")
 
     domain = PLATFORM_DOMAINS[platform]
-    query = f"site:{domain} {region} events"
+    site_query = PLATFORM_QUERY_SITE.get(platform, domain)
+    query = f"site:{site_query} {region} events"
     try:
         page_html = _ddg_search(query)
     except Exception:
