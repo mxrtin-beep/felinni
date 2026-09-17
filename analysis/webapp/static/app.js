@@ -455,6 +455,11 @@ async function loadPeople() {
       horizontalBarChart(document.getElementById("people-chart"),
         sorted.slice(0, 15).map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
       populatePeoplePickerList(sorted);
+      // The slider spans your full calendar history (not just what's
+      // currently in view), so it always has room to zoom into any part
+      // of it - fetched fresh in case a calendar source added new history.
+      const meta = await api("meta");
+      initPeopleTrendRangeSlider(meta.min_date, meta.max_date);
       await refreshPeopleTrend();
     })(),
     (async () => {
@@ -476,14 +481,102 @@ function formatPeriodLabel(period, granularity) {
   return period.slice(0, 10);
 }
 
+// --- Events-over-time range slider: a chart-local zoom, independent of
+// the Overview tab's global date filter, for narrowing just this chart to
+// a sub-range without changing what every other tab shows. Two plain
+// draggable handles on a track (dateToPct/pctToDate map a date to/from a
+// 0-100 position), spanning your full calendar history so you can always
+// zoom into any part of it regardless of the current view. ---
+const peopleTrendRange = { min: null, max: null, low: null, high: null };
+
+function ptrDateToPct(dateStr) {
+  const { min, max } = peopleTrendRange;
+  const minT = new Date(min).getTime(), maxT = new Date(max).getTime();
+  if (maxT === minT) return 0;
+  return ((new Date(dateStr).getTime() - minT) / (maxT - minT)) * 100;
+}
+
+function ptrPctToDate(pct) {
+  const { min, max } = peopleTrendRange;
+  const minT = new Date(min).getTime(), maxT = new Date(max).getTime();
+  const t = minT + (pct / 100) * (maxT - minT);
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+function renderPeopleTrendRangeSlider() {
+  const container = document.getElementById("people-trend-range");
+  const lowPct = ptrDateToPct(peopleTrendRange.low);
+  const highPct = ptrDateToPct(peopleTrendRange.high);
+  container.querySelector('[data-handle="low"]').style.left = lowPct + "%";
+  container.querySelector('[data-handle="high"]').style.left = highPct + "%";
+  const fill = container.querySelector(".range-slider-fill");
+  fill.style.left = lowPct + "%";
+  fill.style.width = Math.max(highPct - lowPct, 0) + "%";
+  document.getElementById("people-trend-range-low-label").textContent = peopleTrendRange.low;
+  document.getElementById("people-trend-range-high-label").textContent = peopleTrendRange.high;
+}
+
+function initPeopleTrendRangeSlider(minDate, maxDate) {
+  const container = document.getElementById("people-trend-range");
+  const isFirstInit = !container.dataset.wired;
+  const previousLow = peopleTrendRange.low, previousHigh = peopleTrendRange.high;
+  peopleTrendRange.min = minDate;
+  peopleTrendRange.max = maxDate;
+  // First time: default to the full range. On a later meta refresh (e.g.
+  // a calendar source added new history), keep whatever the user already
+  // dragged to, clamped to the new bounds.
+  peopleTrendRange.low = isFirstInit ? minDate : (previousLow < minDate ? minDate : previousLow);
+  peopleTrendRange.high = isFirstInit ? maxDate : (previousHigh > maxDate ? maxDate : previousHigh);
+  renderPeopleTrendRangeSlider();
+  if (!isFirstInit) return;
+  container.dataset.wired = "1";
+
+  function startDrag(handleKey) {
+    const onMove = (evt) => {
+      const rect = container.getBoundingClientRect();
+      const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+      const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+      const date = ptrPctToDate(pct);
+      if (handleKey === "low") {
+        if (date >= peopleTrendRange.high) return;
+        peopleTrendRange.low = date;
+      } else {
+        if (date <= peopleTrendRange.low) return;
+        peopleTrendRange.high = date;
+      }
+      renderPeopleTrendRangeSlider();
+      evt.preventDefault();
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onUp);
+      refreshPeopleTrend();
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onUp);
+  }
+
+  container.querySelector('[data-handle="low"]').addEventListener("mousedown", () => startDrag("low"));
+  container.querySelector('[data-handle="low"]').addEventListener("touchstart", () => startDrag("low"));
+  container.querySelector('[data-handle="high"]').addEventListener("mousedown", () => startDrag("high"));
+  container.querySelector('[data-handle="high"]').addEventListener("touchstart", () => startDrag("high"));
+}
+
 async function refreshPeopleTrend() {
   const granularity = document.getElementById("people-granularity").value;
   const selected = [...document.querySelectorAll(".people-picker-checkbox:checked")].map(cb => cb.value);
   const rows = await api(`person-trend?granularity=${granularity}&people=${encodeURIComponent(selected.join(","))}`);
-  const periods = [...new Set(rows.map(r => r.period))].sort();
+  const inRange = peopleTrendRange.low && peopleTrendRange.high
+    ? rows.filter(r => r.period >= peopleTrendRange.low && r.period <= peopleTrendRange.high)
+    : rows;
+  const periods = [...new Set(inRange.map(r => r.period))].sort();
   const indexOf = Object.fromEntries(periods.map((p, i) => [p, i]));
   const byPerson = {};
-  rows.forEach(r => {
+  inRange.forEach(r => {
     (byPerson[r.person] = byPerson[r.person] || []).push({
       x: indexOf[r.period], xLabel: formatPeriodLabel(r.period, granularity), y: r.count,
     });

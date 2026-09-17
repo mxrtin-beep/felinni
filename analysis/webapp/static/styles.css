@@ -224,6 +224,53 @@ th.sortable:hover {
   color: var(--text-primary);
 }
 
+/* Two-handle range slider (e.g. zooming the People tab's trend chart into
+ * a sub-range) - plain divs positioned by percentage, dragged via pointer
+ * events in app.js. No native <input type="range"> here since this needs
+ * two independent handles on one track. */
+.range-slider {
+  position: relative;
+  height: 20px;
+  margin: 4px 0 6px;
+}
+
+.range-slider-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 4px;
+  transform: translateY(-50%);
+  background: var(--grid);
+  border-radius: 999px;
+}
+
+.range-slider-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: var(--series-1);
+  border-radius: 999px;
+}
+
+.range-slider-handle {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%, -50%);
+  background: var(--surface-1);
+  border: 2px solid var(--series-1);
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.range-slider-handle:active {
+  cursor: grabbing;
+}
+
 .dropdown-check {
   position: relative;
   display: inline-block;
