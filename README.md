@@ -68,7 +68,7 @@ don't contribute to analyses that need that field.
 
 ```bash
 cd analysis
-pip install -r requirements.txt   # geopy/folium are optional, only for mapping
+pip install -r requirements.txt   # geopy/folium: mapping; requests/icalendar: importing other calendars
 python webapp/server.py --events ../events.json
 ```
 
@@ -87,6 +87,44 @@ also computes extended unusually-quiet stretches and a rough "did my home
 base change" signal (from which raw location dominates each quarter);
 those aren't surfaced in the dashboard but are available from the `/api/breaks`
 endpoint or the module directly if you want them.
+
+### Importing other calendars (Google, Outlook, a second Apple calendar, ...)
+
+`events.json` doesn't have to be your only source. The Overview tab's
+**Import calendars** card adds calendars from anywhere else, merged in
+alongside it everywhere in the dashboard, with a list underneath of
+what's imported — each one showing its sync status, a checkbox to
+show/hide it (excluded from every analysis without deleting it), and a
+delete button.
+
+Two ways to bring one in:
+
+- **Secret ICS link** (Google, Outlook, or an iCloud calendar's public
+  sharing link) — paste the URL and it's fetched and parsed immediately.
+  No account connection or API keys needed:
+  - **Google Calendar**: Settings → [pick a calendar] → "Integrate
+    calendar" → **Secret address in iCal format**.
+  - **Outlook/Office 365**: Calendar settings → "Shared calendars" →
+    **Publish a calendar** → pick the ICS link.
+  - **Apple/iCloud**: Calendar app → share a calendar → "Public Calendar"
+    → copy the `webcal://` link (use `https://` instead of `webcal://`).
+
+  These refresh **automatically every 30 minutes** while
+  `webapp/server.py` is running (`--sync-interval-minutes` to change
+  that, or `0` to disable polling), plus a **Refresh now** button for an
+  on-demand pull. This isn't a true always-on sync — it only runs while
+  the dev server process is up, same as the rest of this dashboard.
+- **Upload a file** — a plain `.ics` export, or (for Apple specifically)
+  the `events.json` CalendarExporter itself produces, so a second Mac's
+  export can be layered in without merging JSON files by hand. A file
+  doesn't have a URL to re-fetch from, so updating it means uploading
+  again (or deleting and re-adding).
+
+Requires the optional `requests`/`icalendar` dependencies (`pip install
+-r requirements.txt` gets both); an ICS-link source records a fetch/parse
+failure on itself (bad link, network hiccup) rather than losing the
+calendar you just configured, so you can just click **Refresh now** once
+it's fixed.
 
 Try it against the synthetic fixture first if you don't have a real
 export yet: `python webapp/server.py --events ../data/sample_events.json`.
@@ -241,6 +279,7 @@ analysis/
   felinni/
     ingest.py                events.json -> pandas DataFrame
     geocode.py                optional Nominatim geocoding, disk-cached
+    calendar_sources.py        optional Google/Outlook/Apple ICS import, manifest + disk-cached per source
     location.py, social.py, habits.py, travel.py, spending.py,
     seasonality.py, anomalies.py, breaks.py, recurring.py, regions.py, dating_link.py
   webapp/
@@ -254,6 +293,7 @@ tests/
   test_ingest.py             junk-location filtering, title-based people parsing, calendar colors
   test_breaks_and_trends.py  category anomalies, notable breaks, pandas-version-alias regressions
   test_geocode.py            anchors, region bias, overrides, failed-geocode retry
+  test_calendar_sources.py   ICS parsing, source manifest add/sync/hide/delete
   test_regions.py            geographic-region grouping for the Travel tab
   test_recurring.py          repeating-event cadence/status detection
   test_webapp.py             smoke tests for the dashboard's API, incl. the geocode job
@@ -261,4 +301,6 @@ data/
   sample_events.json           generated fixture (committed for convenience)
   geocode_cache.json            built by `cli.py geocode`, gitignored (your location history stays local)
   geocode_overrides.example.json  committed template - copy to geocode_overrides.json (gitignored) to use it
+  calendar_sources.json         imported-calendar manifest, gitignored
+  sources/                      per-source cached events (one JSON file per import), gitignored
 ```

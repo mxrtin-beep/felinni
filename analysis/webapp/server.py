@@ -11,6 +11,7 @@ import argparse
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -18,11 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
 DF = None  # the full, unfiltered dataset - populated in main() before the server starts
+EVENTS_PATH = None  # the primary --events file, merged with imported calendar sources on every reload
 
 _geocode_lock = threading.Lock()
 GEOCODE_STATE = {"running": False, "done": 0, "total": 0, "error": None}
@@ -61,6 +63,26 @@ def _get_df() -> pd.DataFrame:
         excluded = {c.casefold() for c in exclude_categories.split(",") if c}
         df = df[~df["category"].str.casefold().isin(excluded)]
     return df
+
+
+def _load_primary_events() -> list[dict]:
+    if not EVENTS_PATH:
+        return []
+    path = Path(EVENTS_PATH)
+    if not path.exists():
+        return []
+    return json.loads(path.read_text())
+
+
+def _reload_dataset() -> None:
+    """Rebuilds DF from the primary events.json (if any) plus every
+    visible imported calendar source - called after any change to the
+    source manifest (add/sync/hide/delete) and by the background poller."""
+    global DF
+    combined = _load_primary_events() + calendar_sources.merged_source_events(
+        calendar_sources.DEFAULT_MANIFEST_PATH, calendar_sources.DEFAULT_SOURCES_DIR,
+    )
+    DF = ingest.load_events_from_records(combined)
 
 
 @app.get("/api/meta")
@@ -240,6 +262,75 @@ def geocode_override():
     return jsonify({"location": location_str, "entry": entry})
 
 
+@app.get("/api/sources")
+def list_sources():
+    return jsonify(calendar_sources.list_sources(calendar_sources.DEFAULT_MANIFEST_PATH))
+
+
+@app.post("/api/sources")
+def add_source():
+    """Registers an imported calendar - either an ICS-link source (JSON
+    body: name/provider/kind="ics_url"/url) or a file upload (multipart
+    form: name/provider/kind="ics_file"|"events_json" fields + a `file`).
+    Either way, syncs immediately and merges it into the working dataset."""
+    is_json = request.content_type and "application/json" in request.content_type
+    payload = request.get_json(silent=True) or {} if is_json else {}
+    name = (request.form.get("name") or payload.get("name") or "").strip()
+    provider = request.form.get("provider") or payload.get("provider")
+    kind = request.form.get("kind") or payload.get("kind")
+    url = request.form.get("url") or payload.get("url")
+    file_bytes = request.files["file"].read() if "file" in request.files else None
+
+    if not name or not provider or not kind:
+        return jsonify({"error": "name, provider, and kind are required"}), 400
+
+    try:
+        entry = calendar_sources.add_source(
+            name, provider, kind, url=url, file_bytes=file_bytes,
+            manifest_path=calendar_sources.DEFAULT_MANIFEST_PATH, sources_dir=calendar_sources.DEFAULT_SOURCES_DIR,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _reload_dataset()
+    return jsonify(entry)
+
+
+@app.post("/api/sources/<source_id>/sync")
+def sync_source(source_id):
+    try:
+        entry = calendar_sources.sync_source(
+            source_id, calendar_sources.DEFAULT_MANIFEST_PATH, calendar_sources.DEFAULT_SOURCES_DIR,
+        )
+    except KeyError:
+        return jsonify({"error": "no such source"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _reload_dataset()
+    return jsonify(entry)
+
+
+@app.patch("/api/sources/<source_id>")
+def update_source(source_id):
+    payload = request.get_json(force=True, silent=True) or {}
+    if "visible" not in payload:
+        return jsonify({"error": "visible is required"}), 400
+    entry = calendar_sources.set_visibility(source_id, bool(payload["visible"]), calendar_sources.DEFAULT_MANIFEST_PATH)
+    if entry is None:
+        return jsonify({"error": "no such source"}), 404
+    _reload_dataset()
+    return jsonify(entry)
+
+
+@app.delete("/api/sources/<source_id>")
+def delete_source(source_id):
+    if not calendar_sources.remove_source(
+        source_id, calendar_sources.DEFAULT_MANIFEST_PATH, calendar_sources.DEFAULT_SOURCES_DIR,
+    ):
+        return jsonify({"error": "no such source"}), 404
+    _reload_dataset()
+    return jsonify({"deleted": True})
+
+
 @app.get("/api/stopped-going")
 def stopped_going():
     min_visits = request.args.get("min_visits", 3, type=int)
@@ -378,20 +469,45 @@ def anomalies_view():
     return jsonify({"weekly": records(weekly), "anomalies": records(flagged), "by_category": by_category})
 
 
+def _background_sync_loop(interval_seconds: float) -> None:
+    """Re-fetches every ICS-link calendar source every `interval_seconds`
+    for as long as this process runs, so a Google/Outlook import stays
+    reasonably fresh without a manual "Refresh now" click each time. Not a
+    true always-on sync - it only runs while the dev server is up."""
+    while True:
+        time.sleep(interval_seconds)
+        try:
+            if calendar_sources.sync_all_url_sources(calendar_sources.DEFAULT_MANIFEST_PATH, calendar_sources.DEFAULT_SOURCES_DIR):
+                _reload_dataset()
+        except Exception as e:
+            print(f"Background calendar sync failed: {e}", file=sys.stderr)
+
+
 def main():
-    global DF
+    global EVENTS_PATH
     parser = argparse.ArgumentParser()
     parser.add_argument("--events", default="../events.json", help="Path to CalendarExporter's JSON output")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument(
+        "--sync-interval-minutes", type=float, default=30,
+        help="How often to re-fetch imported ICS-link calendars while the server is running (0 disables polling)",
+    )
     args = parser.parse_args()
 
-    DF = ingest.load_events(args.events)
+    EVENTS_PATH = args.events
+    _reload_dataset()
     if DF.empty:
-        print(f"No events loaded from {args.events} - nothing to show.", file=sys.stderr)
+        print(
+            f"No events loaded from {args.events} or any imported calendar source - nothing to show.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    print(f"Loaded {len(DF)} events from {args.events}. Serving on http://{args.host}:{args.port}")
+    if args.sync_interval_minutes > 0:
+        threading.Thread(target=_background_sync_loop, args=(args.sync_interval_minutes * 60,), daemon=True).start()
+
+    print(f"Loaded {len(DF)} events. Serving on http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=False)
 
 

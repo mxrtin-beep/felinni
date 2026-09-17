@@ -28,6 +28,49 @@
 
   <section class="panel active" id="panel-overview">
     <div class="card">
+      <h2>Import calendars</h2>
+      <p class="card-note">
+        Pull in a calendar from Apple, Google, Outlook, or anywhere else -
+        merges into every tab alongside events.json. Google/Outlook: their
+        calendar settings have a "secret address in iCal format" /
+        "publish this calendar" link you can paste below. Apple: an
+        iCloud calendar's public sharing link works the same way, or
+        upload the events.json from the exporter above. ICS-link
+        calendars refresh automatically every 30 minutes while the server
+        is running, plus "Refresh now"; uploaded files need a re-upload to
+        update.
+      </p>
+      <div class="controls">
+        <label>Name <input type="text" id="source-name" placeholder="e.g. Work Google Calendar"></label>
+        <label>Provider
+          <select id="source-provider">
+            <option value="apple">Apple</option>
+            <option value="google">Google</option>
+            <option value="outlook">Outlook</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label>Import via
+          <select id="source-kind">
+            <option value="ics_url">Secret ICS link</option>
+            <option value="ics_file">Upload .ics file</option>
+            <option value="events_json">Upload events.json (Apple exporter)</option>
+          </select>
+        </label>
+      </div>
+      <div class="controls" id="source-url-row">
+        <label>ICS link <input type="text" id="source-url" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" style="min-width:340px"></label>
+      </div>
+      <div class="controls" id="source-file-row" style="display:none">
+        <label>File <input type="file" id="source-file" accept=".ics,.json"></label>
+      </div>
+      <div class="controls">
+        <button id="source-add-btn" type="button">Add calendar</button>
+      </div>
+      <p class="card-note" id="source-add-status"></p>
+      <div id="sources-list"></div>
+    </div>
+    <div class="card">
       <h2>Date range</h2>
       <p class="card-note">Applies across every tab.</p>
       <div class="controls">

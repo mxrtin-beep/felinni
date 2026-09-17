@@ -2,6 +2,7 @@
 import sys
 import time
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -41,6 +42,7 @@ def client():
     "/api/locations?person=Alice",
     "/api/breaks",
     "/api/recurring",
+    "/api/sources",
 ])
 def test_endpoint_returns_200_json(client, path):
     resp = client.get(path)
@@ -219,3 +221,88 @@ def test_geocode_start_passes_through_force_flag(client, monkeypatch):
         pytest.fail("geocode job never finished")
 
     assert seen_kwargs.get("force") is True
+
+
+_SAMPLE_IMPORT_ICS = b"""BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:x1
+SUMMARY:Imported Event
+DTSTART:20240102T170000Z
+DTEND:20240102T180000Z
+END:VEVENT
+END:VCALENDAR
+"""
+
+
+def test_add_sync_hide_delete_source_via_api(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.calendar_sources, "DEFAULT_MANIFEST_PATH", tmp_path / "sources.json")
+    monkeypatch.setattr(server.calendar_sources, "DEFAULT_SOURCES_DIR", tmp_path / "sources")
+    original_df = server.DF
+    try:
+        with patch("requests.get", return_value=MagicMock(content=_SAMPLE_IMPORT_ICS, raise_for_status=MagicMock())):
+            resp = client.post("/api/sources", json={
+                "name": "My Google Calendar", "provider": "google", "kind": "ics_url",
+                "url": "https://example.com/cal.ics",
+            })
+        assert resp.status_code == 200
+        entry = resp.get_json()
+        assert entry["event_count"] == 1
+        assert "Imported Event" in server.DF["title"].values
+        assert len(client.get("/api/sources").get_json()) == 1
+
+        hidden = client.patch(f"/api/sources/{entry['id']}", json={"visible": False})
+        assert hidden.status_code == 200
+        assert "Imported Event" not in server.DF["title"].values
+
+        shown = client.patch(f"/api/sources/{entry['id']}", json={"visible": True})
+        assert shown.status_code == 200
+        assert "Imported Event" in server.DF["title"].values
+
+        deleted = client.delete(f"/api/sources/{entry['id']}")
+        assert deleted.status_code == 200
+        assert "Imported Event" not in server.DF["title"].values
+        assert client.get("/api/sources").get_json() == []
+    finally:
+        server.DF = original_df
+
+
+def test_add_source_events_json_upload_via_api(client, monkeypatch, tmp_path):
+    import io
+    import json as jsonlib
+
+    monkeypatch.setattr(server.calendar_sources, "DEFAULT_MANIFEST_PATH", tmp_path / "sources.json")
+    monkeypatch.setattr(server.calendar_sources, "DEFAULT_SOURCES_DIR", tmp_path / "sources")
+    original_df = server.DF
+    try:
+        raw_events = [{
+            "id": "evt-1", "title": "Uploaded Gym", "notes": None, "location": None,
+            "startDate": "2024-01-01T09:00:00Z", "endDate": "2024-01-01T10:00:00Z",
+            "isAllDay": False, "calendarTitle": "Gym", "calendarColorHex": None,
+            "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+        }]
+        data = {
+            "name": "My iPhone export", "provider": "apple", "kind": "events_json",
+            "file": (io.BytesIO(jsonlib.dumps(raw_events).encode()), "events.json"),
+        }
+        resp = client.post("/api/sources", data=data, content_type="multipart/form-data")
+        assert resp.status_code == 200
+        assert resp.get_json()["event_count"] == 1
+        assert "Uploaded Gym" in server.DF["title"].values
+    finally:
+        server.DF = original_df
+
+
+def test_sources_endpoint_errors_for_missing_fields(client):
+    resp = client.post("/api/sources", json={"name": "x"})
+    assert resp.status_code == 400
+
+
+def test_sync_nonexistent_source_404s(client):
+    resp = client.post("/api/sources/doesnotexist/sync")
+    assert resp.status_code == 404
+
+
+def test_delete_nonexistent_source_404s(client):
+    resp = client.delete("/api/sources/doesnotexist")
+    assert resp.status_code == 404

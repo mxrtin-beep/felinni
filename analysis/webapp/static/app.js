@@ -103,18 +103,174 @@ async function loadMeta() {
     GLOBAL_FILTERS.endDate = meta.max_date;
   }
   categoryColors = buildCategoryColors(meta.categories, meta.category_colors);
+  populateCategoryFilterList(meta.categories);
+  return meta;
+}
 
+function populateCategoryFilterList(categories) {
   const categoryList = document.getElementById("category-filter-list");
-  if (!categoryList.dataset.populated) {
-    categoryList.innerHTML = meta.categories.map(c => `
+  const isFirstBuild = !categoryList.dataset.populated;
+  // A category that existed before keeps whatever the user set it to;
+  // a brand-new one (e.g. from a calendar just imported) defaults to
+  // checked, same as on first load.
+  const previousCategories = new Set([...categoryList.querySelectorAll("input")].map(cb => cb.value));
+  const previouslyChecked = new Set(
+    [...categoryList.querySelectorAll("input")].filter(cb => cb.checked).map(cb => cb.value)
+  );
+  categoryList.innerHTML = categories.map(c => {
+    const checked = isFirstBuild || !previousCategories.has(c) || previouslyChecked.has(c);
+    return `
       <label style="display:flex;align-items:center;gap:4px;font-weight:normal">
-        <input type="checkbox" class="category-checkbox" value="${c}" checked>
+        <input type="checkbox" class="category-checkbox" value="${c}" ${checked ? "checked" : ""}>
         <span class="swatch" style="background:${categoryColors[c] || cssVarSafe("--text-muted")}"></span>${c}
       </label>
-    `).join("");
-    categoryList.dataset.populated = "1";
+    `;
+  }).join("");
+  categoryList.dataset.populated = "1";
+  GLOBAL_FILTERS.excludeCategories = [...categoryList.querySelectorAll("input")].filter(cb => !cb.checked).map(cb => cb.value);
+}
+
+// --- Calendar sources ---
+async function loadCalendarSources() {
+  const kindSelect = document.getElementById("source-kind");
+  if (!kindSelect.dataset.wired) {
+    kindSelect.addEventListener("change", updateSourceFormFields);
+    document.getElementById("source-add-btn").addEventListener("click", addCalendarSource);
+    kindSelect.dataset.wired = "1";
+    updateSourceFormFields();
   }
-  return meta;
+  await refreshSourcesList();
+}
+
+function updateSourceFormFields() {
+  const isUrl = document.getElementById("source-kind").value === "ics_url";
+  document.getElementById("source-url-row").style.display = isUrl ? "flex" : "none";
+  document.getElementById("source-file-row").style.display = isUrl ? "none" : "flex";
+}
+
+function sourceKindLabel(kind) {
+  if (kind === "ics_url") return "ICS link";
+  if (kind === "ics_file") return "ICS file";
+  return "events.json";
+}
+
+async function refreshSourcesList() {
+  const sources = await fetch("/api/sources").then(r => r.json());
+  const container = document.getElementById("sources-list");
+  if (!sources.length) {
+    container.innerHTML = '<p class="empty-note">No calendars imported yet.</p>';
+    return;
+  }
+  container.innerHTML = sources.map(s => {
+    const status = s.last_sync_error
+      ? `<span style="color:var(--status-critical)">Error: ${escapeHtml(s.last_sync_error)}</span>`
+      : s.last_synced
+        ? `${s.event_count} events - last synced ${fmtDate(s.last_synced)}`
+        : "Not synced yet";
+    return `
+      <div class="source-row">
+        <label><input type="checkbox" class="source-visible-toggle" data-id="${s.id}" ${s.visible ? "checked" : ""}> <strong>${escapeHtml(s.name)}</strong></label>
+        <span class="source-meta">${escapeHtml(s.provider)} · ${sourceKindLabel(s.kind)}</span>
+        <span class="source-status">${status}</span>
+        ${s.kind === "ics_url" ? `<button type="button" class="source-sync-btn" data-id="${s.id}">Refresh now</button>` : ""}
+        <button type="button" class="source-delete-btn" data-id="${s.id}">Delete</button>
+      </div>
+    `;
+  }).join("");
+
+  container.querySelectorAll(".source-visible-toggle").forEach(cb => cb.addEventListener("change", async () => {
+    await fetch(`/api/sources/${cb.dataset.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visible: cb.checked }),
+    });
+    await refreshAfterSourceChange();
+  }));
+  container.querySelectorAll(".source-sync-btn").forEach(btn => btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    await fetch(`/api/sources/${btn.dataset.id}/sync`, { method: "POST" });
+    await refreshAfterSourceChange();
+  }));
+  container.querySelectorAll(".source-delete-btn").forEach(btn => btn.addEventListener("click", async () => {
+    if (!confirm("Remove this calendar? Its events will no longer be counted anywhere.")) return;
+    await fetch(`/api/sources/${btn.dataset.id}`, { method: "DELETE" });
+    await refreshAfterSourceChange();
+  }));
+}
+
+async function refreshAfterSourceChange() {
+  // A source change can add categories or widen the date range, so the
+  // meta-driven filters need re-syncing too, not just the analysis tabs.
+  const meta = await api("meta");
+  const startInput = document.getElementById("global-start-date");
+  const endInput = document.getElementById("global-end-date");
+  startInput.min = endInput.min = meta.min_date;
+  startInput.max = endInput.max = meta.max_date;
+  if (!startInput.value || startInput.value > meta.min_date) startInput.value = meta.min_date;
+  if (!endInput.value || endInput.value < meta.max_date) endInput.value = meta.max_date;
+  GLOBAL_FILTERS.startDate = startInput.value;
+  GLOBAL_FILTERS.endDate = endInput.value;
+  categoryColors = buildCategoryColors(meta.categories, meta.category_colors);
+  populateCategoryFilterList(meta.categories);
+
+  await refreshSourcesList();
+  await reloadAll();
+}
+
+async function addCalendarSource() {
+  const status = document.getElementById("source-add-status");
+  const name = document.getElementById("source-name").value.trim();
+  const provider = document.getElementById("source-provider").value;
+  const kind = document.getElementById("source-kind").value;
+  if (!name) {
+    status.textContent = "Enter a name first.";
+    return;
+  }
+
+  const btn = document.getElementById("source-add-btn");
+  btn.disabled = true;
+  status.textContent = "Adding…";
+  try {
+    let resp;
+    if (kind === "ics_url") {
+      const url = document.getElementById("source-url").value.trim();
+      if (!url) {
+        status.textContent = "Enter an ICS link.";
+        return;
+      }
+      resp = await fetch("/api/sources", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, provider, kind, url }),
+      });
+    } else {
+      const file = document.getElementById("source-file").files[0];
+      if (!file) {
+        status.textContent = "Choose a file.";
+        return;
+      }
+      const form = new FormData();
+      form.append("name", name);
+      form.append("provider", provider);
+      form.append("kind", kind);
+      form.append("file", file);
+      resp = await fetch("/api/sources", { method: "POST", body: form });
+    }
+    const body = await resp.json();
+    if (!resp.ok) {
+      status.textContent = body.error || "Couldn't add that calendar.";
+      return;
+    }
+    status.textContent = body.last_sync_error
+      ? `Added, but syncing failed: ${body.last_sync_error}`
+      : `Added ${body.event_count} events from "${body.name}".`;
+    document.getElementById("source-name").value = "";
+    document.getElementById("source-url").value = "";
+    document.getElementById("source-file").value = "";
+    await refreshAfterSourceChange();
+  } catch (e) {
+    status.textContent = "Request failed - is the server running?";
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function refreshOverviewStats() {
@@ -790,6 +946,7 @@ async function refreshMap() {
 // --- Boot ---
 (async function init() {
   const meta = await loadMeta();
+  await loadCalendarSources();
   await refreshOverviewStats();
   await Promise.all([
     loadPlaces(),

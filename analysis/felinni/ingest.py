@@ -143,6 +143,14 @@ def timed_events(df: pd.DataFrame) -> pd.DataFrame:
 def load_events(path: str | Path) -> pd.DataFrame:
     """Load and normalize an events.json export into a DataFrame, one row per event."""
     raw = json.loads(Path(path).read_text())
+    return load_events_from_records(raw)
+
+
+def load_events_from_records(raw: list[dict]) -> pd.DataFrame:
+    """Same normalization as `load_events`, but starting from an
+    already-parsed list of event dicts in the exporter's schema rather than
+    a file path - used to merge events.json with imported calendar sources
+    (felinni.calendar_sources) into one dataset."""
     if not raw:
         return pd.DataFrame(columns=[
             "id", "title", "notes", "location", "start", "end", "duration_hours",
