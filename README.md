@@ -76,7 +76,10 @@ tab's own filters stack on top.
   automatically: embedded newlines/extra whitespace, a missing comma
   between street and city, a business name glued directly onto its own
   house number ("101 Boxing Club 1714 Newbury Rd..." retries as "1714
-  Newbury Rd..."), and a unit/suite/apartment/floor/room clause dropped
+  Newbury Rd..."), a directional qualifier after the street suffix kept
+  with the street instead of getting absorbed into the city ("...4th St
+  NW Washington DC..." -> "...St NW, Washington, DC..." rather than
+  city "NW Washington"), and a unit/suite/apartment/floor/room clause dropped
   ("...Ave, Unit 1420, Los Angeles..." retries as "...Ave, Los
   Angeles..."). If the street address still won't resolve at all, a
   landmark's own name plus its city is tried on its own ("Balboa Park 1549

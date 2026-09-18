@@ -38,7 +38,15 @@ likes.
 - A missing comma between the street and city ("...Strathmore Dr Los
   Angeles, CA...") is inserted back, and so is a fully comma-less
   "Street City ST ZIP" ("...Shumway Lane Mountain View CA 94041") -
-  Nominatim leans heavily on commas to tell address components apart.
+  Nominatim leans heavily on commas to tell address components apart. A
+  directional qualifier right after the street suffix ("...4th St NW...",
+  "...Wilshire Blvd W...") is kept with the street rather than the city
+  when inserting these commas - left alone, a two-letter compass point
+  (NW/NE/SW/SE) reads exactly like a short capitalized city-name word and
+  gets absorbed into the city ("St NW Washington" -> city "NW Washington"
+  instead of "Washington"), while a single-letter one (N/S/E/W) is too
+  short to match that pattern at all and blocks the comma insertion from
+  matching anywhere in the string.
 - If the (whitespace-normalized, comma-fixed) query for a complete address
   still fails, several retries are tried in order (see `_retry_queries`):
   a business name that's glued directly onto its own house number stripped
@@ -314,11 +322,22 @@ _STREET_SUFFIXES = (
     r"Pl|Place|Plaza|Cir|Circle|Pkwy|Parkway|Ter|Terrace|Hwy|Highway|Sq|Square|Row|Walk|"
     r"Trail|Path|Loop|Camino|Paseo|Calle|Via"
 )
+# A directional qualifier after the street suffix ("...4th St NW...",
+# "...Wilshire Blvd W...") - without accounting for it, the two-letter
+# compass points (NW/NE/SW/SE) are indistinguishable from a short
+# capitalized city-name word and get wrongly swallowed into the "city"
+# capture below ("St NW Washington" -> city "NW Washington" instead of
+# "Washington"), while the single-letter ones (N/S/E/W) are too short to
+# match that same city-word pattern and block the whole regex from
+# matching at all, leaving no comma inserted anywhere. Grouped with the
+# suffix itself (not the city) so the existing \1 (street), \2 (city), \3
+# (state) substitutions below don't need to change.
+_STREET_SUFFIX_WITH_DIRECTION = rf"(?:{_STREET_SUFFIXES})(?:\s+(?:NE|NW|SE|SW|N|S|E|W)\.?\b)?"
 _MISSING_CITY_COMMA_RE = re.compile(
-    rf"\b({_STREET_SUFFIXES})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*),\s*([A-Z]{{2}})\b"
+    rf"\b({_STREET_SUFFIX_WITH_DIRECTION})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*),\s*([A-Z]{{2}})\b"
 )
 _FULLY_COMMALESS_CITY_STATE_RE = re.compile(
-    rf"\b({_STREET_SUFFIXES})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*)\s+([A-Z]{{2}})(\s+\d{{5}}(?:-\d{{4}})?)?\b"
+    rf"\b({_STREET_SUFFIX_WITH_DIRECTION})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*)\s+([A-Z]{{2}})(\s+\d{{5}}(?:-\d{{4}})?)?\b"
 )
 # A city that already follows a comma (so it's not just any two capitalized
 # words) but runs straight into its state code with no comma of its own -

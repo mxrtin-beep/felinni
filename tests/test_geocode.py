@@ -1001,3 +1001,53 @@ def test_geocode_locations_falls_back_through_neighborhood_substitution(tmp_path
     loc = "7610 Woodley Ave, Van Nuys, CA, United States"
     assert result[loc]["lat"] == 34.07
     assert loc not in geocode.load_diagnostics(diagnostics_path)
+
+
+def test_insert_missing_city_comma_handles_a_two_letter_directional_suffix():
+    """"St NW Washington DC 20001" - without treating "NW" as part of the
+    street suffix, it's indistinguishable from a short capitalized city
+    name and gets wrongly swallowed into the city capture ("NW
+    Washington" instead of "Washington")."""
+    assert geocode._insert_missing_city_comma(
+        "1234 4th St NW Washington DC 20001"
+    ) == "1234 4th St NW, Washington, DC 20001"
+
+
+def test_insert_missing_city_comma_handles_a_single_letter_directional_suffix():
+    """A single-letter direction ("...Blvd W...") is too short to match the
+    city-word pattern at all, which previously blocked the whole regex
+    from matching anywhere and left no comma inserted."""
+    assert geocode._insert_missing_city_comma(
+        "500 Wilshire Blvd W Los Angeles CA 90017"
+    ) == "500 Wilshire Blvd W, Los Angeles, CA 90017"
+
+
+def test_insert_missing_city_comma_directional_suffix_with_existing_state_comma():
+    assert geocode._insert_missing_city_comma(
+        "1234 4th St NW Washington, DC"
+    ) == "1234 4th St NW, Washington, DC"
+
+
+def test_geocode_locations_resolves_a_directional_street_suffix(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+
+    def flaky(query, **kwargs):
+        if query == "1234 4th St NW, Washington, DC 20001":
+            return _fake_result()
+        return None
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["1234 4th St NW Washington DC 20001"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path,
+            approximations_path=approximations_path, rate_limit_seconds=0,
+        )
+
+    loc = "1234 4th St NW Washington DC 20001"
+    assert result[loc]["lat"] == 34.07
+    assert loc not in geocode.load_diagnostics(diagnostics_path)
