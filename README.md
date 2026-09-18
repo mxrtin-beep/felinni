@@ -88,8 +88,10 @@ tab's own filters stack on top.
 - **Future** — one ranked list of upcoming events from Eventbrite, Luma,
   Meetup, Camber (the "LA Happenings" newsletter), Partiful, Posh, and
   anywhere else DuckDuckGo turns up for your home region (or any region
-  you type in),
-  enriched with start/end time, duration, and location straight from each
+  you type in) within the next 7 days by default (7/14/30/90 selectable) —
+  narrower than "everything upcoming forever," which tends to surface
+  far-future festivals over what's actually happening soon.
+  Enriched with start/end time, duration, and location straight from each
   event's own page — no API key/OAuth needed. (Camber's a Substack roundup
   rather than a per-event platform, so its results usually keep their date
   unknown — there's no event page to enrich them from.)

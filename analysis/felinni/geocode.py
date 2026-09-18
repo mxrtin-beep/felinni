@@ -281,11 +281,13 @@ def _normalize_whitespace(text: str) -> str:
 # the multi-line address (as shown in a map picker) flattened onto one line -
 # and the line break between the street and the city sometimes turns into a
 # bare space instead of a comma ("...Newbury Park Dr Newbury Park, CA..."
-# has one but "...11024 Strathmore Dr Los Angeles, CA..." doesn't), or is
+# has one but "...11024 Strathmore Dr Los Angeles, CA..." doesn't), is
 # missing entirely ("...Shumway Lane Mountain View CA 94041" has no commas
-# at all). Nominatim leans heavily on commas to separate address
-# components, so a query missing them can fail to resolve even though the
-# address itself is perfectly real - inserting them back is usually enough.
+# at all), or is missing just between the city and state ("...Venice CA
+# 90291" - the street->city comma is fine, only "Venice, CA" needs one).
+# Nominatim leans heavily on commas to separate address components, so a
+# query missing them can fail to resolve even though the address itself is
+# perfectly real - inserting them back is usually enough.
 _STREET_SUFFIXES = (
     r"St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Rd|Road|Ln|Lane|Way|Ct|Court|"
     r"Pl|Place|Plaza|Cir|Circle|Pkwy|Parkway|Ter|Terrace|Hwy|Highway|Sq|Square"
@@ -296,13 +298,20 @@ _MISSING_CITY_COMMA_RE = re.compile(
 _FULLY_COMMALESS_CITY_STATE_RE = re.compile(
     rf"\b({_STREET_SUFFIXES})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*)\s+([A-Z]{{2}})(\s+\d{{5}}(?:-\d{{4}})?)?\b"
 )
+# A city that already follows a comma (so it's not just any two capitalized
+# words) but runs straight into its state code with no comma of its own -
+# "...Blvd, Venice CA 90291..." rather than "...Blvd, Venice, CA 90291...".
+_MISSING_STATE_COMMA_RE = re.compile(
+    r",\s*([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*)\s+([A-Z]{2})\b"
+)
 
 
 def _insert_missing_city_comma(text: str) -> str:
     text = _FULLY_COMMALESS_CITY_STATE_RE.sub(
         lambda m: f"{m.group(1)}, {m.group(2)}, {m.group(3)}{m.group(4) or ''}", text
     )
-    return _MISSING_CITY_COMMA_RE.sub(r"\1, \2, \3", text)
+    text = _MISSING_CITY_COMMA_RE.sub(r"\1, \2, \3", text)
+    return _MISSING_STATE_COMMA_RE.sub(r", \1, \2", text)
 
 
 # A venue name glued directly onto its own house number with no separating
@@ -343,6 +352,42 @@ def _strip_business_name_prefix(text: str) -> str | None:
         return None
     stripped = text[split_at:]
     return stripped if stripped != text else None
+
+
+# Nominatim's house-number-level data often doesn't carry unit/suite/floor
+# detail at all - a query for "3096 McClintock Ave, Unit 1420, Los Angeles,
+# CA 90007, United States" can fail to resolve purely because of the "Unit
+# 1420" clause, even though "3096 McClintock Ave, Los Angeles, CA 90007,
+# United States" resolves fine. Dropping a clearly comma-delimited
+# unit/suite/floor/apartment/room segment is a safe, unambiguous edit (it's
+# never the address's own street or city, just extra detail Nominatim
+# can't place), unlike guessing where a street name starts.
+_UNIT_DESIGNATOR_RE = re.compile(
+    r",\s*(?:Unit|Ste|Suite|Apt|Apartment|Bldg|Building|Fl|Floor|Rm|Room|#)\.?\b\s*[\w-]+\b",
+    re.I,
+)
+
+
+def _strip_unit_designator(text: str) -> str | None:
+    stripped = _UNIT_DESIGNATOR_RE.sub("", text, count=1)
+    return stripped if stripped != text else None
+
+
+def _retry_queries(query: str) -> list[tuple[str, str]]:
+    """Extra queries worth trying, in order, when `query` fails outright -
+    each paired with a short label for the diagnostics note describing
+    what changed. Only ever removes text (a business name prefix, a
+    unit/suite clause) - never invents or reorders anything - so a
+    candidate that still fails is no worse than the original."""
+    candidates = []
+    business_stripped = _strip_business_name_prefix(query)
+    base = business_stripped or query
+    if business_stripped:
+        candidates.append((business_stripped, "stripping the likely business name"))
+    unit_stripped = _strip_unit_designator(base)
+    if unit_stripped and unit_stripped != query:
+        candidates.append((unit_stripped, "dropping the unit/suite"))
+    return candidates
 
 
 def _anchor_for(loc: str, category: str | None, anchors: dict) -> str | dict | None:
@@ -537,16 +582,18 @@ def geocode_locations(
         if not result and _looks_like_complete_address(loc):
             # A venue name glued directly onto its own house number
             # ("101 Boxing Club 1714 Newbury Rd...") reads as one
-            # nonsensical street to Nominatim - retry with just the real
-            # mailing address if one can be confidently split out.
-            retry_query = _strip_business_name_prefix(query)
-            if retry_query:
+            # nonsensical street to Nominatim, and a unit/suite/floor
+            # clause ("...Unit 1420...") often has no match in Nominatim's
+            # house-number-level data even when the plain street address
+            # resolves fine - retry with each fixable, in order, stopping
+            # at the first one that resolves.
+            for candidate_query, label in _retry_queries(query):
                 time.sleep(rate_limit_seconds)
-                retry_result, retry_reason = _attempt(retry_query, **geocode_kwargs)
+                retry_result, retry_reason = _attempt(candidate_query, **geocode_kwargs)
                 if retry_result:
                     result = retry_result
-                else:
-                    diagnostics_note = f'{diagnostics_note}; also tried stripping the likely business name ("{retry_query}"): {retry_reason}'
+                    break
+                diagnostics_note = f'{diagnostics_note}; also tried {label} ("{candidate_query}"): {retry_reason}'
 
         anchor_lat, anchor_lon = (anchor.get("lat"), anchor.get("lon")) if isinstance(anchor, dict) else (None, None)
         has_anchor_coords = isinstance(anchor_lat, (int, float)) and isinstance(anchor_lon, (int, float))

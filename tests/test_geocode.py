@@ -710,3 +710,66 @@ def test_geocode_locations_does_not_retry_a_bare_building_name():
             )
 
     assert len(queries_seen) == 1  # no retry attempted
+
+
+def test_insert_missing_city_comma_fixes_a_missing_state_comma():
+    """"...Venice CA 90291..." - the street already has its comma before
+    the city (unlike the flattened-address case), but the city runs
+    straight into its state code with no comma of its own."""
+    fixed = geocode._insert_missing_city_comma(
+        "lululemon 1130 Abbot Kinney Blvd, Venice CA 90291, United States"
+    )
+    assert fixed == "lululemon 1130 Abbot Kinney Blvd, Venice, CA 90291, United States"
+
+
+def test_strip_unit_designator_drops_a_comma_delimited_unit_clause():
+    assert geocode._strip_unit_designator(
+        "3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
+    ) == "3096 McClintock Ave, Los Angeles, CA 90007, United States"
+    assert geocode._strip_unit_designator(
+        "1714 Newbury Rd, Unit S, Newbury Park, CA 91320, United States"
+    ) == "1714 Newbury Rd, Newbury Park, CA 91320, United States"
+    assert geocode._strip_unit_designator(
+        "930 S Westwood Blvd, Ste 210, Los Angeles, CA 90024, United States"
+    ) == "930 S Westwood Blvd, Los Angeles, CA 90024, United States"
+
+
+def test_strip_unit_designator_none_when_nothing_to_drop():
+    assert geocode._strip_unit_designator("1449 Second St, Santa Monica, CA 90401, United States") is None
+
+
+def test_retry_queries_chains_business_name_and_unit_stripping():
+    query = "Cafe Dulce 3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
+    candidates = geocode._retry_queries(query)
+    labels = [label for _, label in candidates]
+    assert labels == ["stripping the likely business name", "dropping the unit/suite"]
+    assert candidates[0][0] == "3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
+    assert candidates[1][0] == "3096 McClintock Ave, Los Angeles, CA 90007, United States"
+
+
+def test_geocode_locations_retries_through_business_name_then_unit_strip(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+    queries_seen = []
+
+    def flaky(query, **kwargs):
+        queries_seen.append(query)
+        if query == "3096 McClintock Ave, Los Angeles, CA 90007, United States":
+            return _fake_result()
+        return None
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["Cafe Dulce 3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path,
+            approximations_path=approximations_path, rate_limit_seconds=0,
+        )
+
+    assert len(queries_seen) == 3  # original, business-name-stripped, then unit-stripped
+    loc = "Cafe Dulce 3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
+    assert result[loc]["lat"] == 34.07
+    assert loc not in geocode.load_diagnostics(diagnostics_path)

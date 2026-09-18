@@ -155,11 +155,43 @@ def test_platform_events_query_includes_domain_and_region():
     query = mock_post.call_args.kwargs["data"]["q"]
     assert "site:eventbrite.com" in query
     assert "Austin, TX" in query
+    assert "this week" in query  # default days_ahead=7 -> "this week" phrase
 
 
 def test_platform_events_returns_empty_list_on_network_error():
     with patch("requests.post", side_effect=OSError("network unreachable")):
         assert future_events.platform_events("luma") == []
+
+
+@pytest.mark.parametrize("days_ahead,expected_phrase", [(1, "today"), (7, "this week"), (30, "this month"), (365, "upcoming")])
+def test_time_window_phrase_scales_with_days_ahead(days_ahead, expected_phrase):
+    assert future_events._time_window_phrase(days_ahead) == expected_phrase
+
+
+def test_platform_events_query_reflects_a_custom_days_ahead():
+    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)) as mock_post, \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        future_events.platform_events("eventbrite", days_ahead=30)
+
+    query = mock_post.call_args.kwargs["data"]["q"]
+    assert "this month" in query
+
+
+def test_within_search_window_drops_events_confirmed_beyond_the_window():
+    now = future_events._now_utc()
+    soon = {"title": "Soon", "start": (now + pd.Timedelta(days=2)).isoformat(), "end": None}
+    far = {"title": "Far", "start": (now + pd.Timedelta(days=60)).isoformat(), "end": None}
+    unknown = {"title": "Unknown", "start": None, "end": None}
+
+    kept = future_events.within_search_window([soon, far, unknown], days_ahead=7)
+
+    assert {e["title"] for e in kept} == {"Soon", "Unknown"}
+
+
+def test_within_search_window_keeps_something_that_started_very_recently():
+    now = future_events._now_utc()
+    just_started = {"title": "Just started", "start": (now - pd.Timedelta(hours=2)).isoformat(), "end": None}
+    assert future_events.within_search_window([just_started], days_ahead=7) == [just_started]
 
 
 @pytest.mark.parametrize("platform,domain", [("partiful", "partiful.com"), ("posh", "posh.vip")])

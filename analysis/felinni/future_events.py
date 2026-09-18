@@ -77,6 +77,12 @@ PLATFORM_QUERY_SITE = {
 
 DEFAULT_REGION = "Los Angeles, CA"
 
+# How far ahead to look by default - a search for "upcoming events" with no
+# time bound at all tends to surface far-future festivals/conferences over
+# what's actually happening soon, and widens the odds of hitting a
+# browse/listing page instead of one specific event.
+DEFAULT_SEARCH_WINDOW_DAYS = 7
+
 # Beyond this, a parsed start/end almost certainly isn't one real
 # occurrence's actual span - e.g. a "multiple dates" listing whose own
 # schema.org markup (or our own occurrence-picking, if that ever still
@@ -344,22 +350,40 @@ def _event_stub(title: str, url: str, source: str, region: str, snippet: str) ->
     }
 
 
-def platform_events(platform: str, region: str = DEFAULT_REGION, max_results: int = 6) -> list[dict]:
+def _time_window_phrase(days_ahead: int) -> str:
+    if days_ahead <= 1:
+        return "today"
+    if days_ahead <= 7:
+        return "this week"
+    if days_ahead <= 31:
+        return "this month"
+    return "upcoming"
+
+
+def platform_events(
+    platform: str,
+    region: str = DEFAULT_REGION,
+    max_results: int = 6,
+    days_ahead: int = DEFAULT_SEARCH_WINDOW_DAYS,
+) -> list[dict]:
     """Upcoming events for `platform` in `region`, normalized to {title,
     url, start, end, duration_hours, location, source, snippet}. Found via a
     DuckDuckGo `site:` search, then enriched by fetching each result's own
     page for its schema.org Event data - see the module docstring. Skips
     results that are clearly a browse/listing page rather than one specific
-    event (by URL shape and title) before ever fetching them. Never raises:
-    a DuckDuckGo/page-fetch failure (offline, rate-limited, blocked) just
-    means fewer or plainer results, same as an unconnected platform did
-    before."""
+    event (by URL shape and title) before ever fetching them. `days_ahead`
+    only shapes the search phrase ("this week"/"this month"/...) - it's a
+    bias toward DuckDuckGo results that are actually near-term, not a
+    guarantee; `within_search_window` is what actually enforces the window
+    once a result's real date is known. Never raises: a DuckDuckGo/
+    page-fetch failure (offline, rate-limited, blocked) just means fewer or
+    plainer results, same as an unconnected platform did before."""
     if platform not in PLATFORMS:
         raise ValueError(f"unknown platform: {platform!r} (expected one of {PLATFORMS})")
 
     domain = PLATFORM_DOMAINS[platform]
     site_query = PLATFORM_QUERY_SITE.get(platform, domain)
-    query = f"site:{site_query} {region} events"
+    query = f"site:{site_query} {region} events {_time_window_phrase(days_ahead)}"
     try:
         page_html = _ddg_search(query)
     except Exception:
@@ -378,7 +402,11 @@ def platform_events(platform: str, region: str = DEFAULT_REGION, max_results: in
     return events
 
 
-def other_web_events(region: str = DEFAULT_REGION, max_results: int = 6) -> list[dict]:
+def other_web_events(
+    region: str = DEFAULT_REGION,
+    max_results: int = 6,
+    days_ahead: int = DEFAULT_SEARCH_WINDOW_DAYS,
+) -> list[dict]:
     """Events from anywhere else DuckDuckGo turns up for `region` - not
     restricted to Eventbrite/Luma/Meetup via a site: filter, so results
     could be a venue's own site, a local listings site, a ticketing
@@ -387,7 +415,7 @@ def other_web_events(region: str = DEFAULT_REGION, max_results: int = 6) -> list
     `enrich_with_event_page` found a usable date for it (structured or
     plain-text) - which is what keeps this from filling up with random
     blog posts and listicles that just happen to mention `region`."""
-    query = f"{region} events this week"
+    query = f"{region} events {_time_window_phrase(days_ahead)}"
     try:
         page_html = _ddg_search(query)
     except Exception:
@@ -495,6 +523,28 @@ def event_conflicts(event: dict, other_events: list[dict]) -> list[dict]:
         if _overlaps(start, end, o_start, o_end):
             conflicts.append({"title": other["title"], "start": other["start"], "end": other["end"], "source": other.get("source")})
     return conflicts
+
+
+def within_search_window(events: list[dict], days_ahead: int = DEFAULT_SEARCH_WINDOW_DAYS) -> list[dict]:
+    """Keeps events with no confirmed start (there's no date to judge, so
+    it's shown rather than assumed out of range) plus those starting
+    within the next `days_ahead` days; drops ones confirmed to start
+    later. This is the actual enforcement of the search window - the
+    "this week"/"this month" phrase in the DuckDuckGo query is only a
+    bias toward near-term results, not a guarantee, since a lot of pages
+    don't literally repeat that phrase back."""
+    now = _now_utc()
+    cutoff = now + pd.Timedelta(days=days_ahead)
+    kept = []
+    for event in events:
+        start = event.get("start")
+        if not start:
+            kept.append(event)
+            continue
+        start_ts = pd.Timestamp(start)
+        if now - pd.Timedelta(days=1) <= start_ts <= cutoff:
+            kept.append(event)
+    return kept
 
 
 def annotate_conflicts(events: list[dict], df: pd.DataFrame) -> list[dict]:

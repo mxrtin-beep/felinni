@@ -3,12 +3,14 @@
 // everywhere else too.
 const GLOBAL_FILTERS = { startDate: "", endDate: "", excludeCategories: [] };
 
-function api(path) {
+function api(path, { skipGlobalFilters = false } = {}) {
   const [base, query] = path.split("?");
   const params = new URLSearchParams(query || "");
-  if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
-  if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
-  if (GLOBAL_FILTERS.excludeCategories.length) params.set("exclude_categories", GLOBAL_FILTERS.excludeCategories.join(","));
+  if (!skipGlobalFilters) {
+    if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
+    if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
+    if (GLOBAL_FILTERS.excludeCategories.length) params.set("exclude_categories", GLOBAL_FILTERS.excludeCategories.join(","));
+  }
   const qs = params.toString();
   return fetch(`/api/${base}${qs ? `?${qs}` : ""}`).then(r => r.json());
 }
@@ -831,13 +833,21 @@ function _futureEventCard(e) {
     </div>`;
 }
 
-async function loadFuture(region) {
-  const query = region ? `future?region=${encodeURIComponent(region)}` : "future";
-  const data = await api(query);
+async function loadFuture(region, days) {
+  // A forward-looking event search has nothing to do with the Overview
+  // tab's global date-range filter (that filters your past calendar
+  // history) - sending it here was just confusing noise in the request.
+  const params = new URLSearchParams();
+  if (region) params.set("region", region);
+  if (days) params.set("days", days);
+  const qs = params.toString();
+  const data = await api(`future${qs ? `?${qs}` : ""}`, { skipGlobalFilters: true });
   document.getElementById("future-note").textContent = data.message || "";
 
   const regionInput = document.getElementById("future-region-input");
   if (regionInput && !regionInput.value) regionInput.value = data.region || "";
+  const daysSelect = document.getElementById("future-days-select");
+  if (daysSelect && data.days) daysSelect.value = String(data.days);
 
   const events = document.getElementById("future-events");
   events.innerHTML = data.events.length
@@ -848,10 +858,12 @@ async function loadFuture(region) {
 function wireFutureRegionSearch() {
   const btn = document.getElementById("future-region-btn");
   const input = document.getElementById("future-region-input");
+  const daysSelect = document.getElementById("future-days-select");
   if (!btn || !input) return;
-  const run = () => loadFuture(input.value.trim() || undefined);
+  const run = () => loadFuture(input.value.trim() || undefined, daysSelect ? daysSelect.value : undefined);
   btn.addEventListener("click", run);
   input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+  if (daysSelect) daysSelect.addEventListener("change", run);
 }
 
 // --- Category colors (shared across Map, Habits, Time & Spend) ---

@@ -128,6 +128,32 @@ def test_future_returns_empty_skeleton(client):
     body = resp.get_json()
     assert body["events"] == []
     assert body["message"]
+    assert body["days"] == 7
+
+
+def test_future_days_param_is_passed_through_and_ignores_global_date_filter(client, monkeypatch):
+    seen_days = []
+
+    def fake_platform_events(platform, region=None, days_ahead=None):
+        seen_days.append(days_ahead)
+        return []
+
+    def fake_other_web_events(region=None, days_ahead=None):
+        seen_days.append(days_ahead)
+        return []
+
+    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
+    monkeypatch.setattr(server.future_events, "other_web_events", fake_other_web_events)
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    # start_date/end_date would normally narrow _get_df(), but the Future
+    # tab must ignore them entirely - it isn't filtering past history.
+    resp = client.get("/api/future?days=30&start_date=2015-01-01&end_date=2015-01-02")
+    body = resp.get_json()
+
+    assert body["days"] == 30
+    assert seen_days and all(d == 30 for d in seen_days)
 
 
 def test_travel_returns_region_based_shape(client):

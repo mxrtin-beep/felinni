@@ -514,30 +514,46 @@ def anomalies_view():
 
 @app.get("/api/future")
 def future_view():
-    """Future tab: events found for Eventbrite/Luma/Meetup/Camber plus
-    anywhere else DuckDuckGo turns up, via a DuckDuckGo search, enriched with
-    start/end/duration/location from each event's own page (see
-    felinni.future_events - no platform API key/OAuth needed). `region`
-    defaults to your geocoded home metro, falling back to
+    """Future tab: events found for Eventbrite/Luma/Meetup/Camber/Partiful/
+    Posh plus anywhere else DuckDuckGo turns up, via a DuckDuckGo search,
+    enriched with start/end/duration/location from each event's own page
+    (see felinni.future_events - no platform API key/OAuth needed).
+
+    Uses the full, unfiltered dataset (not `_get_df()`) for ranking/
+    conflict-checking - your habits and existing calendar are what matter
+    here, regardless of whatever date range the Overview tab's global
+    filter happens to be set to; that filter has nothing to do with a
+    forward-looking event search.
+
+    `region` defaults to your geocoded home metro, falling back to
     felinni.future_events.DEFAULT_REGION if nothing's been geocoded yet;
-    `?region=` overrides either for a one-off search elsewhere. `events` is
-    one ranked list - every candidate scored by fit with your calendar
-    history and flagged with any scheduling conflicts - rather than a
-    separate "suggested" list duplicating the same events in a different
-    order. If a local Ollama server is running, a few AI-brainstormed
-    (clearly labeled, not real listings) event ideas are folded in too."""
-    df = _get_df()
+    `?region=` overrides either for a one-off search elsewhere. `?days=`
+    (default 7) bounds how far ahead to look - both nudging the search
+    itself toward near-term results and actually dropping anything whose
+    confirmed date falls outside that window (see
+    felinni.future_events.within_search_window). `events` is one ranked
+    list - every candidate scored by fit with your calendar history and
+    flagged with any scheduling conflicts - rather than a separate
+    "suggested" list duplicating the same events in a different order. If a
+    local Ollama server is running, a few AI-brainstormed (clearly
+    labeled, not real listings) event ideas are folded in too."""
+    df = DF
     cache = _load_geocode_cache()
     home = regions.home_region(regions.visits_by_region(df, cache))
     region = request.args.get("region") or home or future_events.DEFAULT_REGION
+    days = request.args.get("days", future_events.DEFAULT_SEARCH_WINDOW_DAYS, type=int)
 
     raw_events = []
-    for platform in future_events.PLATFORMS:
-        raw_events.extend(future_events.platform_events(platform, region=region))
-    raw_events.extend(future_events.other_web_events(region=region))
+    for i, platform in enumerate(future_events.PLATFORMS):
+        if i > 0:
+            time.sleep(0.5)  # a small gap between platforms - back off DuckDuckGo's rate limiting a bit
+        raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days))
+    time.sleep(0.5)
+    raw_events.extend(future_events.other_web_events(region=region, days_ahead=days))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
 
-    annotated = future_events.annotate_conflicts(raw_events, df)
+    windowed = future_events.within_search_window(raw_events, days_ahead=days)
+    annotated = future_events.annotate_conflicts(windowed, df)
     events = future_events.suggestions_for(df, annotated)
 
     message = None
@@ -549,6 +565,7 @@ def future_view():
 
     return jsonify({
         "region": region,
+        "days": days,
         "events": events,
         "message": message,
     })
