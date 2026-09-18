@@ -288,10 +288,16 @@ def _normalize_whitespace(text: str) -> str:
 # 90291" - the street->city comma is fine, only "Venice, CA" needs one).
 # Nominatim leans heavily on commas to separate address components, so a
 # query missing them can fail to resolve even though the address itself is
-# perfectly real - inserting them back is usually enough.
+# perfectly real - inserting them back is usually enough. This assumes the
+# English convention of the street type coming last ("Sawtelle Blvd") -
+# some Southern California streets use a Spanish-style type-first name
+# ("Avenida de los Arboles"), which this comma-insertion doesn't reach
+# (the type isn't adjacent to the city), though the type is still
+# recognized for other purposes (see `_strip_business_name_prefix`).
 _STREET_SUFFIXES = (
-    r"St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Rd|Road|Ln|Lane|Way|Ct|Court|"
-    r"Pl|Place|Plaza|Cir|Circle|Pkwy|Parkway|Ter|Terrace|Hwy|Highway|Sq|Square"
+    r"St|Street|Ave|Avenue|Avenida|Blvd|Boulevard|Dr|Drive|Rd|Road|Ln|Lane|Way|Ct|Court|"
+    r"Pl|Place|Plaza|Cir|Circle|Pkwy|Parkway|Ter|Terrace|Hwy|Highway|Sq|Square|Row|Walk|"
+    r"Trail|Path|Loop|Camino|Paseo|Calle|Via"
 )
 _MISSING_CITY_COMMA_RE = re.compile(
     rf"\b({_STREET_SUFFIXES})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*),\s*([A-Z]{{2}})\b"
@@ -305,6 +311,11 @@ _FULLY_COMMALESS_CITY_STATE_RE = re.compile(
 _MISSING_STATE_COMMA_RE = re.compile(
     r",\s*([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*)\s+([A-Z]{2})\b"
 )
+# The state/ZIP running straight into the country with no comma of its own -
+# "...CA 91320 United States" rather than "...CA 91320, United States". The
+# character class excludes a comma so an already-correct "..., United
+# States" is left alone rather than getting a second comma stacked on.
+_MISSING_COUNTRY_COMMA_RE = re.compile(r"([^\s,])\s+(United States|USA|Canada)\b", re.I)
 
 
 def _insert_missing_city_comma(text: str) -> str:
@@ -312,7 +323,8 @@ def _insert_missing_city_comma(text: str) -> str:
         lambda m: f"{m.group(1)}, {m.group(2)}, {m.group(3)}{m.group(4) or ''}", text
     )
     text = _MISSING_CITY_COMMA_RE.sub(r"\1, \2, \3", text)
-    return _MISSING_STATE_COMMA_RE.sub(r", \1, \2", text)
+    text = _MISSING_STATE_COMMA_RE.sub(r", \1, \2", text)
+    return _MISSING_COUNTRY_COMMA_RE.sub(r"\1, \2", text)
 
 
 # A venue name glued directly onto its own house number with no separating
@@ -359,19 +371,29 @@ def _strip_business_name_prefix(text: str) -> str | None:
 # detail at all - a query for "3096 McClintock Ave, Unit 1420, Los Angeles,
 # CA 90007, United States" can fail to resolve purely because of the "Unit
 # 1420" clause, even though "3096 McClintock Ave, Los Angeles, CA 90007,
-# United States" resolves fine. Dropping a clearly comma-delimited
-# unit/suite/floor/apartment/room segment is a safe, unambiguous edit (it's
-# never the address's own street or city, just extra detail Nominatim
-# can't place), unlike guessing where a street name starts.
+# United States" resolves fine. Dropping a unit/suite/floor/apartment/room
+# segment is a safe, unambiguous edit (it's never the address's own street
+# or city, just extra detail Nominatim can't place), unlike guessing where
+# a street name starts - so unlike the comma-delimited case, a leading
+# comma isn't required to match: "19401 Parthenia St Apt 1076 Northridge,
+# CA, United States" has no comma anywhere near "Apt 1076" either.
 _UNIT_DESIGNATOR_RE = re.compile(
-    r",\s*(?:Unit|Ste|Suite|Apt|Apartment|Bldg|Building|Fl|Floor|Rm|Room|#)\.?\b\s*[\w-]+\b",
+    r",?\s*(?:Unit|Ste|Suite|Apt|Apartment|Bldg|Building|Fl|Floor|Rm|Room|#)\.?\b\s*[\w-]+",
     re.I,
 )
 
 
 def _strip_unit_designator(text: str) -> str | None:
+    """Drops a unit/suite/floor/apartment/room clause. When it wasn't
+    comma-delimited to begin with, removing it can newly expose a
+    street->city gap that was previously hidden behind it ("...St Apt 1076
+    Northridge..." -> "...St  Northridge..." -> "...St, Northridge...") -
+    re-running the comma fixups catches that."""
     stripped = _UNIT_DESIGNATOR_RE.sub("", text, count=1)
-    return stripped if stripped != text else None
+    if stripped == text:
+        return None
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    return _insert_missing_city_comma(stripped)
 
 
 def _retry_queries(query: str) -> list[tuple[str, str]]:

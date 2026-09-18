@@ -801,3 +801,72 @@ def test_geocode_locations_retries_through_business_name_then_unit_strip(tmp_pat
     loc = "Cafe Dulce 3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
     assert result[loc]["lat"] == 34.07
     assert loc not in geocode.load_diagnostics(diagnostics_path)
+
+
+# --- A third real-world batch: street suffixes this module didn't
+# recognize at all ("Avenida", "Row"), a missing comma between the
+# state/ZIP and the country, and a unit/apartment clause with no comma
+# anywhere near it (not just missing one comma, unlike the earlier
+# "Unit 1420," case). ---
+
+def test_insert_missing_city_comma_recognizes_row_at_the_end_of_a_street_name():
+    assert geocode._insert_missing_city_comma(
+        "377 Santana Row San Jose CA 95128"
+    ) == "377 Santana Row, San Jose, CA 95128"
+
+
+def test_strip_business_name_prefix_recognizes_avenida_and_row():
+    assert geocode._strip_business_name_prefix(
+        "Wildwood Regional Park 928 W Avenida de los Arboles, Thousand Oaks, CA 91360, United States"
+    ) == "928 W Avenida de los Arboles, Thousand Oaks, CA 91360, United States"
+    assert geocode._strip_business_name_prefix(
+        "Zazil Cocina Mexicana 377 Santana Row, San Jose, CA 95128, United States"
+    ) == "377 Santana Row, San Jose, CA 95128, United States"
+
+
+def test_insert_missing_city_comma_fixes_a_missing_country_comma():
+    assert geocode._insert_missing_city_comma(
+        "1 Amgen Center Dr, Newbury Park, CA 91320 United States"
+    ) == "1 Amgen Center Dr, Newbury Park, CA 91320, United States"
+
+
+def test_insert_missing_city_comma_country_fix_is_a_no_op_when_already_correct():
+    already_fine = "1 Amgen Center Dr, Newbury Park, CA 91320, United States"
+    assert geocode._insert_missing_city_comma(already_fine) == already_fine
+
+
+def test_strip_unit_designator_handles_a_clause_with_no_surrounding_commas_at_all():
+    """"19401 Parthenia St Apt 1076 Northridge, CA, United States" has no
+    comma anywhere near "Apt 1076" - dropping it must also repair the
+    street->city gap it was masking, not just remove the clause and leave
+    "St  Northridge" unfixed."""
+    assert geocode._strip_unit_designator(
+        "19401 Parthenia St Apt 1076 Northridge, CA, United States"
+    ) == "19401 Parthenia St, Northridge, CA, United States"
+
+
+def test_geocode_locations_retries_unit_strip_without_a_leading_comma(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+    queries_seen = []
+
+    def flaky(query, **kwargs):
+        queries_seen.append(query)
+        if query == "19401 Parthenia St, Northridge, CA, United States":
+            return _fake_result()
+        return None
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["19401 Parthenia St Apt 1076 Northridge, CA, United States"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path,
+            approximations_path=approximations_path, rate_limit_seconds=0,
+        )
+
+    loc = "19401 Parthenia St Apt 1076 Northridge, CA, United States"
+    assert result[loc]["lat"] == 34.07
+    assert loc not in geocode.load_diagnostics(diagnostics_path)
