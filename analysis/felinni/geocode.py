@@ -65,7 +65,13 @@ likes.
   well-known Los Angeles-area neighborhoods used as the mailing "city"
   substituted for "Los Angeles" itself, since Nominatim's place hierarchy
   sometimes only recognizes the containing city ("...Van Nuys, CA..." ->
-  "...Los Angeles, CA...", see `_LA_NEIGHBORHOODS`).
+  "...Los Angeles, CA...", see `_LA_NEIGHBORHOODS`); and a directional
+  qualifier right after the street suffix dropped entirely ("...4th St
+  NW..." -> "...4th St...", see `_strip_street_direction`) - correctly
+  comma-separating a "St NW" from its city (see above) still isn't always
+  enough, since Nominatim's own indexed street name may spell the
+  direction out ("Northwest"), put it before the street name instead of
+  after, or not carry it at all.
 
 None of these are guaranteed - an address with no recognizable tail at all,
 a real house number that can't be confidently separated from a suite/unit
@@ -493,6 +499,27 @@ def _strip_unit_designator(text: str) -> str | None:
     return _insert_missing_city_comma(stripped)
 
 
+# Even once a directional qualifier after the street suffix is correctly
+# comma-separated from the city (see _STREET_SUFFIX_WITH_DIRECTION above),
+# Nominatim's own street-name matching often still doesn't resolve it -
+# its indexed name for the street may spell the direction out ("Northwest"
+# instead of "NW"), place it before the street name instead of after, or
+# not carry it at all. Dropping it entirely is a safe fallback retry: the
+# house number/street name/city are untouched, only the directional
+# qualifier itself is removed.
+_STREET_SUFFIX_DIRECTION_RE = re.compile(
+    rf"\b((?:{_STREET_SUFFIXES}))\s+(?:NE|NW|SE|SW|N|S|E|W)\.?\b", re.I
+)
+
+
+def _strip_street_direction(text: str) -> str | None:
+    """For "1234 4th St NW, Washington, DC" returns "1234 4th St,
+    Washington, DC" - drops a directional qualifier immediately after the
+    street suffix. None if there's nothing to strip."""
+    stripped = _STREET_SUFFIX_DIRECTION_RE.sub(r"\1", text, count=1)
+    return stripped if stripped != text else None
+
+
 # A handful of well-known Los Angeles-area neighborhoods that are USPS
 # "delivery cities" (the city name that actually appears in the mailing
 # address) but aren't their own incorporated municipality - they're part
@@ -557,6 +584,14 @@ def _retry_queries(query: str) -> list[tuple[str, str]]:
         second_pass = _strip_business_name_prefix(unit_stripped)
         if second_pass and second_pass not in (c for c, _ in candidates):
             candidates.append((second_pass, "stripping the likely business name and dropping the unit/suite"))
+
+    direction_stripped = _strip_street_direction(base)
+    if direction_stripped and direction_stripped not in (c for c, _ in candidates):
+        candidates.append((direction_stripped, "dropping the street's directional suffix"))
+        base = direction_stripped
+        second_pass_direction = _strip_business_name_prefix(direction_stripped)
+        if second_pass_direction and second_pass_direction not in (c for c, _ in candidates):
+            candidates.append((second_pass_direction, "stripping the likely business name and dropping the directional suffix"))
 
     name_and_city = _business_name_and_city(query)
     if name_and_city and name_and_city not in (c for c, _ in candidates):

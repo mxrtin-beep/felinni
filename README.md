@@ -79,7 +79,9 @@ tab's own filters stack on top.
   Newbury Rd..."), a directional qualifier after the street suffix kept
   with the street instead of getting absorbed into the city ("...4th St
   NW Washington DC..." -> "...St NW, Washington, DC..." rather than
-  city "NW Washington"), and a unit/suite/apartment/floor/room clause dropped
+  city "NW Washington") and, if that alone doesn't resolve it, dropped
+  from the street entirely ("...4th St NW..." -> "...4th St..." — Nominatim
+  often doesn't index the abbreviated direction at all), and a unit/suite/apartment/floor/room clause dropped
   ("...Ave, Unit 1420, Los Angeles..." retries as "...Ave, Los
   Angeles..."). If the street address still won't resolve at all, a
   landmark's own name plus its city is tried on its own ("Balboa Park 1549

@@ -1051,3 +1051,64 @@ def test_geocode_locations_resolves_a_directional_street_suffix(tmp_path):
     loc = "1234 4th St NW Washington DC 20001"
     assert result[loc]["lat"] == 34.07
     assert loc not in geocode.load_diagnostics(diagnostics_path)
+
+
+def test_strip_street_direction_drops_a_two_letter_direction():
+    assert geocode._strip_street_direction(
+        "1234 4th St NW, Washington, DC 20001"
+    ) == "1234 4th St, Washington, DC 20001"
+
+
+def test_strip_street_direction_drops_a_single_letter_direction():
+    assert geocode._strip_street_direction(
+        "500 Wilshire Blvd W, Los Angeles, CA 90017, United States"
+    ) == "500 Wilshire Blvd, Los Angeles, CA 90017, United States"
+
+
+def test_strip_street_direction_is_none_without_a_direction_to_drop():
+    assert geocode._strip_street_direction(
+        "500 Wilshire Blvd, Los Angeles, CA 90017, United States"
+    ) is None
+
+
+def test_retry_queries_offers_dropping_the_directional_suffix():
+    query = "1234 4th St NW, Washington, DC 20001"
+    candidates = geocode._retry_queries(query)
+    reverse = {label: cand for cand, label in candidates}
+    assert reverse["dropping the street's directional suffix"] == "1234 4th St, Washington, DC 20001"
+
+
+def test_retry_queries_chains_direction_stripping_with_business_name_and_unit():
+    """A business name AND a unit clause AND a directional suffix, all at
+    once - each fixup should still get a chance once the others are
+    cleared, not just the first one tried."""
+    query = "HomeState 3170 Glendale Blvd NW, Unit A&D, Los Angeles, CA 90039, United States"
+    candidates = geocode._retry_queries(query)
+    reverse = {label: cand for cand, label in candidates}
+    assert reverse["dropping the unit/suite"] == "3170 Glendale Blvd NW, Los Angeles, CA 90039, United States"
+    assert reverse["dropping the street's directional suffix"] == "3170 Glendale Blvd, Los Angeles, CA 90039, United States"
+
+
+def test_geocode_locations_resolves_after_dropping_directional_suffix(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+
+    def flaky(query, **kwargs):
+        if query == "1234 4th St, Washington, DC 20001":
+            return _fake_result()
+        return None
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["1234 4th St NW Washington DC 20001"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path,
+            approximations_path=approximations_path, rate_limit_seconds=0,
+        )
+
+    loc = "1234 4th St NW Washington DC 20001"
+    assert result[loc]["lat"] == 34.07
+    assert loc not in geocode.load_diagnostics(diagnostics_path)
