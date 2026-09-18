@@ -512,6 +512,29 @@ def anomalies_view():
     return jsonify({"weekly": records(weekly), "anomalies": records(flagged), "by_category": by_category})
 
 
+def _default_future_search_region(df: pd.DataFrame, cache: dict) -> str | None:
+    """A "City, State" label for wherever you're geocoded most often - a
+    better free-text region for an event search than
+    felinni.regions.home_region's "City, Country" travel-grouping label
+    (which is right for its own purpose - "Thousand Oaks, United States"
+    is a perfectly good trip label, but a much weaker search term on
+    Eventbrite/Meetup/etc. than "Thousand Oaks, CA" for anywhere outside a
+    handful of globally-famous cities). Falls back to "City, Country" for
+    a location geocoded before `state` was captured, or a non-US address
+    where a state doesn't apply the same way."""
+    located = df.dropna(subset=["location"])
+    if located.empty:
+        return None
+    for loc in located["location"].value_counts().index:
+        entry = cache.get(loc)
+        city = entry.get("city") if entry else None
+        if not city:
+            continue
+        state = entry.get("state")
+        return f"{city}, {state}" if state else f"{city}, {entry.get('country')}" if entry.get("country") else city
+    return None
+
+
 @app.get("/api/future")
 def future_view():
     """Future tab: events found for Eventbrite/Luma/Meetup/Camber/Partiful/
@@ -525,9 +548,12 @@ def future_view():
     filter happens to be set to; that filter has nothing to do with a
     forward-looking event search.
 
-    `region` defaults to your geocoded home metro, falling back to
-    felinni.future_events.DEFAULT_REGION if nothing's been geocoded yet;
-    `?region=` overrides either for a one-off search elsewhere. `?days=`
+    `region` defaults to a "City, State" label for wherever you're
+    geocoded most often (see `_default_future_search_region` - a better
+    search term than the Travel tab's "City, Country" grouping label),
+    falling back to felinni.future_events.DEFAULT_REGION if nothing's been
+    geocoded yet; `?region=` overrides either for a one-off search
+    elsewhere. `?days=`
     (default 7) bounds how far ahead to look - both nudging the search
     itself toward near-term results and actually dropping anything whose
     confirmed date falls outside that window (see
@@ -539,8 +565,8 @@ def future_view():
     labeled, not real listings) event ideas are folded in too."""
     df = DF
     cache = _load_geocode_cache()
-    home = regions.home_region(regions.visits_by_region(df, cache))
-    region = request.args.get("region") or home or future_events.DEFAULT_REGION
+    default_region = _default_future_search_region(df, cache) or regions.home_region(regions.visits_by_region(df, cache))
+    region = request.args.get("region") or default_region or future_events.DEFAULT_REGION
     days = request.args.get("days", future_events.DEFAULT_SEARCH_WINDOW_DAYS, type=int)
 
     raw_events = []

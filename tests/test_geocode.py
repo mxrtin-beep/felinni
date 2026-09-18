@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis"))
 from felinni import geocode
 
 
-def _fake_result(lat=34.07, lon=-118.44, city=None, country=None):
+def _fake_result(lat=34.07, lon=-118.44, city=None, country=None, state=None):
     result = MagicMock()
     result.latitude = lat
     result.longitude = lon
@@ -24,6 +24,8 @@ def _fake_result(lat=34.07, lon=-118.44, city=None, country=None):
         address["city"] = city
     if country:
         address["country"] = country
+    if state:
+        address["state"] = state
     result.raw = {"address": address}
     return result
 
@@ -181,6 +183,32 @@ def test_successful_geocode_captures_structured_city_and_country(tmp_path):
 
     assert result["Santa Monica Pier"]["city"] == "Santa Monica"
     assert result["Santa Monica Pier"]["country"] == "United States"
+
+
+def test_successful_geocode_captures_structured_state(tmp_path):
+    """A "City, State" region string (used by the Future tab's default
+    event-search region, since "City, Country" alone is a weak search term
+    outside a handful of globally-famous cities) needs `state` captured
+    from Nominatim's structured address, not just city/country."""
+    cache_path = tmp_path / "cache.json"
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result(city="Thousand Oaks", state="California", country="United States")
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["Some Address"], cache_path=cache_path, diagnostics_path=tmp_path / "diagnostics.json",
+            approximations_path=tmp_path / "approximations.json", rate_limit_seconds=0,
+        )
+
+    assert result["Some Address"]["state"] == "California"
+
+
+def test_geocode_one_captures_structured_state():
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: _fake_result(city="Thousand Oaks", state="California", country="United States")
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_one("Some Address, Thousand Oaks, CA")
+    assert result["state"] == "California"
 
 
 def test_overrides_win_over_cache_and_skip_network(tmp_path):

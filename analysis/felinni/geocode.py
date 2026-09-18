@@ -204,6 +204,7 @@ def geocode_one(query: str, user_agent: str = "felinni-calendar-analysis", timeo
     return {
         "lat": result.latitude, "lon": result.longitude, "display_name": result.address,
         "city": city, "country": address.get("country"), "neighbourhood": neighbourhood,
+        "state": address.get("state"),
     }
 
 
@@ -608,6 +609,7 @@ def geocode_locations(
             cache[loc] = {
                 "lat": result.latitude, "lon": result.longitude, "display_name": result.address,
                 "city": city, "country": address.get("country"), "neighbourhood": neighbourhood,
+                "state": address.get("state"),
             }
             resolved_points.append((result.latitude, result.longitude))
             diagnostics.pop(loc, None)

@@ -156,6 +156,42 @@ def test_future_days_param_is_passed_through_and_ignores_global_date_filter(clie
     assert seen_days and all(d == 30 for d in seen_days)
 
 
+def test_future_default_region_prefers_city_state_over_city_country(client, monkeypatch):
+    seen_regions = []
+
+    def fake_platform_events(platform, region=None, days_ahead=None):
+        seen_regions.append(region)
+        return []
+
+    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
+    monkeypatch.setattr(server.future_events, "other_web_events", lambda region=None, days_ahead=None: [])
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    most_common_location = server.DF["location"].dropna().value_counts().index[0]
+    fake_cache = {most_common_location: {"city": "Thousand Oaks", "state": "California", "country": "United States"}}
+    monkeypatch.setattr(server, "_load_geocode_cache", lambda: fake_cache)
+
+    resp = client.get("/api/future")
+    body = resp.get_json()
+
+    assert body["region"] == "Thousand Oaks, California"
+    assert seen_regions and all(r == "Thousand Oaks, California" for r in seen_regions)
+
+
+def test_default_future_search_region_falls_back_to_city_country_without_state():
+    import pandas as pd
+    df = pd.DataFrame({"location": ["Some Cafe", "Some Cafe", "Elsewhere"]})
+    cache = {"Some Cafe": {"city": "Thousand Oaks", "country": "United States"}}
+    assert server._default_future_search_region(df, cache) == "Thousand Oaks, United States"
+
+
+def test_default_future_search_region_none_without_any_geocoded_city():
+    import pandas as pd
+    df = pd.DataFrame({"location": ["Some Cafe"]})
+    assert server._default_future_search_region(df, {}) is None
+
+
 def test_travel_returns_region_based_shape(client):
     resp = client.get("/api/travel")
     body = resp.get_json()
