@@ -365,6 +365,7 @@ def platform_events(
     region: str = DEFAULT_REGION,
     max_results: int = 6,
     days_ahead: int = DEFAULT_SEARCH_WINDOW_DAYS,
+    debug: dict[str, str] | None = None,
 ) -> list[dict]:
     """Upcoming events for `platform` in `region`, normalized to {title,
     url, start, end, duration_hours, location, source, snippet}. Found via a
@@ -377,7 +378,15 @@ def platform_events(
     guarantee; `within_search_window` is what actually enforces the window
     once a result's real date is known. Never raises: a DuckDuckGo/
     page-fetch failure (offline, rate-limited, blocked) just means fewer or
-    plainer results, same as an unconnected platform did before."""
+    plainer results, same as an unconnected platform did before.
+
+    If given, `debug[platform]` is set to a short note on what actually
+    happened (a request error, "0 results parsed", or how many results
+    were found vs. kept after filtering) - a silent `[]` here looks
+    identical whether DuckDuckGo is offline, blocking this client, or
+    genuinely has nothing for the query, and that ambiguity is exactly what
+    made a much bigger set of failures hard to diagnose in
+    felinni.geocode before its own per-location diagnostics were added."""
     if platform not in PLATFORMS:
         raise ValueError(f"unknown platform: {platform!r} (expected one of {PLATFORMS})")
 
@@ -386,19 +395,29 @@ def platform_events(
     query = f"site:{site_query} {region} events {_time_window_phrase(days_ahead)}"
     try:
         page_html = _ddg_search(query)
-    except Exception:
+    except Exception as e:
+        if debug is not None:
+            debug[platform] = f"DuckDuckGo request failed: {e}"
         return []
 
+    parsed = _parse_ddg_html_results(page_html)
+    if debug is not None and not parsed:
+        debug[platform] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars)"
+
     events = []
-    for result in _parse_ddg_html_results(page_html):
+    skipped = 0
+    for result in parsed:
         if domain not in result["url"]:
             continue  # DDG sometimes surfaces an unrelated result despite the site: filter
         if not _is_event_url(platform, result["url"]) or _looks_like_listing(result["title"]):
+            skipped += 1
             continue
         stub = _event_stub(result["title"], result["url"], platform, region, result["snippet"])
         events.append(enrich_with_event_page(stub))
         if len(events) >= max_results:
             break
+    if debug is not None and parsed:
+        debug[platform] = f"{len(parsed)} DuckDuckGo result(s), {skipped} filtered as unrelated/listing pages, {len(events)} kept"
     return events
 
 
@@ -406,6 +425,7 @@ def other_web_events(
     region: str = DEFAULT_REGION,
     max_results: int = 6,
     days_ahead: int = DEFAULT_SEARCH_WINDOW_DAYS,
+    debug: dict[str, str] | None = None,
 ) -> list[dict]:
     """Events from anywhere else DuckDuckGo turns up for `region` - not
     restricted to Eventbrite/Luma/Meetup via a site: filter, so results
@@ -414,16 +434,24 @@ def other_web_events(
     kept once it's actually confirmed to be one real, single event - i.e.
     `enrich_with_event_page` found a usable date for it (structured or
     plain-text) - which is what keeps this from filling up with random
-    blog posts and listicles that just happen to mention `region`."""
+    blog posts and listicles that just happen to mention `region`. See
+    `platform_events` for what `debug` (keyed "web" here) records."""
     query = f"{region} events {_time_window_phrase(days_ahead)}"
     try:
         page_html = _ddg_search(query)
-    except Exception:
+    except Exception as e:
+        if debug is not None:
+            debug["web"] = f"DuckDuckGo request failed: {e}"
         return []
+
+    parsed = _parse_ddg_html_results(page_html)
+    if debug is not None and not parsed:
+        debug["web"] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars)"
 
     known_domains = tuple(PLATFORM_DOMAINS.values())
     events = []
-    for result in _parse_ddg_html_results(page_html):
+    no_date = 0
+    for result in parsed:
         domain = urllib.parse.urlparse(result["url"]).netloc.removeprefix("www.")
         if not domain or any(known in domain for known in known_domains):
             continue  # already covered by platform_events - avoid duplicates
@@ -432,10 +460,13 @@ def other_web_events(
         stub = _event_stub(result["title"], result["url"], domain, region, result["snippet"])
         enriched = enrich_with_event_page(stub)
         if not enriched.get("start"):
+            no_date += 1
             continue  # no confirmed real event date - too likely a listing/blog page to trust
         events.append(enriched)
         if len(events) >= max_results:
             break
+    if debug is not None and parsed:
+        debug["web"] = f"{len(parsed)} DuckDuckGo result(s), {no_date} dropped for no confirmed date, {len(events)} kept"
     return events
 
 

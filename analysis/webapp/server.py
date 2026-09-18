@@ -569,13 +569,14 @@ def future_view():
     region = request.args.get("region") or default_region or future_events.DEFAULT_REGION
     days = request.args.get("days", future_events.DEFAULT_SEARCH_WINDOW_DAYS, type=int)
 
+    source_status: dict[str, str] = {}
     raw_events = []
     for i, platform in enumerate(future_events.PLATFORMS):
         if i > 0:
             time.sleep(0.5)  # a small gap between platforms - back off DuckDuckGo's rate limiting a bit
-        raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days))
+        raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
     time.sleep(0.5)
-    raw_events.extend(future_events.other_web_events(region=region, days_ahead=days))
+    raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
 
     windowed = future_events.within_search_window(raw_events, days_ahead=days)
@@ -584,16 +585,21 @@ def future_view():
 
     message = None
     if not events:
-        message = (
-            f"No results from Eventbrite/Luma/Meetup/Camber/other sites for \"{region}\" right now - "
-            "try a different region, or DuckDuckGo may be rate-limiting this search."
-        )
+        # A generic "try a different region" guess isn't useful once
+        # you've already tried that (and a famous city fails the exact
+        # same way a small one did) - source_status says what actually
+        # happened per platform (a request error, "0 parsed results", or
+        # how many were filtered out), which is what actually points at
+        # whether this is a network/blocking issue vs. a real empty result.
+        detail = "; ".join(f"{source}: {status}" for source, status in source_status.items())
+        message = f"No results for \"{region}\" right now." + (f" {detail}" if detail else "")
 
     return jsonify({
         "region": region,
         "days": days,
         "events": events,
         "message": message,
+        "source_status": source_status,
     })
 
 

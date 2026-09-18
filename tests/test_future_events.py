@@ -163,6 +163,38 @@ def test_platform_events_returns_empty_list_on_network_error():
         assert future_events.platform_events("luma") == []
 
 
+def test_platform_events_debug_records_request_failure():
+    debug = {}
+    with patch("requests.post", side_effect=OSError("network unreachable")):
+        future_events.platform_events("luma", debug=debug)
+    assert "DuckDuckGo request failed" in debug["luma"]
+    assert "network unreachable" in debug["luma"]
+
+
+def test_platform_events_debug_records_zero_parsed_results():
+    debug = {}
+    with patch("requests.post", return_value=_mock_response("<html>no results here</html>")):
+        future_events.platform_events("luma", debug=debug)
+    assert "0 parsed results" in debug["luma"]
+
+
+def test_platform_events_debug_records_counts_when_results_are_filtered():
+    debug = {}
+    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        future_events.platform_events("meetup", debug=debug)
+    assert "DuckDuckGo result(s)" in debug["meetup"]
+    assert "kept" in debug["meetup"]
+
+
+def test_other_web_events_debug_uses_web_key():
+    debug = {}
+    with patch("requests.post", side_effect=OSError("network unreachable")):
+        future_events.other_web_events(debug=debug)
+    assert "web" in debug
+    assert "DuckDuckGo request failed" in debug["web"]
+
+
 @pytest.mark.parametrize("days_ahead,expected_phrase", [(1, "today"), (7, "this week"), (30, "this month"), (365, "upcoming")])
 def test_time_window_phrase_scales_with_days_ahead(days_ahead, expected_phrase):
     assert future_events._time_window_phrase(days_ahead) == expected_phrase

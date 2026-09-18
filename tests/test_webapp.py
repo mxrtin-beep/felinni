@@ -129,16 +129,35 @@ def test_future_returns_empty_skeleton(client):
     assert body["events"] == []
     assert body["message"]
     assert body["days"] == 7
+    assert "source_status" in body
+
+
+def test_future_message_includes_per_source_status_when_empty(client, monkeypatch):
+    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
+        if debug is not None:
+            debug[platform] = "DuckDuckGo request failed: connection refused"
+        return []
+
+    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
+    monkeypatch.setattr(server.future_events, "other_web_events", lambda region=None, days_ahead=None, debug=None: [])
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    resp = client.get("/api/future")
+    body = resp.get_json()
+
+    assert body["source_status"]["eventbrite"] == "DuckDuckGo request failed: connection refused"
+    assert "eventbrite: DuckDuckGo request failed" in body["message"]
 
 
 def test_future_days_param_is_passed_through_and_ignores_global_date_filter(client, monkeypatch):
     seen_days = []
 
-    def fake_platform_events(platform, region=None, days_ahead=None):
+    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
         seen_days.append(days_ahead)
         return []
 
-    def fake_other_web_events(region=None, days_ahead=None):
+    def fake_other_web_events(region=None, days_ahead=None, debug=None):
         seen_days.append(days_ahead)
         return []
 
@@ -159,12 +178,12 @@ def test_future_days_param_is_passed_through_and_ignores_global_date_filter(clie
 def test_future_default_region_prefers_city_state_over_city_country(client, monkeypatch):
     seen_regions = []
 
-    def fake_platform_events(platform, region=None, days_ahead=None):
+    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
         seen_regions.append(region)
         return []
 
     monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
-    monkeypatch.setattr(server.future_events, "other_web_events", lambda region=None, days_ahead=None: [])
+    monkeypatch.setattr(server.future_events, "other_web_events", lambda region=None, days_ahead=None, debug=None: [])
     monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
     monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
 
