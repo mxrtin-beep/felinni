@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis"))
 
 from felinni import geocode
@@ -574,3 +576,137 @@ def test_bounded_amgen_anchor_also_skipped_for_a_complete_address(tmp_path):
         )
 
     assert "bounded" not in seen_kwargs
+
+
+# --- A second real-world batch: near-100% "found no match" across
+# otherwise perfectly valid, well-known addresses. One failure exposed the
+# actual request URL and it contained a raw embedded newline between the
+# venue name and the street address - so these fixes are: normalize
+# whitespace before querying, handle a fully comma-less "Street City ST
+# ZIP", and retry with the business name stripped when a name is glued
+# directly onto its own house number. ---
+
+def test_normalize_whitespace_collapses_newlines_and_tabs():
+    assert geocode._normalize_whitespace("Pub Saint Pierre\n410 Rue Saint-Pierre, Montréal QC") == \
+        "Pub Saint Pierre 410 Rue Saint-Pierre, Montréal QC"
+    assert geocode._normalize_whitespace("A   B\t\tC") == "A B C"
+    assert geocode._normalize_whitespace("  leading and trailing  ") == "leading and trailing"
+
+
+def test_insert_missing_city_comma_handles_a_fully_commaless_address():
+    fixed = geocode._insert_missing_city_comma("232 Shumway Lane Mountain View CA 94041")
+    assert fixed == "232 Shumway Lane, Mountain View, CA 94041"
+
+
+def test_looks_like_complete_address_recognizes_canada():
+    assert geocode._looks_like_complete_address("245 Queens Quay W, Toronto ON M5J 2K9, Canada")
+
+
+@pytest.mark.parametrize("loc,expected", [
+    ("10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States",
+     "1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States"),
+    ("101 Boxing Club 1714 Newbury Rd, Unit S, Newbury Park, CA 91320, United States",
+     "1714 Newbury Rd, Unit S, Newbury Park, CA 91320, United States"),
+    ("212 Hisae's 212 E Ninth St, New York, NY 10003, United States",
+     "212 E Ninth St, New York, NY 10003, United States"),
+    # The business's own name is "22nd Street Sportfishing" - its "22" has
+    # no word boundary before "nd", so it's correctly never treated as a
+    # candidate house number, only "141" is.
+    ("22nd Street Sportfishing 141 W 22nd St, San Pedro, CA 90731, United States",
+     "141 W 22nd St, San Pedro, CA 90731, United States"),
+    ("Broad Art Center 240 Charles E Young Dr N, Los Angeles, CA 90095, United States",
+     "240 Charles E Young Dr N, Los Angeles, CA 90095, United States"),
+])
+def test_strip_business_name_prefix_finds_the_real_house_number(loc, expected):
+    assert geocode._strip_business_name_prefix(loc) == expected
+
+
+def test_strip_business_name_prefix_none_when_address_already_starts_at_its_number():
+    assert geocode._strip_business_name_prefix("1 Amgen Center Dr Newbury Park, CA, United States") is None
+    assert geocode._strip_business_name_prefix("11024 Strathmore Dr Los Angeles, CA, United States") is None
+
+
+def test_strip_business_name_prefix_none_when_only_a_unit_number_follows_the_real_address():
+    """"1129 W 30th St Unit 9 Los Angeles..." has no business name to
+    strip - "30th" is excluded as an ordinal street number, and "9" (the
+    unit number) doesn't lead into any recognizable street suffix, so
+    there's nothing safe to strip. Should stay a real failure rather than
+    risk mangling a fine address into "9 Los Angeles, ..."."""
+    assert geocode._strip_business_name_prefix("1129 W 30th St Unit 9 Los Angeles, CA, United States") is None
+
+
+def test_strip_business_name_prefix_none_without_a_recognized_tail():
+    assert geocode._strip_business_name_prefix("Boelter 5800") is None
+
+
+def test_geocode_locations_retries_with_stripped_prefix_on_failure(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+    queries_seen = []
+
+    def flaky(query, **kwargs):
+        queries_seen.append(query)
+        if query == "1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States":
+            return _fake_result()
+        return None
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path,
+            approximations_path=approximations_path, rate_limit_seconds=0,
+        )
+
+    assert len(queries_seen) == 2  # the original query, then the stripped retry
+    assert result["10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States"]["lat"] == 34.07
+    assert "10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States" not in geocode.load_diagnostics(diagnostics_path)
+
+
+def test_geocode_locations_records_both_attempts_when_the_retry_also_fails(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = lambda q, **kwargs: None
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        geocode.geocode_locations(
+            ["10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path,
+            approximations_path=approximations_path, rate_limit_seconds=0,
+        )
+
+    reason = geocode.load_diagnostics(diagnostics_path)["10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA 90025, United States"]
+    assert "also tried stripping the likely business name" in reason
+    assert "1947 Sawtelle" in reason
+
+
+def test_geocode_locations_does_not_retry_a_bare_building_name():
+    """The retry only fires for something that already looks like a
+    complete address - a bare name like "Boelter 5800" has no business
+    name glued onto a house number to strip in the first place."""
+    cache_path_unused = None  # this test only needs to confirm call count
+    queries_seen = []
+
+    def fake_geocode(query, **kwargs):
+        queries_seen.append(query)
+        return None
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = fake_geocode
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+            geocode.geocode_locations(
+                ["Boelter 5800"], cache_path=tmp_path / "cache.json",
+                diagnostics_path=tmp_path / "diagnostics.json",
+                approximations_path=tmp_path / "approximations.json", rate_limit_seconds=0,
+            )
+
+    assert len(queries_seen) == 1  # no retry attempted

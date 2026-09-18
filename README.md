@@ -71,10 +71,14 @@ tab's own filters stack on top.
   but matches a campus/workplace anchor with known coordinates (see
   `DEFAULT_LOCATION_ANCHORS` in `felinni/geocode.py`) is placed there
   instead of left off the map — e.g. "Boelter 5800" (a UCLA room number,
-  not its own addressable point) lands at "UCLA, Los Angeles, CA." Anything
-  that still fails, or was only placed approximately, shows up with its
-  reason in the **Geocoding notes** card, instead of a bare "N not
-  geocoded" count with no way to tell why.
+  not its own addressable point) lands at "UCLA, Los Angeles, CA." Before
+  giving up on an address, a few common calendar-export quirks are fixed
+  automatically: embedded newlines/extra whitespace, a missing comma
+  between street and city, and a business name glued directly onto its own
+  house number ("101 Boxing Club 1714 Newbury Rd..." retries as "1714
+  Newbury Rd..."). Anything that still fails, or was only placed
+  approximately, shows up with its reason in the **Geocoding notes** card,
+  instead of a bare "N not geocoded" count with no way to tell why.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server

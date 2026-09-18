@@ -20,19 +20,36 @@ keyword), and an adaptive region bias (queries are nudged toward wherever
 your *other* locations this run already resolved to, without excluding
 genuinely distant results like real trips).
 
-Two query-shape fixups run before any of that: a location that already
-looks like a complete mailing address (has its own ZIP or "United States")
-skips the anchor entirely - appending redundant context to an
-already-complete address doesn't help and can make Nominatim's parser fail
-outright instead of just ignoring the extra text - and a missing comma
-between the street and city (common when a calendar app flattens a
-multi-line map address onto one line, e.g. "...Strathmore Dr Los Angeles,
-CA...") is inserted back, since Nominatim leans heavily on commas to tell
-address components apart. Neither fixes a business name glued directly onto
-its own street number with no separator at all ("101 Boxing Club 1714
-Newbury Rd...") - Nominatim's free-text search can still choke on which
-number is the real house number there, and that one still needs a manual
-override.
+Several query-shape fixups run before any of that, all aimed at the same
+thing: a calendar app's "location" field is often a multi-line map address
+(name / street / city-state-zip) flattened into one string, and whatever
+did the flattening doesn't always leave it in a shape Nominatim's parser
+likes.
+
+- Whitespace (including a literal embedded newline where a line break in
+  the original address used to be - confirmed directly on one failure
+  whose logged request contained a raw `%0A`) is collapsed to single spaces
+  before every query.
+- A location that already looks like a complete mailing address (has its
+  own ZIP, "United States", or "Canada") skips the anchor entirely -
+  appending redundant context to an already-complete address doesn't help
+  and can make Nominatim's parser fail outright instead of just ignoring
+  the extra text.
+- A missing comma between the street and city ("...Strathmore Dr Los
+  Angeles, CA...") is inserted back, and so is a fully comma-less
+  "Street City ST ZIP" ("...Shumway Lane Mountain View CA 94041") -
+  Nominatim leans heavily on commas to tell address components apart.
+- If the (whitespace-normalized, comma-fixed) query for a complete address
+  still fails, it's retried once with a business name that's glued
+  directly onto its own house number stripped off ("101 Boxing Club 1714
+  Newbury Rd..." -> "1714 Newbury Rd...") - see `_strip_business_name_prefix`
+  for exactly how the real house number is picked out (not simply "the
+  first number", since plenty of venue names themselves start with a
+  digit: "10 Speed Coffee", "99 Ranch Market").
+
+None of these are guaranteed - an address with no recognizable tail at all,
+or where the real house number can't be confidently separated from a
+suite/unit number, still needs a manual override.
 """
 from __future__ import annotations
 
@@ -229,7 +246,7 @@ def clear_approximation_entry(location: str, path: str | Path = DEFAULT_APPROXIM
         _save_json(path, approximations)
 
 
-_COMPLETE_ADDRESS_RE = re.compile(r"\b\d{5}(-\d{4})?\b|\bunited states\b|\busa\b", re.IGNORECASE)
+_COMPLETE_ADDRESS_RE = re.compile(r"\b\d{5}(-\d{4})?\b|\bunited states\b|\busa\b|\bcanada\b", re.IGNORECASE)
 
 
 def _looks_like_complete_address(loc: str) -> bool:
@@ -246,14 +263,29 @@ def _looks_like_complete_address(loc: str) -> bool:
     return bool(_COMPLETE_ADDRESS_RE.search(loc))
 
 
+def _normalize_whitespace(text: str) -> str:
+    """A calendar app's "location" field often comes from a multi-line map
+    address (name / street / city-state-zip on separate lines) flattened
+    into one string - and the line breaks don't always survive as visible
+    punctuation. A literal embedded newline in a Nominatim query isn't just
+    cosmetic: it can badly confuse the parser (observed directly on a
+    "Nominatim service error" failure whose logged request URL contained a
+    raw `%0A` between the venue name and the street address). Collapsing
+    all whitespace - newlines, tabs, doubled spaces - to single spaces
+    before querying costs nothing for an already-clean address and can
+    turn an unparseable one into a resolvable one."""
+    return re.sub(r"\s+", " ", text).strip()
+
+
 # Calendar apps often hand back a location as "<name> <street address>" with
 # the multi-line address (as shown in a map picker) flattened onto one line -
 # and the line break between the street and the city sometimes turns into a
 # bare space instead of a comma ("...Newbury Park Dr Newbury Park, CA..."
-# has one but "...11024 Strathmore Dr Los Angeles, CA..." doesn't). Nominatim
-# leans heavily on commas to separate address components, so a query missing
-# just this one comma can fail to resolve even though the address itself is
-# perfectly real - inserting it back is usually enough to fix that.
+# has one but "...11024 Strathmore Dr Los Angeles, CA..." doesn't), or is
+# missing entirely ("...Shumway Lane Mountain View CA 94041" has no commas
+# at all). Nominatim leans heavily on commas to separate address
+# components, so a query missing them can fail to resolve even though the
+# address itself is perfectly real - inserting them back is usually enough.
 _STREET_SUFFIXES = (
     r"St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Rd|Road|Ln|Lane|Way|Ct|Court|"
     r"Pl|Place|Plaza|Cir|Circle|Pkwy|Parkway|Ter|Terrace|Hwy|Highway|Sq|Square"
@@ -261,10 +293,56 @@ _STREET_SUFFIXES = (
 _MISSING_CITY_COMMA_RE = re.compile(
     rf"\b({_STREET_SUFFIXES})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*),\s*([A-Z]{{2}})\b"
 )
+_FULLY_COMMALESS_CITY_STATE_RE = re.compile(
+    rf"\b({_STREET_SUFFIXES})\s+([A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+)*)\s+([A-Z]{{2}})(\s+\d{{5}}(?:-\d{{4}})?)?\b"
+)
 
 
 def _insert_missing_city_comma(text: str) -> str:
+    text = _FULLY_COMMALESS_CITY_STATE_RE.sub(
+        lambda m: f"{m.group(1)}, {m.group(2)}, {m.group(3)}{m.group(4) or ''}", text
+    )
     return _MISSING_CITY_COMMA_RE.sub(r"\1, \2, \3", text)
+
+
+# A venue name glued directly onto its own house number with no separating
+# punctuation at all ("101 Boxing Club 1714 Newbury Rd, Unit S, Newbury
+# Park, CA 91320, United States") reads to Nominatim as one nonsensical
+# street name. The real house number is the LAST bare (non-ordinal) number
+# in the address before its city/state/zip/country tail that still leads
+# into a recognized street suffix - "last", not "first", because plenty of
+# venue names themselves start with a digit ("10 Speed Coffee", "101 Boxing
+# Club", "99 Ranch Market"); "non-ordinal" excludes a numbered street name
+# like "30th St" or "22nd St" (its number is glued directly to a letter
+# suffix with no word boundary, so \b\d+\b already skips it); "leads into a
+# street suffix" excludes a trailing unit/suite number ("...Unit 9") that
+# has nothing recognizable after it.
+_KNOWN_ADDRESS_TAIL_RE = re.compile(
+    r",\s*[A-Za-z][A-Za-z .]*,\s*[A-Z]{2}\s*(?:\d{5}(?:-\d{4})?)?,\s*(?:United States|USA)\s*$", re.I
+)
+_BARE_NUMBER_RE = re.compile(r"\b\d+\b")
+_ANY_STREET_SUFFIX_RE = re.compile(rf"\b(?:{_STREET_SUFFIXES})\b", re.I)
+
+
+def _strip_business_name_prefix(text: str) -> str | None:
+    """For "10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA
+    90025, United States", returns "1947 Sawtelle Blvd, Unit B, Los
+    Angeles, CA 90025, United States" - the real mailing address, with the
+    business name that's glued onto its own house number dropped. Returns
+    None when there's nothing to strip (no recognized address tail, or the
+    rightmost number that leads into a street suffix is already at the
+    very start - i.e. the address likely already starts at its real house
+    number, nothing before it to drop)."""
+    tail_match = _KNOWN_ADDRESS_TAIL_RE.search(text)
+    if not tail_match:
+        return None
+    head = text[:tail_match.start()]
+    candidates = [m.start() for m in _BARE_NUMBER_RE.finditer(head)]
+    split_at = next((pos for pos in reversed(candidates) if pos > 0 and _ANY_STREET_SUFFIX_RE.search(head, pos)), None)
+    if split_at is None:
+        return None
+    stripped = text[split_at:]
+    return stripped if stripped != text else None
 
 
 def _anchor_for(loc: str, category: str | None, anchors: dict) -> str | dict | None:
@@ -411,8 +489,30 @@ def geocode_locations(
     total = len(to_fetch)
     if on_progress:
         on_progress(0, total)
+    def _attempt(query_text: str, **kwargs):
+        try:
+            attempt_result = geolocator.geocode(query_text, **kwargs)
+            return attempt_result, (None if attempt_result else "Nominatim found no match for this query")
+        except GeocoderTimedOut:
+            # geopy's GeocoderTimedOut is a GeocoderServiceError subclass,
+            # so it has to be caught first to tell it apart from a real
+            # service error below.
+            return None, f"timed out after {timeout:g}s"
+        except GeocoderServiceError as e:
+            # Most often a rate limit or a temporary block from Nominatim's
+            # public instance - str(e) usually names the HTTP status.
+            return None, f"Nominatim service error: {e}"
+        except Exception as e:
+            # A network hiccup or anything else geopy didn't wrap in
+            # GeocoderServiceError (e.g. a raw connection error) shouldn't
+            # abort the whole batch - previously it did, which could leave
+            # a large run stuck partway through with no obvious
+            # explanation. This location is just retried like any other
+            # failure on the next run.
+            return None, f"network error: {e}"
+
     for i, loc in enumerate(to_fetch):
-        query = _insert_missing_city_comma(loc)
+        query = _insert_missing_city_comma(_normalize_whitespace(loc))
         anchor = _anchor_for(loc, location_categories.get(loc), anchors)
         anchor_text = _anchor_query_text(anchor)
         if anchor_text:
@@ -430,29 +530,23 @@ def geocode_locations(
             viewbox = _viewbox_from_points(resolved_points) if len(resolved_points) >= 5 else None
             if viewbox:
                 geocode_kwargs.update(viewbox=viewbox, bounded=False)
-        try:
-            result = geolocator.geocode(query, **geocode_kwargs)
-            failure_reason = None if result else "Nominatim found no match for this query"
-        except GeocoderTimedOut:
-            # geopy's GeocoderTimedOut is a GeocoderServiceError subclass,
-            # so it has to be caught first to tell it apart from a real
-            # service error below.
-            result = None
-            failure_reason = f"timed out after {timeout:g}s"
-        except GeocoderServiceError as e:
-            # Most often a rate limit or a temporary block from Nominatim's
-            # public instance - str(e) usually names the HTTP status.
-            result = None
-            failure_reason = f"Nominatim service error: {e}"
-        except Exception as e:
-            # A network hiccup or anything else geopy didn't wrap in
-            # GeocoderServiceError (e.g. a raw connection error) shouldn't
-            # abort the whole batch - previously it did, which could leave
-            # a large run stuck partway through with no obvious
-            # explanation. This location is just retried like any other
-            # failure on the next run.
-            result = None
-            failure_reason = f"network error: {e}"
+
+        result, failure_reason = _attempt(query, **geocode_kwargs)
+        diagnostics_note = f'{failure_reason} (query: "{query}")' if query != loc else failure_reason
+
+        if not result and _looks_like_complete_address(loc):
+            # A venue name glued directly onto its own house number
+            # ("101 Boxing Club 1714 Newbury Rd...") reads as one
+            # nonsensical street to Nominatim - retry with just the real
+            # mailing address if one can be confidently split out.
+            retry_query = _strip_business_name_prefix(query)
+            if retry_query:
+                time.sleep(rate_limit_seconds)
+                retry_result, retry_reason = _attempt(retry_query, **geocode_kwargs)
+                if retry_result:
+                    result = retry_result
+                else:
+                    diagnostics_note = f'{diagnostics_note}; also tried stripping the likely business name ("{retry_query}"): {retry_reason}'
 
         anchor_lat, anchor_lon = (anchor.get("lat"), anchor.get("lon")) if isinstance(anchor, dict) else (None, None)
         has_anchor_coords = isinstance(anchor_lat, (int, float)) and isinstance(anchor_lon, (int, float))
@@ -489,7 +583,7 @@ def geocode_locations(
             approximations[loc] = anchor_label
         else:
             cache[loc] = None
-            diagnostics[loc] = f'{failure_reason} (query: "{query}")' if query != loc else failure_reason
+            diagnostics[loc] = diagnostics_note
             approximations.pop(loc, None)
 
         _save_cache(cache_path, cache)
