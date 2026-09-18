@@ -74,9 +74,18 @@ tab's own filters stack on top.
   not its own addressable point) lands at "UCLA, Los Angeles, CA." Before
   giving up on an address, a few common calendar-export quirks are fixed
   automatically: embedded newlines/extra whitespace, a missing comma
-  between street and city, and a business name glued directly onto its own
+  between street and city, a business name glued directly onto its own
   house number ("101 Boxing Club 1714 Newbury Rd..." retries as "1714
-  Newbury Rd..."). Anything that still fails, or was only placed
+  Newbury Rd..."), and a unit/suite/apartment/floor/room clause dropped
+  ("...Ave, Unit 1420, Los Angeles..." retries as "...Ave, Los
+  Angeles..."). If the street address still won't resolve at all, a
+  landmark's own name plus its city is tried on its own ("Balboa Park 1549
+  El Prado, San Diego..." retries as "Balboa Park, San Diego") - some
+  parks/campuses/plazas are indexed by name rather than mailing address.
+  A handful of well-known Los Angeles-area neighborhoods used as the
+  mailing city (Van Nuys, Pacific Palisades, Woodland Hills, ...) are also
+  retried against "Los Angeles" itself, since they're not their own
+  incorporated city. Anything that still fails, or was only placed
   approximately, shows up with its reason in the **Geocoding notes** card,
   instead of a bare "N not geocoded" count with no way to tell why.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second

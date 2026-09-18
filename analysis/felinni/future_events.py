@@ -160,6 +160,18 @@ def _resolve_ddg_href(href: str) -> str:
     return href
 
 
+def _looks_like_ddg_block_page(page_html: str) -> bool:
+    """True when the response is DuckDuckGo's anomaly/rate-limit
+    interstitial rather than a real results page - it has no
+    `id="links"` results container and usually mentions the block
+    directly. Used only to make a "0 parsed results" diagnostic more
+    specific than a guess."""
+    lowered = page_html.lower()
+    return 'id="links"' not in lowered and (
+        "anomaly" in lowered or "unusual traffic" in lowered or "detected an unusual" in lowered
+    )
+
+
 def _parse_ddg_html_results(page_html: str) -> list[dict]:
     """Each search result as {title, url, snippet}, in the order DuckDuckGo
     returned them."""
@@ -178,12 +190,19 @@ def _parse_ddg_html_results(page_html: str) -> list[dict]:
 
 def _ddg_search(query: str, timeout: float = 10.0) -> str:
     """Raw DuckDuckGo HTML results page for `query`. Raises on any network
-    error/non-2xx response - callers decide how to degrade."""
+    error/non-2xx response - callers decide how to degrade.
+
+    Uses GET with `q` as a query param, not POST: a POST to this endpoint
+    doesn't reliably run the actual search - it can come back 200 with a
+    generic page that's the same size regardless of what was searched for,
+    which is exactly what "every platform's query gets 0 parsed results
+    with a near-identical response length" looks like. GET is also what a
+    browser actually sends for this page, so it's the well-trodden path."""
     import requests
 
-    resp = requests.post(
+    resp = requests.get(
         _DDG_HTML_URL,
-        data={"q": query},
+        params={"q": query},
         headers={"User-Agent": _USER_AGENT},
         timeout=timeout,
     )
@@ -402,7 +421,8 @@ def platform_events(
 
     parsed = _parse_ddg_html_results(page_html)
     if debug is not None and not parsed:
-        debug[platform] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars)"
+        blocked = " - looks like DuckDuckGo's rate-limit/anomaly page, not real results" if _looks_like_ddg_block_page(page_html) else ""
+        debug[platform] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
 
     events = []
     skipped = 0
@@ -446,7 +466,8 @@ def other_web_events(
 
     parsed = _parse_ddg_html_results(page_html)
     if debug is not None and not parsed:
-        debug["web"] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars)"
+        blocked = " - looks like DuckDuckGo's rate-limit/anomaly page, not real results" if _looks_like_ddg_block_page(page_html) else ""
+        debug["web"] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
 
     known_domains = tuple(PLATFORM_DOMAINS.values())
     events = []

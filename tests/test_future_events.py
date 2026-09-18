@@ -2,9 +2,11 @@
 results and each event page's schema.org JSON-LD into the Future tab's event
 shape, listing-page/occurrence-picking edge cases, conflict detection against
 the calendar and other candidates, and ranking by fit with calendar history.
-Network calls are always mocked via requests.post/requests.get (see
+Network calls are always mocked via requests.get/requests.post (see
 felinni.calendar_sources's tests for the same pattern) - these never hit a
-real endpoint."""
+real endpoint. DuckDuckGo search and event-page fetches both go through
+requests.get (see `_ddg_and_page_get`); only `ollama_event_ideas` still
+uses requests.post."""
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -90,6 +92,19 @@ def _mock_response(text):
     return resp
 
 
+def _ddg_and_page_get(ddg_html, page_html=SAMPLE_EVENT_PAGE_NO_JSONLD):
+    """_ddg_search and _fetch_page both go through requests.get now (DDG's
+    HTML endpoint is queried via GET, not POST - see felinni.future_events'
+    _ddg_search docstring), so a single requests.get mock has to serve
+    both: the DDG search URL gets `ddg_html`, any other URL (an event
+    page) gets `page_html`."""
+    def _get(url, *args, **kwargs):
+        if url == future_events._DDG_HTML_URL:
+            return _mock_response(ddg_html)
+        return _mock_response(page_html)
+    return _get
+
+
 def _event(idx, title, start, end, people=None, is_all_day=False, category="Social", location=None):
     return {
         "id": f"evt-{idx}", "title": title, "notes": None, "location": location,
@@ -116,8 +131,7 @@ def test_platform_events_rejects_unknown_platform():
 
 
 def test_platform_events_parses_and_filters_by_domain():
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.platform_events("meetup", region="Los Angeles, CA")
 
     assert len(events) == 2  # the discover/browse listing page is dropped
@@ -130,8 +144,7 @@ def test_platform_events_parses_and_filters_by_domain():
 
 
 def test_platform_events_drops_a_browse_listing_page():
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.platform_events("meetup")
 
     assert all("discover" not in e["title"].casefold() for e in events)
@@ -139,8 +152,7 @@ def test_platform_events_drops_a_browse_listing_page():
 
 
 def test_platform_events_unwraps_ddg_redirect_links():
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.platform_events("meetup", region="Los Angeles, CA")
 
     redirected = next(e for e in events if "la-coders" in e["url"])
@@ -148,24 +160,23 @@ def test_platform_events_unwraps_ddg_redirect_links():
 
 
 def test_platform_events_query_includes_domain_and_region():
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)) as mock_post, \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)) as mock_get:
         future_events.platform_events("eventbrite", region="Austin, TX")
 
-    query = mock_post.call_args.kwargs["data"]["q"]
+    query = mock_get.call_args.kwargs["params"]["q"]
     assert "site:eventbrite.com" in query
     assert "Austin, TX" in query
     assert "this week" in query  # default days_ahead=7 -> "this week" phrase
 
 
 def test_platform_events_returns_empty_list_on_network_error():
-    with patch("requests.post", side_effect=OSError("network unreachable")):
+    with patch("requests.get", side_effect=OSError("network unreachable")):
         assert future_events.platform_events("luma") == []
 
 
 def test_platform_events_debug_records_request_failure():
     debug = {}
-    with patch("requests.post", side_effect=OSError("network unreachable")):
+    with patch("requests.get", side_effect=OSError("network unreachable")):
         future_events.platform_events("luma", debug=debug)
     assert "DuckDuckGo request failed" in debug["luma"]
     assert "network unreachable" in debug["luma"]
@@ -173,15 +184,14 @@ def test_platform_events_debug_records_request_failure():
 
 def test_platform_events_debug_records_zero_parsed_results():
     debug = {}
-    with patch("requests.post", return_value=_mock_response("<html>no results here</html>")):
+    with patch("requests.get", return_value=_mock_response("<html>no results here</html>")):
         future_events.platform_events("luma", debug=debug)
     assert "0 parsed results" in debug["luma"]
 
 
 def test_platform_events_debug_records_counts_when_results_are_filtered():
     debug = {}
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         future_events.platform_events("meetup", debug=debug)
     assert "DuckDuckGo result(s)" in debug["meetup"]
     assert "kept" in debug["meetup"]
@@ -189,7 +199,7 @@ def test_platform_events_debug_records_counts_when_results_are_filtered():
 
 def test_other_web_events_debug_uses_web_key():
     debug = {}
-    with patch("requests.post", side_effect=OSError("network unreachable")):
+    with patch("requests.get", side_effect=OSError("network unreachable")):
         future_events.other_web_events(debug=debug)
     assert "web" in debug
     assert "DuckDuckGo request failed" in debug["web"]
@@ -201,11 +211,10 @@ def test_time_window_phrase_scales_with_days_ahead(days_ahead, expected_phrase):
 
 
 def test_platform_events_query_reflects_a_custom_days_ahead():
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)) as mock_post, \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)) as mock_get:
         future_events.platform_events("eventbrite", days_ahead=30)
 
-    query = mock_post.call_args.kwargs["data"]["q"]
+    query = mock_get.call_args.kwargs["params"]["q"]
     assert "this month" in query
 
 
@@ -228,10 +237,10 @@ def test_within_search_window_keeps_something_that_started_very_recently():
 
 @pytest.mark.parametrize("platform,domain", [("partiful", "partiful.com"), ("posh", "posh.vip")])
 def test_partiful_and_posh_query_their_own_domain(platform, domain):
-    with patch("requests.post", return_value=_mock_response("")) as mock_post:
+    with patch("requests.get", return_value=_mock_response("")) as mock_get:
         future_events.platform_events(platform, region="Los Angeles, CA")
 
-    query = mock_post.call_args.kwargs["data"]["q"]
+    query = mock_get.call_args.kwargs["params"]["q"]
     assert f"site:{domain}" in query
 
 
@@ -245,8 +254,7 @@ def test_partiful_result_is_kept_without_a_registered_url_pattern():
       <a class="result__snippet" href="https://partiful.com/e/abc123">You're invited!</a>
     </div></div>
     """
-    with patch("requests.post", return_value=_mock_response(ddg_html)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(ddg_html, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.platform_events("partiful", region="Los Angeles, CA")
 
     assert len(events) == 1
@@ -254,10 +262,10 @@ def test_partiful_result_is_kept_without_a_registered_url_pattern():
 
 
 def test_camber_query_scopes_to_the_la_happenings_section():
-    with patch("requests.post", return_value=_mock_response("")) as mock_post:
+    with patch("requests.get", return_value=_mock_response("")) as mock_get:
         future_events.platform_events("camber", region="Los Angeles, CA")
 
-    query = mock_post.call_args.kwargs["data"]["q"]
+    query = mock_get.call_args.kwargs["params"]["q"]
     assert "site:camberplaces.substack.com/s/la-happenings" in query
 
 
@@ -272,8 +280,7 @@ def test_camber_result_is_kept_even_without_a_confirmed_date():
       <a class="result__snippet" href="https://camberplaces.substack.com/p/la-happenings-nov-3">This week's roundup of things to do.</a>
     </div></div>
     """
-    with patch("requests.post", return_value=_mock_response(ddg_html)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(ddg_html, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.platform_events("camber", region="Los Angeles, CA")
 
     assert len(events) == 1
@@ -283,15 +290,13 @@ def test_camber_result_is_kept_even_without_a_confirmed_date():
 
 
 def test_platform_events_respects_max_results():
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.platform_events("meetup", max_results=1)
     assert len(events) == 1
 
 
 def test_platform_events_enriches_from_event_page_jsonld():
-    with patch("requests.post", return_value=_mock_response(SAMPLE_DDG_HTML)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_HTML)):
         events = future_events.platform_events("meetup", max_results=1)
 
     event = events[0]
@@ -393,8 +398,7 @@ def test_other_web_events_skips_known_platform_domains():
       <a class="result__snippet" href="https://www.meetup.com/x/events/1/">snippet</a>
     </div></div>
     """
-    with patch("requests.post", return_value=_mock_response(ddg_html)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(ddg_html, SAMPLE_EVENT_PAGE_HTML)):
         events = future_events.other_web_events(region="Los Angeles, CA")
     assert events == []
 
@@ -406,8 +410,7 @@ def test_other_web_events_keeps_a_confirmed_real_event_from_any_domain():
       <a class="result__snippet" href="https://www.residentadvisor.net/events/123">Live music tonight.</a>
     </div></div>
     """
-    with patch("requests.post", return_value=_mock_response(ddg_html)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(ddg_html, SAMPLE_EVENT_PAGE_HTML)):
         events = future_events.other_web_events(region="Los Angeles, CA")
     assert len(events) == 1
     assert events[0]["source"] == "residentadvisor.net"
@@ -421,8 +424,7 @@ def test_other_web_events_drops_results_with_no_confirmed_date():
       <a class="result__snippet" href="https://www.some-blog.com/best-events">A blog post, not an event page.</a>
     </div></div>
     """
-    with patch("requests.post", return_value=_mock_response(ddg_html)), \
-         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+    with patch("requests.get", side_effect=_ddg_and_page_get(ddg_html, SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.other_web_events(region="Los Angeles, CA")
     assert events == []
 

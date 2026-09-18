@@ -40,16 +40,31 @@ likes.
   "Street City ST ZIP" ("...Shumway Lane Mountain View CA 94041") -
   Nominatim leans heavily on commas to tell address components apart.
 - If the (whitespace-normalized, comma-fixed) query for a complete address
-  still fails, it's retried once with a business name that's glued
-  directly onto its own house number stripped off ("101 Boxing Club 1714
-  Newbury Rd..." -> "1714 Newbury Rd...") - see `_strip_business_name_prefix`
-  for exactly how the real house number is picked out (not simply "the
-  first number", since plenty of venue names themselves start with a
-  digit: "10 Speed Coffee", "99 Ranch Market").
+  still fails, several retries are tried in order (see `_retry_queries`):
+  a business name that's glued directly onto its own house number stripped
+  off ("101 Boxing Club 1714 Newbury Rd..." -> "1714 Newbury Rd...") - see
+  `_strip_business_name_prefix` for exactly how the real house number is
+  picked out (not simply "the first number", since plenty of venue names
+  themselves start with a digit: "10 Speed Coffee", "99 Ranch Market");
+  a unit/suite/floor/apartment/room clause dropped (`_strip_unit_designator`
+  - handles "Unit 1420", "Apt. 309", "Suite #20", and "Unit A&D" alike, and
+  re-checks for a business name a second time afterward, since the clause
+  can hide the comma that split needed); just the business/landmark name
+  plus its city on their own, when the full street address won't resolve at
+  all but the two together do ("Balboa Park 1549 El Prado, San Diego..." ->
+  "Balboa Park, San Diego" - see `_business_name_and_city`, for landmarks
+  Nominatim indexes by name rather than mailing address); and a handful of
+  well-known Los Angeles-area neighborhoods used as the mailing "city"
+  substituted for "Los Angeles" itself, since Nominatim's place hierarchy
+  sometimes only recognizes the containing city ("...Van Nuys, CA..." ->
+  "...Los Angeles, CA...", see `_LA_NEIGHBORHOODS`).
 
 None of these are guaranteed - an address with no recognizable tail at all,
-or where the real house number can't be confidently separated from a
-suite/unit number, still needs a manual override.
+a real house number that can't be confidently separated from a suite/unit
+number, or a bare unmarked unit ID with no "Unit"/"Apt"/"#" keyword and no
+comma at all to signal it's separate ("5800 Bristol Pkwy C3 Culver City,
+CA..." - "C3" reads exactly like a second street-number/suite fragment,
+too ambiguous to safely strip) still needs a manual override.
 """
 from __future__ import annotations
 
@@ -346,6 +361,26 @@ _BARE_NUMBER_RE = re.compile(r"\b\d+\b")
 _ANY_STREET_SUFFIX_RE = re.compile(rf"\b(?:{_STREET_SUFFIXES})\b", re.I)
 
 
+def _split_business_name_prefix(text: str) -> tuple[str, str] | None:
+    """The same split point `_strip_business_name_prefix` uses, but
+    returning both halves - (business_name, address_without_it) - instead
+    of discarding the business name. None on the same "nothing to split"
+    conditions."""
+    tail_match = _KNOWN_ADDRESS_TAIL_RE.search(text)
+    if not tail_match:
+        return None
+    head = text[:tail_match.start()]
+    candidates = [m.start() for m in _BARE_NUMBER_RE.finditer(head)]
+    split_at = next((pos for pos in reversed(candidates) if pos > 0 and _ANY_STREET_SUFFIX_RE.search(head, pos)), None)
+    if split_at is None:
+        return None
+    business_name = text[:split_at].strip()
+    address = text[split_at:]
+    if not business_name or address == text:
+        return None
+    return business_name, address
+
+
 def _strip_business_name_prefix(text: str) -> str | None:
     """For "10 Speed Coffee 1947 Sawtelle Blvd, Unit B, Los Angeles, CA
     90025, United States", returns "1947 Sawtelle Blvd, Unit B, Los
@@ -355,16 +390,47 @@ def _strip_business_name_prefix(text: str) -> str | None:
     rightmost number that leads into a street suffix is already at the
     very start - i.e. the address likely already starts at its real house
     number, nothing before it to drop)."""
+    split = _split_business_name_prefix(text)
+    return split[1] if split else None
+
+
+def _business_name_and_city(text: str) -> str | None:
+    """For "Balboa Park 1549 El Prado, San Diego, CA 92101, United States",
+    returns "Balboa Park, San Diego" - a large landmark (a park, a campus,
+    a plaza) is sometimes indexed by Nominatim under its own name rather
+    than its literal mailing address, so the full street address fails to
+    resolve at all even though "<name>, <city>" finds it directly. Tried
+    only as a last resort in `_retry_queries`, since it throws away the
+    street address entirely - a coincidentally-matching but wrong place
+    with the same name in the same city is the risk, not just a miss.
+
+    Unlike `_strip_business_name_prefix`, the split here doesn't require
+    the house number to lead into a *recognized* street suffix - "El
+    Prado", "Ocean Front Walk", and other real street names aren't in
+    `_STREET_SUFFIXES` at all, but the landmark name still needs to be
+    separated from its house number to build "<name>, <city>"."""
     tail_match = _KNOWN_ADDRESS_TAIL_RE.search(text)
     if not tail_match:
         return None
-    head = text[:tail_match.start()]
+    # A unit/suite/room number ("...Ave, Unit 1420") would otherwise look
+    # like the "last bare number" below, wrongly landing the split inside
+    # the unit clause instead of at the real house number - drop it first.
+    head = re.sub(r"\s+", " ", _UNIT_DESIGNATOR_RE.sub("", text[:tail_match.start()])).strip()
     candidates = [m.start() for m in _BARE_NUMBER_RE.finditer(head)]
-    split_at = next((pos for pos in reversed(candidates) if pos > 0 and _ANY_STREET_SUFFIX_RE.search(head, pos)), None)
+    split_at = next((pos for pos in reversed(candidates) if pos > 0), None)
     if split_at is None:
         return None
-    stripped = text[split_at:]
-    return stripped if stripped != text else None
+    business_name = head[:split_at].strip()
+    if not business_name:
+        return None
+    city_match = re.match(r",\s*([A-Za-z][A-Za-z .]*?)\s*,", tail_match.group(0))
+    if not city_match:
+        return None
+    city = city_match.group(1).strip()
+    if not city:
+        return None
+    result = f"{business_name}, {city}"
+    return result if result != text else None
 
 
 # Nominatim's house-number-level data often doesn't carry unit/suite/floor
@@ -377,8 +443,20 @@ def _strip_business_name_prefix(text: str) -> str | None:
 # a street name starts - so unlike the comma-delimited case, a leading
 # comma isn't required to match: "19401 Parthenia St Apt 1076 Northridge,
 # CA, United States" has no comma anywhere near "Apt 1076" either.
+# Two subtleties fixed here that broke real addresses:
+# - `\.?\b` (optional period, THEN a word boundary) never matches when the
+#   period IS present, because a period and the space after it are both
+#   non-word characters - there's no "boundary" between two non-word
+#   characters for \b to find. "Apt. 309" needs the boundary checked right
+#   after the bare keyword instead: `\b\.?`.
+# - The trailing unit ID used `[\w-]+`, which stops at the first character
+#   outside \w/hyphen - so "Suite #20" only matched "#20" (leaving "Suite"
+#   behind as orphaned text) and "Unit A&D" only matched "Unit A" (leaving
+#   "&D" glued onto the street name). The keyword and an optional "#" are
+#   now matched together, and the ID itself allows "&" and "/" too (unit
+#   IDs like "A&D" or "3/4" both show up in the wild).
 _UNIT_DESIGNATOR_RE = re.compile(
-    r",?\s*(?:Unit|Ste|Suite|Apt|Apartment|Bldg|Building|Fl|Floor|Rm|Room|#)\.?\b\s*[\w-]+",
+    r",?\s*(?:(?:Unit|Ste|Suite|Apt|Apartment|Bldg|Building|Fl|Floor|Rm|Room)\b\.?\s*#?|#)\s*[\w&/-]+",
     re.I,
 )
 
@@ -396,20 +474,79 @@ def _strip_unit_designator(text: str) -> str | None:
     return _insert_missing_city_comma(stripped)
 
 
+# A handful of well-known Los Angeles-area neighborhoods that are USPS
+# "delivery cities" (the city name that actually appears in the mailing
+# address) but aren't their own incorporated municipality - they're part
+# of the City of Los Angeles, and Nominatim's place hierarchy sometimes
+# only recognizes the containing city, not the neighborhood name, as
+# "city" for an address lookup ("7610 Woodley Ave, Van Nuys, CA" fails,
+# but "7610 Woodley Ave, Los Angeles, CA" - or just "Van Nuys, CA" as its
+# own place - resolves). Not exhaustive; just the ones observed to fail.
+_LA_NEIGHBORHOODS = {
+    "van nuys", "pacific palisades", "woodland hills", "north hollywood",
+    "sherman oaks", "studio city", "encino", "tarzana", "reseda",
+    "canoga park", "winnetka", "west hills", "chatsworth", "northridge",
+    "granada hills", "porter ranch", "sylmar", "sun valley", "panorama city",
+    "mission hills", "arleta", "lake balboa", "valley glen", "toluca lake",
+    "eagle rock", "highland park", "mount washington", "atwater village",
+    "silver lake", "echo park", "los feliz", "hollywood", "west adams",
+    "mar vista", "playa vista", "playa del rey", "westchester", "venice",
+    "brentwood", "bel air", "westwood", "san pedro", "wilmington",
+    "harbor city", "sunland", "tujunga", "shadow hills", "west hollywood",
+}
+_LA_NEIGHBORHOOD_CITY_RE = re.compile(
+    r"\b(" + "|".join(re.escape(n) for n in sorted(_LA_NEIGHBORHOODS, key=len, reverse=True)) + r")\s*,\s*CA\b",
+    re.I,
+)
+
+
+def _substitute_la_neighborhood_city(text: str) -> str | None:
+    """Swaps a recognized LA-area neighborhood name used as the "city" for
+    "Los Angeles" - see `_LA_NEIGHBORHOODS`. Only ever tried as a last
+    resort in `_retry_queries`, after the neighborhood name on its own has
+    already failed to resolve."""
+    match = _LA_NEIGHBORHOOD_CITY_RE.search(text)
+    if not match:
+        return None
+    replaced = text[:match.start(1)] + "Los Angeles" + text[match.end(1):]
+    return replaced if replaced != text else None
+
+
 def _retry_queries(query: str) -> list[tuple[str, str]]:
     """Extra queries worth trying, in order, when `query` fails outright -
     each paired with a short label for the diagnostics note describing
-    what changed. Only ever removes text (a business name prefix, a
-    unit/suite clause) - never invents or reorders anything - so a
-    candidate that still fails is no worse than the original."""
+    what changed. Only ever removes or substitutes text (a business name
+    prefix, a unit/suite clause, a neighborhood name for its containing
+    city) - never invents anything out of nothing."""
     candidates = []
+
     business_stripped = _strip_business_name_prefix(query)
     base = business_stripped or query
     if business_stripped:
         candidates.append((business_stripped, "stripping the likely business name"))
+
     unit_stripped = _strip_unit_designator(base)
     if unit_stripped and unit_stripped != query:
         candidates.append((unit_stripped, "dropping the unit/suite"))
+        base = unit_stripped
+        # The business name may not have been strippable until the
+        # unit/suite clause was gone (it can hide the comma the business-
+        # name split relies on) - "Home 6330 Randi Avenue #E208 Woodland
+        # Hills..." only splits cleanly as a business name after "#E208"
+        # is dropped, since the split point's boundary check needs the
+        # already-formed "..., Woodland Hills, CA ..." tail.
+        second_pass = _strip_business_name_prefix(unit_stripped)
+        if second_pass and second_pass not in (c for c, _ in candidates):
+            candidates.append((second_pass, "stripping the likely business name and dropping the unit/suite"))
+
+    name_and_city = _business_name_and_city(query)
+    if name_and_city and name_and_city not in (c for c, _ in candidates):
+        candidates.append((name_and_city, "trying just the name and city"))
+
+    neighborhood_fixed = _substitute_la_neighborhood_city(base)
+    if neighborhood_fixed and neighborhood_fixed != query:
+        candidates.append((neighborhood_fixed, "trying the containing city (Los Angeles) instead of the neighborhood"))
+
     return candidates
 
 

@@ -770,7 +770,7 @@ def test_retry_queries_chains_business_name_and_unit_stripping():
     query = "Cafe Dulce 3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
     candidates = geocode._retry_queries(query)
     labels = [label for _, label in candidates]
-    assert labels == ["stripping the likely business name", "dropping the unit/suite"]
+    assert labels[:2] == ["stripping the likely business name", "dropping the unit/suite"]
     assert candidates[0][0] == "3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
     assert candidates[1][0] == "3096 McClintock Ave, Los Angeles, CA 90007, United States"
 
@@ -868,5 +868,136 @@ def test_geocode_locations_retries_unit_strip_without_a_leading_comma(tmp_path):
         )
 
     loc = "19401 Parthenia St Apt 1076 Northridge, CA, United States"
+    assert result[loc]["lat"] == 34.07
+    assert loc not in geocode.load_diagnostics(diagnostics_path)
+
+
+def test_strip_unit_designator_handles_a_period_after_the_keyword():
+    """"Apt. 309" has a period right after the keyword - `\\.?\\b` (the old
+    ordering) never matched here, since a period and the following space
+    are both non-word characters and there's no boundary between them.
+    The keyword's own trailing boundary has to be checked before the
+    optional period."""
+    assert geocode._strip_unit_designator(
+        "679 Gayley Ave Apt. 309, Los Angeles, CA, United States"
+    ) == "679 Gayley Ave, Los Angeles, CA, United States"
+
+
+def test_strip_unit_designator_handles_suite_hash_combo_without_orphaning_suite():
+    """"Suite #20" previously only matched the "#20" half (`[\\w-]+` doesn't
+    match "#"), leaving "Suite" behind to get wrongly absorbed as part of
+    the city by the comma-insertion pass. The keyword and an optional "#"
+    now match as one unit."""
+    assert geocode._strip_unit_designator(
+        "515 South Dr Suite #20 Mountain View, CA, United States"
+    ) == "515 South Dr, Mountain View, CA, United States"
+
+
+def test_strip_unit_designator_handles_ampersand_in_unit_id():
+    """"Unit A&D" previously only matched "Unit A" (`[\\w-]+` doesn't match
+    "&"), leaving "&D" glued onto the street name."""
+    assert geocode._strip_unit_designator(
+        "3170 Glendale Blvd, Unit A&D, Los Angeles, CA 90039, United States"
+    ) == "3170 Glendale Blvd, Los Angeles, CA 90039, United States"
+
+
+def test_strip_unit_designator_still_rejects_united_as_a_false_match():
+    assert geocode._strip_unit_designator(
+        "1714 Newbury Rd, Newbury Park, CA 91320, United States"
+    ) is None
+
+
+def test_retry_queries_tries_business_name_again_after_unit_strip():
+    """"Home 6330 Randi Avenue #E208 Woodland Hills, CA 91367, United
+    States" - the business name "Home" can't be split off until the "#E208"
+    clause is gone, since the split point's boundary check needs the
+    already-formed "..., Woodland Hills, CA ..." tail."""
+    query = "Home 6330 Randi Avenue #E208 Woodland Hills, CA 91367, United States"
+    candidates = geocode._retry_queries(query)
+    labels = [label for _, label in candidates]
+    assert "stripping the likely business name and dropping the unit/suite" in labels
+    combined = dict(candidates)
+    reverse = {label: cand for cand, label in candidates}
+    assert reverse["stripping the likely business name and dropping the unit/suite"] == (
+        "6330 Randi Avenue, Woodland Hills, CA 91367, United States"
+    )
+
+
+def test_business_name_and_city_for_a_landmark_whose_street_wont_resolve():
+    """"Balboa Park 1549 El Prado, San Diego, CA 92101, United States" - "El
+    Prado" isn't a recognized street suffix at all, so the business-name
+    split alone can't confirm a real address tail, but the park's own
+    name plus its city resolves fine on its own."""
+    assert geocode._business_name_and_city(
+        "Balboa Park 1549 El Prado, San Diego, CA 92101, United States"
+    ) == "Balboa Park, San Diego"
+
+
+def test_business_name_and_city_ignores_a_unit_number_when_picking_the_split():
+    """A unit/suite number ("...Ave, Unit 1420") must not be mistaken for
+    the real house number when picking where the business name ends."""
+    assert geocode._business_name_and_city(
+        "Cafe Dulce 3096 McClintock Ave, Unit 1420, Los Angeles, CA 90007, United States"
+    ) == "Cafe Dulce, Los Angeles"
+
+
+def test_business_name_and_city_is_none_without_a_business_name_to_split_off():
+    assert geocode._business_name_and_city(
+        "1549 El Prado, San Diego, CA 92101, United States"
+    ) is None
+
+
+def test_retry_queries_offers_name_and_city_for_a_landmark():
+    query = "Balboa Park 1549 El Prado, San Diego, CA 92101, United States"
+    candidates = geocode._retry_queries(query)
+    reverse = {label: cand for cand, label in candidates}
+    assert reverse["trying just the name and city"] == "Balboa Park, San Diego"
+
+
+def test_substitute_la_neighborhood_city_swaps_a_known_neighborhood():
+    assert geocode._substitute_la_neighborhood_city(
+        "7610 Woodley Ave, Van Nuys, CA, United States"
+    ) == "7610 Woodley Ave, Los Angeles, CA, United States"
+    assert geocode._substitute_la_neighborhood_city(
+        "580 Los Liones Dr, Pacific Palisades, CA, United States"
+    ) == "580 Los Liones Dr, Los Angeles, CA, United States"
+
+
+def test_substitute_la_neighborhood_city_is_none_for_an_unrecognized_city():
+    assert geocode._substitute_la_neighborhood_city(
+        "1549 El Prado, San Diego, CA 92101, United States"
+    ) is None
+
+
+def test_retry_queries_offers_la_neighborhood_substitution_as_a_last_resort():
+    query = "7610 Woodley Ave, Van Nuys, CA, United States"
+    candidates = geocode._retry_queries(query)
+    reverse = {label: cand for cand, label in candidates}
+    assert reverse["trying the containing city (Los Angeles) instead of the neighborhood"] == (
+        "7610 Woodley Ave, Los Angeles, CA, United States"
+    )
+
+
+def test_geocode_locations_falls_back_through_neighborhood_substitution(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+
+    def flaky(query, **kwargs):
+        if query == "7610 Woodley Ave, Los Angeles, CA, United States":
+            return _fake_result()
+        return None
+
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.side_effect = flaky
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["7610 Woodley Ave, Van Nuys, CA, United States"],
+            cache_path=cache_path, diagnostics_path=diagnostics_path,
+            approximations_path=approximations_path, rate_limit_seconds=0,
+        )
+
+    loc = "7610 Woodley Ave, Van Nuys, CA, United States"
     assert result[loc]["lat"] == 34.07
     assert loc not in geocode.load_diagnostics(diagnostics_path)
