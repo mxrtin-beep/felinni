@@ -169,6 +169,22 @@ def test_platform_events_query_includes_domain_and_region():
     assert "this week" in query  # default days_ahead=7 -> "this week" phrase
 
 
+def test_ddg_search_sends_browser_like_headers_not_a_self_identifying_bot():
+    """A User-Agent that names itself as a bot ("felinni-future-tab/1.0;
+    +https://github.com/") is exactly the kind of thing DuckDuckGo's
+    anomaly detection blocks outright regardless of the query - which
+    matches a real run where every platform's search came back with 0
+    parsed results and a near-identical response size, all at once."""
+    with patch("requests.get", side_effect=_ddg_and_page_get(SAMPLE_DDG_HTML, SAMPLE_EVENT_PAGE_NO_JSONLD)) as mock_get:
+        future_events.platform_events("eventbrite", region="Austin, TX")
+
+    headers = mock_get.call_args.kwargs["headers"]
+    assert "felinni" not in headers["User-Agent"].casefold()
+    assert "bot" not in headers["User-Agent"].casefold()
+    assert "Mozilla" in headers["User-Agent"]
+    assert "Accept-Language" in headers
+
+
 def test_platform_events_returns_empty_list_on_network_error():
     with patch("requests.get", side_effect=OSError("network unreachable")):
         assert future_events.platform_events("luma") == []

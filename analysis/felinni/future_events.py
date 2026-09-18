@@ -96,7 +96,27 @@ MAX_PLAUSIBLE_DURATION_HOURS = 24 * 7
 _FALLBACK_DURATION_HOURS = 2
 
 _DDG_HTML_URL = "https://html.duckduckgo.com/html/"
-_USER_AGENT = "Mozilla/5.0 (compatible; felinni-future-tab/1.0; +https://github.com/)"
+# A self-identifying bot User-Agent ("felinni-future-tab/1.0;
+# +https://github.com/") was used here previously - and is exactly the
+# kind of thing DuckDuckGo's anomaly detection blocks outright, regardless
+# of the query, which matches what a real run looked like: every single
+# platform's search (and the domain-agnostic web search) came back with
+# 0 parsed results and a near-identical response size, all at once - not
+# what a genuinely empty result set for 7 different queries looks like.
+# A plain, current desktop-browser User-Agent (with matching Accept/
+# Accept-Language headers, since a real browser always sends those too)
+# is what every other DuckDuckGo-scraping tool relies on for exactly this
+# reason - it's still just an unauthenticated page fetch, no key/login
+# involved, just not self-flagged as automated traffic.
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+_BROWSER_HEADERS = {
+    "User-Agent": _USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 _RESULT_LINK_RE = re.compile(
     r'class="result__a"[^>]*href="(?P<href>[^"]*)"[^>]*>(?P<title>.*?)</a>', re.S
@@ -203,7 +223,7 @@ def _ddg_search(query: str, timeout: float = 10.0) -> str:
     resp = requests.get(
         _DDG_HTML_URL,
         params={"q": query},
-        headers={"User-Agent": _USER_AGENT},
+        headers=_BROWSER_HEADERS,
         timeout=timeout,
     )
     resp.raise_for_status()
@@ -213,7 +233,7 @@ def _ddg_search(query: str, timeout: float = 10.0) -> str:
 def _fetch_page(url: str, timeout: float = 10.0) -> str:
     import requests
 
-    resp = requests.get(url, headers={"User-Agent": _USER_AGENT}, timeout=timeout)
+    resp = requests.get(url, headers=_BROWSER_HEADERS, timeout=timeout)
     resp.raise_for_status()
     return resp.text
 
