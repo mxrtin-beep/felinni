@@ -557,12 +557,15 @@ def future_view():
     (default 7) bounds how far ahead to look - both nudging the search
     itself toward near-term results and actually dropping anything whose
     confirmed date falls outside that window (see
-    felinni.future_events.within_search_window). `events` is one ranked
-    list - every candidate scored by fit with your calendar history and
-    flagged with any scheduling conflicts - rather than a separate
-    "suggested" list duplicating the same events in a different order. If a
-    local Ollama server is running, a few AI-brainstormed (clearly
-    labeled, not real listings) event ideas are folded in too."""
+    felinni.future_events.within_search_window). Duplicates of the same
+    real event found on more than one aggregator site are collapsed first
+    (felinni.future_events.dedupe_events). `events` is one ranked list -
+    every candidate scored by fit with your calendar history and flagged
+    with any scheduling conflicts (both against your own calendar and
+    against other candidate events) - rather than a separate "suggested"
+    list duplicating the same events in a different order. If a local
+    Ollama server is running, a few AI-brainstormed (clearly labeled, not
+    real listings) event ideas are folded in too."""
     df = DF
     cache = _load_geocode_cache()
     default_region = _default_future_search_region(df, cache) or regions.home_region(regions.visits_by_region(df, cache))
@@ -579,7 +582,8 @@ def future_view():
     raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
 
-    windowed = future_events.within_search_window(raw_events, days_ahead=days)
+    deduped = future_events.dedupe_events(raw_events)
+    windowed = future_events.within_search_window(deduped, days_ahead=days)
     annotated = future_events.annotate_conflicts(windowed, df)
     events = future_events.suggestions_for(df, annotated)
 

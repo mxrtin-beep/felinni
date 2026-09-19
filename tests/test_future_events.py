@@ -564,3 +564,94 @@ def test_suggested_people_falls_back_to_overall_frequency_when_nothing_matches(d
 def test_suggested_people_empty_for_empty_calendar():
     people, reason = future_events.suggested_people(pd.DataFrame(), category="Outdoors")
     assert people == []
+
+
+def test_dedupe_events_collapses_the_same_event_from_two_domains():
+    """The same real event ("Country 2 Step Lesson") independently listed
+    on allevents.in and stayhappening.com - same title/address, close but
+    not identical start timestamps and different URLs - should collapse
+    to one entry, keeping whichever came first."""
+    a = {
+        "title": "Country 2 Step Lesson", "url": "https://allevents.in/x",
+        "start": "2026-09-24T00:00:00", "end": "2026-09-24T00:00:00",
+        "location": "1321 E Thousand Oaks Blvd, Thousand Oaks, CA",
+        "source": "allevents.in", "snippet": "",
+    }
+    b = {
+        "title": "Country 2 Step Lesson", "url": "https://stayhappening.com/y",
+        "start": "2026-09-24T00:05:00", "end": "2026-09-24T00:05:00",
+        "location": "1321 E Thousand Oaks Blvd, Thousand Oaks, CA",
+        "source": "stayhappening.com", "snippet": "",
+    }
+    deduped = future_events.dedupe_events([a, b])
+    assert len(deduped) == 1
+    assert deduped[0]["url"] == "https://allevents.in/x"
+
+
+def test_dedupe_events_keeps_different_events_with_the_same_title():
+    a = {"title": "Weekly Meetup", "url": "urlA", "start": "2026-09-24T00:00:00", "end": None, "location": "Venue A"}
+    b = {"title": "Weekly Meetup", "url": "urlB", "start": "2026-10-01T00:00:00", "end": None, "location": "Venue B"}
+    assert len(future_events.dedupe_events([a, b])) == 2
+
+
+def test_dedupe_events_falls_back_to_location_when_start_is_unknown():
+    a = {"title": "Mystery Event", "url": "urlA", "start": None, "end": None, "location": "Same Venue"}
+    b = {"title": "Mystery Event", "url": "urlB", "start": None, "end": None, "location": "Same Venue"}
+    c = {"title": "Mystery Event", "url": "urlC", "start": None, "end": None, "location": "Different Venue"}
+    deduped = future_events.dedupe_events([a, b, c])
+    assert len(deduped) == 2
+    assert {e["url"] for e in deduped} == {"urlA", "urlC"}
+
+
+def test_clean_address_text_collapses_exact_duplicate_segments():
+    garbled = (
+        "1321 E Thousand Oaks Blvd. #108 , Thousand Oaks, CA, United States, "
+        "California 91362, 1321 E Thousand Oaks Blvd, Thousand Oaks, CA "
+        "91362-2821, United States, Thousand Oaks, CA"
+    )
+    cleaned = future_events._clean_address_text(garbled)
+    # "Thousand Oaks, CA" and "United States" each appeared 3x/2x - collapsed to one each.
+    assert cleaned.count("Thousand Oaks, CA") == 1
+    assert cleaned.count("United States") == 1
+    assert "1321 E Thousand Oaks Blvd. #108" in cleaned
+
+
+def test_location_from_jsonld_cleans_a_duplicated_address_string():
+    garbled = "123 Main St, Springfield, IL, 123 Main St, Springfield, IL"
+    assert future_events._location_from_jsonld(garbled) == "123 Main St, Springfield, IL"
+
+
+def test_is_bare_domain_root_true_for_homepage_false_for_a_real_path():
+    assert future_events._is_bare_domain_root("https://www.eventbrite.com/") is True
+    assert future_events._is_bare_domain_root("https://camberplaces.substack.com") is True
+    assert future_events._is_bare_domain_root("https://www.eventbrite.com/e/some-event-tickets-123") is False
+
+
+def test_looks_like_listing_catches_platform_browse_page_titles():
+    """Real browse-page titles observed directly, none of which matched
+    the original "Discover ... Events" pattern: a platform's own SEO
+    title for its city landing page, and a domain-agnostic aggregator's
+    "all events" page."""
+    assert future_events._looks_like_listing("Thousand Oaks Events, Tickets & Things to Do | Eventbrite")
+    assert future_events._looks_like_listing("All Upcoming events in Thousand Oaks")
+    assert not future_events._looks_like_listing("Country 2 Step Lesson")
+
+
+def test_platform_events_skips_the_platforms_own_homepage():
+    """A `site:` search's top "result" can be the domain's own homepage
+    rather than any specific event - this is never a real event, for any
+    platform, including ones with no _EVENT_URL_PATTERNS entry (which
+    would otherwise default to allowing any URL on the domain)."""
+    results = [{"title": "LA Happenings - Camber", "href": "https://camberplaces.substack.com", "body": "..."}]
+    patcher, _ = _mock_ddgs(results)
+    with patcher:
+        events = future_events.platform_events("camber", region="Los Angeles, CA")
+    assert events == []
+
+
+def test_other_web_events_skips_a_bare_domain_root():
+    results = [{"title": "Some Ticketing Site", "href": "https://www.someticketsite.com/", "body": "..."}]
+    patcher, _ = _mock_ddgs(results)
+    with patcher:
+        events = future_events.other_web_events(region="Los Angeles, CA")
+    assert events == []

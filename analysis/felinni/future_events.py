@@ -50,8 +50,18 @@ plain-text date parsed out of the search result's own title/snippet - not
 as reliable as structured data, but often present even when the page itself
 couldn't be read. A result that never yields any listing/browse page for a
 whole region rather than one specific happening ("Discover LA Events &
-Activities") is filtered out before ever being fetched - see
-`_looks_like_listing`/`_is_event_url`.
+Activities", "Thousand Oaks Events, Tickets & Things to Do | Eventbrite")
+is filtered out before ever being fetched - see
+`_looks_like_listing`/`_is_event_url`/`_is_bare_domain_root` (the last one
+catches a `site:` search's top "result" sometimes being the platform's own
+homepage, which has no per-platform URL pattern to catch it for Camber/
+Partiful/Posh - those default to allowing any URL on the domain).
+
+The same real event is often independently listed on more than one
+aggregator site (allevents.in, stayhappening.com, ... - observed
+directly: identical title/address, found separately by `other_web_events`
+on each domain) - `dedupe_events` collapses these before ranking, so the
+Future tab doesn't show the same event twice under two different sources.
 
 `ollama_event_ideas` is a small, fully optional bonus: if a local Ollama
 server (https://ollama.com) happens to be running, it's asked for a few
@@ -151,11 +161,20 @@ _EVENT_URL_PATTERNS = {
     "luma": re.compile(r"lu\.ma/(?!discover|explore|calendar|embed|signin|login|home|about|u/)[a-z0-9_-]+/?(?:$|\?)", re.I),
 }
 
-# Titles DuckDuckGo returns for a platform's own "browse everything in this
+# Titles a search turns up for a platform's own "browse everything in this
 # city" page rather than one specific event - these show up because the
-# site: filter matches the whole domain, not just event pages.
+# site: filter matches the whole domain, not just event pages. Broadened
+# beyond the original "Discover ... Events" phrasing after real listing
+# pages turned up titled things like "Thousand Oaks Events, Tickets &
+# Things to Do | Eventbrite" and "All Upcoming events in Thousand Oaks" -
+# neither started with discover/explore/browse, so the original pattern
+# let them straight through as if they were one specific event.
 _LISTING_TITLE_RE = re.compile(
-    r"^(discover|explore|browse)\b.*\bevents\b|things to do in|events (calendar|near me)\b", re.I
+    r"^(discover|explore|browse)\b.*\bevents\b"
+    r"|things to do in|events (calendar|near me)\b"
+    r"|\bevents?,?\s+(tickets|things to do)\b"
+    r"|\bupcoming events\b|\bevents? in\b|\bwhat'?s on\b|\bevents calendar\b",
+    re.I,
 )
 
 
@@ -166,6 +185,18 @@ def _strip_tags(fragment: str) -> str:
 def _is_event_url(platform: str, url: str) -> bool:
     pattern = _EVENT_URL_PATTERNS.get(platform)
     return bool(pattern.search(url)) if pattern else True
+
+
+def _is_bare_domain_root(url: str) -> bool:
+    """True for a domain's own homepage ("https://www.eventbrite.com/",
+    "https://camberplaces.substack.com") - never one specific event,
+    whatever the platform. Needed on top of `_is_event_url`'s per-platform
+    patterns because a platform with no pattern registered (Camber,
+    Partiful, Posh) defaults to allowing any URL on its domain, which let
+    the bare homepage itself through as if it were an event whenever a
+    `site:` search's top "result" was just the site itself."""
+    path = urllib.parse.urlparse(url).path
+    return path in ("", "/")
 
 
 def _looks_like_listing(title: str) -> bool:
@@ -228,12 +259,37 @@ def _iter_jsonld_events(page_html: str):
                     yield node
 
 
+def _clean_address_text(text: str) -> str:
+    """Collapses exact-duplicate comma-separated segments in a freeform
+    address string. Some event aggregators (allevents.in and others,
+    observed directly) embed the same address two or three times over in
+    one schema.org field, each copy formatted slightly differently -
+    "1321 E Thousand Oaks Blvd. #108, Thousand Oaks, CA, United States,
+    California 91362, 1321 E Thousand Oaks Blvd, Thousand Oaks, CA
+    91362-2821, United States, Thousand Oaks, CA" - rather than one clean
+    address. Keeps the first occurrence of each distinct segment
+    (case-insensitively), in order; doesn't catch near-duplicates that
+    differ by more than casing/whitespace (e.g. "Blvd." vs "Blvd"), but
+    removing the exact repeats alone makes a real difference."""
+    seen = set()
+    parts = []
+    for part in text.split(","):
+        stripped = part.strip()
+        key = stripped.casefold()
+        if not stripped or key in seen:
+            continue
+        seen.add(key)
+        parts.append(stripped)
+    return ", ".join(parts)
+
+
 def _location_from_jsonld(location) -> str | None:
     """schema.org `location` is a Place (dict with `name`/`address`, where
     `address` can itself be a string or a PostalAddress dict) or, rarely,
     a plain string - normalize any of those down to one display string."""
     if isinstance(location, str):
-        return location.strip() or None
+        cleaned = _clean_address_text(location.strip())
+        return cleaned or None
     if not isinstance(location, dict):
         return None
     name = location.get("name")
@@ -242,6 +298,8 @@ def _location_from_jsonld(location) -> str | None:
         parts = [address.get(k) for k in ("streetAddress", "addressLocality", "addressRegion")]
         address = ", ".join(p for p in parts if p)
     address = address if isinstance(address, str) else None
+    if address:
+        address = _clean_address_text(address)
     if name and address and name.strip() != address.strip():
         return f"{name.strip()}, {address.strip()}"
     return (name or address or "").strip() or None
@@ -410,7 +468,11 @@ def platform_events(
     for result in parsed:
         if domain not in result["url"]:
             continue  # the search sometimes surfaces an unrelated result despite the site: filter
-        if not _is_event_url(platform, result["url"]) or _looks_like_listing(result["title"]):
+        if (
+            _is_bare_domain_root(result["url"])
+            or not _is_event_url(platform, result["url"])
+            or _looks_like_listing(result["title"])
+        ):
             skipped += 1
             continue
         stub = _event_stub(result["title"], result["url"], platform, region, result["snippet"])
@@ -455,7 +517,7 @@ def other_web_events(
         domain = urllib.parse.urlparse(result["url"]).netloc.removeprefix("www.")
         if not domain or any(known in domain for known in known_domains):
             continue  # already covered by platform_events - avoid duplicates
-        if _looks_like_listing(result["title"]):
+        if _is_bare_domain_root(result["url"]) or _looks_like_listing(result["title"]):
             continue
         stub = _event_stub(result["title"], result["url"], domain, region, result["snippet"])
         enriched = enrich_with_event_page(stub)
@@ -554,6 +616,32 @@ def event_conflicts(event: dict, other_events: list[dict]) -> list[dict]:
         if _overlaps(start, end, o_start, o_end):
             conflicts.append({"title": other["title"], "start": other["start"], "end": other["end"], "source": other.get("source")})
     return conflicts
+
+
+def dedupe_events(events: list[dict]) -> list[dict]:
+    """Drops duplicate events surfaced from more than one source - the
+    same real-world event is often independently listed on several
+    aggregator sites (allevents.in, stayhappening.com, ... - observed
+    directly, same event/time/address, different domain) that each get
+    discovered separately by `other_web_events`. Deduplicates by (title,
+    start-to-the-hour) once the title is casefolded/whitespace-normalized
+    - truncated to the hour since two listings of the same event rarely
+    agree on end time or minute/second-level start precision. Falls back
+    to (title, location) when start is unknown, so two dateless listings
+    of the same event still collapse without wrongly merging two
+    different unknown-date events that just share a generic title. Keeps
+    whichever entry appears first in `events`."""
+    seen = set()
+    deduped = []
+    for event in events:
+        title_key = re.sub(r"\s+", " ", (event.get("title") or "").strip()).casefold()
+        start = event.get("start")
+        key = (title_key, str(start)[:13]) if start else (title_key, (event.get("location") or "").strip().casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(event)
+    return deduped
 
 
 def within_search_window(events: list[dict], days_ahead: int = DEFAULT_SEARCH_WINDOW_DAYS) -> list[dict]:
