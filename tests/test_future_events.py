@@ -889,3 +889,54 @@ def test_suggestions_for_does_not_use_an_unconfirmed_location_for_people(df):
     ranked = future_events.suggestions_for(df, annotated)
     assert "recently gone to" not in ranked[0]["people_reason"]
     assert "usually go to" not in ranked[0]["people_reason"]
+
+
+def test_location_keywords_extracts_street_name_ignoring_boilerplate():
+    assert future_events._location_keywords("575 S Fairfax Ave, Los Angeles, CA 90036") == {"fairfax"}
+    assert future_events._location_keywords("419 N Fairfax Ave, Los Angeles, CA 90036") == {"fairfax"}
+    assert future_events._location_keywords("7312 Beverly Blvd, Los Angeles, CA") == {"beverly"}
+
+
+def test_matched_frequent_location_matches_same_street_different_venue():
+    """A brand-new venue you've never been to ("Molly Malone's, 575 S
+    Fairfax Ave...") should still credit you with a nearby place you
+    actually go ("El Coyote, 419 N Fairfax Ave...") - same street, not
+    the same exact address."""
+    events = [
+        _event(1, "Dinner", "2026-09-01T19:00:00Z", "2026-09-01T21:00:00Z", location="El Coyote, 419 N Fairfax Ave, Los Angeles, CA 90036"),
+    ]
+    df = ingest.load_events_from_records(events)
+    matched = future_events._matched_frequent_location(df, "Molly Malone's, 575 S Fairfax Ave, Los Angeles, CA 90036")
+    assert matched == "El Coyote, 419 N Fairfax Ave, Los Angeles, CA 90036"
+
+
+def test_matched_frequent_location_does_not_match_an_unrelated_street():
+    events = [
+        _event(1, "Dinner", "2026-09-01T19:00:00Z", "2026-09-01T21:00:00Z", location="Some Place, 7312 Beverly Blvd, Los Angeles, CA"),
+    ]
+    df = ingest.load_events_from_records(events)
+    assert future_events._matched_frequent_location(df, "575 S Fairfax Ave, Los Angeles, CA 90036") is None
+
+
+def test_suggested_people_recommends_neighborhood_company_for_a_new_venue():
+    events = [
+        _event(1, "Dinner", "2026-09-01T19:00:00Z", "2026-09-01T21:00:00Z", people=["FairfaxFriend"], location="El Coyote, 419 N Fairfax Ave, Los Angeles, CA 90036"),
+        _event(2, "Dinner", "2026-09-08T19:00:00Z", "2026-09-08T21:00:00Z", people=["FairfaxFriend"], location="El Coyote, 419 N Fairfax Ave, Los Angeles, CA 90036"),
+    ]
+    df = ingest.load_events_from_records(events)
+    people, reason = future_events.suggested_people(df, category=None, location="Molly Malone's, 575 S Fairfax Ave, Los Angeles, CA 90036")
+    assert "FairfaxFriend" in people
+    assert "El Coyote" in reason
+
+
+def test_ddg_text_search_prints_on_failure_not_just_success(capsys):
+    """A raised exception previously skipped past the success print
+    entirely, leaving no visible trace in the terminal of why a
+    particular search failed."""
+    patcher, _ = _mock_ddgs(side_effect=RuntimeError("all backends rate-limited"))
+    with patcher:
+        with pytest.raises(RuntimeError):
+            future_events._ddg_text_search("some query", max_results=5)
+    out = capsys.readouterr().out
+    assert "search failed" in out
+    assert "all backends rate-limited" in out

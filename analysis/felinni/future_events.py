@@ -92,7 +92,22 @@ breakdown for every call (wrong domain, bare homepage, wrong URL shape,
 listing title, or - for `other_web_events` - no confirmed date) - a bare
 "N results found, 0 kept" doesn't say whether that's a real bug in the
 filtering or the search genuinely surfacing nothing but browse pages for
-that particular query.
+that particular query. `_ddg_text_search` also prints on a raised
+exception, not just on success - a search that failed for one platform's
+query used to leave no visible trace of why in the terminal at all (it
+would print the query, then nothing, since the exception skipped past
+the success print entirely). The Flask route (`webapp.server.future_view`)
+separately prints the raw/deduped/windowed/final counts of its own
+merge+rank pipeline - a healthy per-source count can still collapse to
+almost nothing downstream (deduped away, or windowed out), and that print
+is what actually shows which stage it happened at.
+
+`_matched_frequent_location` doesn't require an exact venue match - a
+brand-new place you've never been to still counts as "somewhere you go"
+if it shares a meaningful street-name word with somewhere in your history
+(`_location_keywords` - "Fairfax" for two different addresses both on
+Fairfax Ave), not just when the address strings literally contain one
+another.
 
 `suggested_people`/`_matched_frequent_location` try your last
 `_RECENT_HISTORY_DAYS` days of history before falling back to all-time -
@@ -299,7 +314,17 @@ def _ddg_text_search(query: str, max_results: int, timeout: float = _DDG_SEARCH_
     from ddgs import DDGS
 
     print(f"[future_events] search: {query!r}", flush=True)
-    results = DDGS(timeout=timeout).text(query, max_results=max_results)
+    try:
+        results = DDGS(timeout=timeout).text(query, max_results=max_results)
+    except Exception as e:
+        # The docstring's "prints either way" was previously false on
+        # this path - a raised exception skipped straight past the
+        # success print below, so a search that failed for one platform
+        # (observed directly: luma/camber both failed silently mid-run,
+        # with only their initial "search: ..." line ever appearing) left
+        # no visible trace of why in the terminal at all.
+        print(f"[future_events] search failed: {e}", flush=True)
+        raise
     print(f"[future_events] search returned {len(results)} result(s)", flush=True)
     return [
         {"title": r.get("title") or "", "url": r.get("href") or "", "snippet": r.get("body") or ""}
@@ -867,16 +892,56 @@ def _recent(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["start"] >= cutoff]
 
 
+# Generic address boilerplate - street suffixes, directionals, city/
+# state/country - excluded when pulling the "meaningful" words out of an
+# address's street-name segment, so two different specific addresses on
+# the same street ("575 S Fairfax Ave" and a place you actually go that's
+# also on Fairfax) can still match on "fairfax" without every address
+# sharing "los"/"angeles"/"ca"/"ave" matching each other regardless of
+# street.
+_ADDRESS_STOPWORDS = {
+    "st", "street", "ave", "avenue", "blvd", "boulevard", "dr", "drive", "rd", "road",
+    "ln", "lane", "way", "ct", "court", "pl", "place", "plaza", "cir", "circle",
+    "pkwy", "parkway", "ter", "terrace", "hwy", "highway", "sq", "square",
+    "n", "s", "e", "w", "ne", "nw", "se", "sw",
+    "los", "angeles", "ca", "california", "united", "states", "usa", "us",
+}
+
+
+def _location_keywords(location: str) -> set[str]:
+    """Significant words from an address's street-name segment (whichever
+    comma-separated segment starts with a house number - "Molly Malone's,
+    575 S Fairfax Ave, Los Angeles, CA 90036" puts the venue name first,
+    not the street - falling back to the first segment when none starts
+    with a number, e.g. a bare "Griffith Park"), with the house number and
+    generic street-suffix/directional/city/state/country boilerplate
+    stripped. Used as a neighborhood/street-level signal when two
+    addresses don't literally contain one another (see
+    `_matched_frequent_location`)."""
+    if not location:
+        return set()
+    segments = [s.strip() for s in location.split(",")]
+    street_part = next((s for s in segments if re.match(r"^\d", s)), segments[0])
+    words = re.findall(r"[A-Za-z]+", street_part)
+    return {w.casefold() for w in words if w.casefold() not in _ADDRESS_STOPWORDS and len(w) > 2}
+
+
 def _matched_frequent_location(df: pd.DataFrame, location: str | None, top_n: int = 15) -> str | None:
-    """One of your own most-visited location strings that overlaps
-    `location` (either contains the other, case-insensitively) - the same
-    place, not just the same city/region. Tries your recently-visited
-    places first, falling back to all-time if nothing recent matches -
-    a place you went to constantly two years ago but haven't been back to
-    since shouldn't outrank one you're actually still going to."""
+    """One of your own most-visited location strings that's the same
+    place as `location` (one contains the other, case-insensitively), or
+    failing that, on the same street/in the same immediate area (shares a
+    meaningful word from the street-name segment - "Fairfax" for two
+    different addresses both on Fairfax Ave, say) - a new venue you've
+    never been to still gets credit for being somewhere you actually
+    spend time around, not just an exact-venue repeat. Tries your
+    recently-visited places first, falling back to all-time if nothing
+    recent matches - a place you went to constantly two years ago but
+    haven't been back to since shouldn't outrank one you're actually
+    still going to."""
     if not location or df.empty:
         return None
     location_cf = location.casefold()
+    location_keywords = _location_keywords(location)
     for pool in (_recent(df), df):
         if pool.empty:
             continue
@@ -884,6 +949,10 @@ def _matched_frequent_location(df: pd.DataFrame, location: str | None, top_n: in
         for place in frequented:
             if place.casefold() in location_cf or location_cf in place.casefold():
                 return place
+        if location_keywords:
+            for place in frequented:
+                if location_keywords & _location_keywords(place):
+                    return place
     return None
 
 

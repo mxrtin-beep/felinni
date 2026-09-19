@@ -586,6 +586,17 @@ def future_view():
     windowed = future_events.within_search_window(deduped, days_ahead=days)
     annotated = future_events.annotate_conflicts(windowed, df)
     events = future_events.suggestions_for(df, annotated)
+    # Each per-source count (in source_status/the terminal log) can look
+    # fine while the merged pipeline still ends up nearly empty - printed
+    # unconditionally so a report that says "only one source's results
+    # showed up" can be traced to the actual stage (raw merge, dedupe,
+    # the search-window cutoff, or - it never should - ranking) instead
+    # of guessed at again.
+    print(
+        f"[server] future pipeline: {len(raw_events)} raw -> {len(deduped)} after dedupe "
+        f"-> {len(windowed)} within the {days}-day window -> {len(events)} final",
+        flush=True,
+    )
 
     message = None
     if not events:

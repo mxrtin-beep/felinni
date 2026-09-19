@@ -150,6 +150,26 @@ def test_future_message_includes_per_source_status_when_empty(client, monkeypatc
     assert "eventbrite: search failed" in body["message"]
 
 
+def test_future_prints_the_pipeline_stage_counts(client, monkeypatch, capsys):
+    """A per-source count can look fine (results found and kept) while
+    the merged pipeline still collapses to almost nothing - this print is
+    what actually shows which stage (raw merge, dedupe, the search-window
+    cutoff) something disappeared at, rather than guessing."""
+    fake_event = {
+        "title": "X", "url": "urlX", "start": None, "end": None,
+        "duration_hours": None, "location": "LA", "source": "eventbrite", "snippet": "",
+    }
+    monkeypatch.setattr(server.future_events, "platform_events", lambda platform, region=None, days_ahead=None, debug=None: [dict(fake_event)] if platform == "eventbrite" else [])
+    monkeypatch.setattr(server.future_events, "other_web_events", lambda region=None, days_ahead=None, debug=None: [])
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    client.get("/api/future")
+    out = capsys.readouterr().out
+    assert "future pipeline" in out
+    assert "raw" in out and "dedupe" in out and "window" in out and "final" in out
+
+
 def test_future_days_param_is_passed_through_and_ignores_global_date_filter(client, monkeypatch):
     seen_days = []
 
