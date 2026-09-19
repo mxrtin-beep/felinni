@@ -155,13 +155,8 @@
 
   <section class="panel" id="panel-people">
     <div class="card">
-      <h2>Time spent with each person</h2>
-      <div id="people-chart"></div>
-    </div>
-    <div class="card">
-      <h2>Time since you last saw them</h2>
-      <p class="card-note">Ring fills and shifts from green to red the longer it's been.</p>
-      <div id="people-last-seen-list" class="last-seen-list"></div>
+      <h2>People</h2>
+      <div id="people-summary-table"></div>
     </div>
     <div class="card">
       <div class="controls">
@@ -195,13 +190,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>Growing vs. fading</h2>
-      <p class="card-note">Linear trend in events/year. Negative = seeing them less over time.</p>
-      <div id="trends-table"></div>
-    </div>
-    <div class="card">
       <h2>Friend network</h2>
-      <p class="card-note">Each node is a person; a link means they showed up in a real, timed event together with you (thicker = more shared events). Drag a node to reposition it.</p>
       <div id="friend-network-graph"></div>
     </div>
   </section>
@@ -312,6 +301,10 @@
           <option value="90">90 days</option>
         </select></label>
         <button type="button" id="future-region-btn">Search</button>
+      </div>
+      <div class="progress-bar" id="future-progress" style="display:none">
+        <div class="progress-bar-track"><div class="progress-bar-fill" id="future-progress-fill"></div></div>
+        <span class="progress-bar-label" id="future-progress-label"></span>
       </div>
       <p class="card-note" id="future-note"></p>
     </div>

@@ -115,17 +115,17 @@ function lastSeenColor(days) {
   return cssVarSafe("--status-critical") || "#d03b3b";
 }
 
-function lastSeenRingSvg(days) {
+function lastSeenRingSvg(days, size = 40) {
   const fraction = Math.min(days / LAST_SEEN_RING_CAP_DAYS, 1);
   const color = lastSeenColor(days);
-  const r = 16, c = 2 * Math.PI * r;
+  const r = size * 0.4, c = 2 * Math.PI * r, mid = size / 2, sw = Math.max(size * 0.1, 3);
   const offset = (c * (1 - fraction)).toFixed(2);
   return `
-    <svg width="40" height="40" viewBox="0 0 40 40" class="last-seen-ring" aria-hidden="true">
-      <circle cx="20" cy="20" r="${r}" fill="none" stroke="var(--grid)" stroke-width="4"></circle>
-      <circle cx="20" cy="20" r="${r}" fill="none" stroke="${color}" stroke-width="4"
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="last-seen-ring" aria-hidden="true">
+      <circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="var(--grid)" stroke-width="${sw}"></circle>
+      <circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="${color}" stroke-width="${sw}"
         stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset}"
-        stroke-linecap="round" transform="rotate(-90 20 20)"></circle>
+        stroke-linecap="round" transform="rotate(-90 ${mid} ${mid})"></circle>
     </svg>`;
 }
 
@@ -135,23 +135,66 @@ function lastSeenLabel(days) {
   return `${days} days ago`;
 }
 
-function renderLastSeenTracker(people) {
-  const container = document.getElementById("people-last-seen-list");
+// --- Consolidated People table: time spent, time since last seen, and
+// growing/fading trend as three small inline visualizations per row,
+// rather than three separate charts/tables repeating the same person
+// list three times. ---
+function miniBarCellHtml(hours, maxHours) {
+  if (hours == null) return "-";
+  const pct = maxHours > 0 ? Math.max(hours / maxHours, 0) * 100 : 0;
+  return `
+    <div class="mini-viz-cell">
+      <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <span class="mini-viz-label">${fmtHours(hours)}</span>
+    </div>`;
+}
+
+function miniLastSeenCellHtml(days) {
+  if (days == null) return "-";
+  return `
+    <div class="mini-viz-cell">
+      ${lastSeenRingSvg(days, 22)}
+      <span class="mini-viz-label">${lastSeenLabel(days)}</span>
+    </div>`;
+}
+
+// Diverges from a center line: right/green for growing, left/red for
+// fading, capped at TREND_CAP events/year since beyond that the bar's
+// already made its point.
+const TREND_CAP_EVENTS_PER_YEAR = 5;
+function miniTrendCellHtml(slope) {
+  if (slope == null || Number.isNaN(slope)) return "-";
+  const pct = Math.min(Math.abs(slope) / TREND_CAP_EVENTS_PER_YEAR, 1) * 50;
+  const flat = Math.abs(slope) < 0.05;
+  const color = flat ? cssVarSafe("--text-muted") : slope > 0 ? cssVarSafe("--status-good") : cssVarSafe("--status-critical");
+  const side = slope >= 0 ? "right" : "left";
+  return `
+    <div class="mini-viz-cell">
+      <div class="mini-trend-track">
+        <div class="mini-trend-center"></div>
+        <div class="mini-trend-fill mini-trend-${side}" style="width:${pct.toFixed(1)}%;background:${color}"></div>
+      </div>
+      <span class="mini-viz-label">${slope > 0 ? "+" : ""}${slope.toFixed(2)}/yr</span>
+    </div>`;
+}
+
+function renderPeopleSummaryTable(people, trends) {
+  const container = document.getElementById("people-summary-table");
   if (!container) return;
-  const withDays = people
-    .map(p => ({ ...p, daysSince: daysSince(p.last_seen) }))
-    .filter(p => p.daysSince !== null)
-    .sort((a, b) => b.daysSince - a.daysSince); // longest overdue first
-  container.innerHTML = withDays.length
-    ? withDays.slice(0, 20).map(p => `
-        <div class="last-seen-card">
-          ${lastSeenRingSvg(p.daysSince)}
-          <div class="last-seen-info">
-            <div class="last-seen-name">${escapeHtml(p.person)}</div>
-            <div class="last-seen-days">${lastSeenLabel(p.daysSince)}</div>
-          </div>
-        </div>`).join("")
-    : '<p class="empty-note">No data yet.</p>';
+  const trendByPerson = new Map(trends.map(t => [t.person, t]));
+  const maxHours = Math.max(...people.map(p => p.total_hours || 0), 1);
+  const rows = people.map(p => ({
+    person: p.person,
+    total_hours: p.total_hours,
+    days_since: daysSince(p.last_seen),
+    trend: trendByPerson.get(p.person)?.slope_events_per_year ?? null,
+  }));
+  table(container, [
+    { key: "person", label: "Person" },
+    { key: "total_hours", label: "Time spent", num: true, format: v => miniBarCellHtml(v, maxHours) },
+    { key: "days_since", label: "Time since", num: true, format: v => miniLastSeenCellHtml(v) },
+    { key: "trend", label: "Growing / fading", num: true, format: v => miniTrendCellHtml(v) },
+  ], rows);
 }
 
 // --- Tabs ---
@@ -534,28 +577,17 @@ async function loadPeople() {
   const results = await Promise.allSettled([
     (async () => {
       // Everyone, not just a top slice - the dropdown should let you pick
-      // any person, and the bar chart above still only shows the top 15.
-      const people = await api("people?limit=1000");
+      // any person, and the summary table below can hold everyone anyway.
+      const [people, trends] = await Promise.all([api("people?limit=1000"), api("trends")]);
       const sorted = [...people].sort((a, b) => b.total_hours - a.total_hours);
-      horizontalBarChart(document.getElementById("people-chart"),
-        sorted.slice(0, 15).map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
       populatePeoplePickerList(sorted);
-      renderLastSeenTracker(sorted);
+      renderPeopleSummaryTable(sorted, trends);
       // The slider spans your full calendar history (not just what's
       // currently in view), so it always has room to zoom into any part
       // of it - fetched fresh in case a calendar source added new history.
       const meta = await api("meta");
       initPeopleTrendRangeSlider(meta.min_date, meta.max_date);
       await refreshPeopleTrend();
-    })(),
-    (async () => {
-      const trends = await api("trends");
-      table(document.getElementById("trends-table"),
-        [
-          { key: "person", label: "Person" },
-          { key: "total_events", label: "Total events", num: true },
-          { key: "slope_events_per_year", label: "Trend (events/yr)", num: true, format: v => v?.toFixed(2) },
-        ], trends);
     })(),
     (async () => {
       const network = await api("social/network");
@@ -917,15 +949,57 @@ async function loadFuture(region, days) {
   if (region) params.set("region", region);
   if (days) params.set("days", days);
   const qs = params.toString();
-  const data = await api(`future${qs ? `?${qs}` : ""}`, { skipGlobalFilters: true });
-  document.getElementById("future-note").textContent = data.message || "";
 
+  const progressEl = document.getElementById("future-progress");
+  const progressFillEl = document.getElementById("future-progress-fill");
+  const progressLabelEl = document.getElementById("future-progress-label");
+  const noteEl = document.getElementById("future-note");
+
+  noteEl.textContent = "";
+  if (progressEl) progressEl.style.display = "flex";
+  if (progressFillEl) progressFillEl.style.width = "0%";
+  if (progressLabelEl) progressLabelEl.textContent = "Starting search…";
+
+  // A 409 here just means a search is already running (e.g. a fast
+  // double-click of the Search button) - that's fine, the polling loop
+  // below picks up whichever job is actually in flight either way.
+  await fetch(`/api/future/start${qs ? `?${qs}` : ""}`, { method: "POST" });
+
+  // Polls rather than awaiting one long response: the search hits ~7
+  // sources one at a time with a politeness pause between each (easily
+  // 10-20+ real seconds), and this is what turns that wait into "here's
+  // which source it's on and how far along it is" instead of a page that
+  // looks stuck.
+  let status;
+  while (true) {
+    status = await fetch("/api/future/status").then(r => r.json());
+    const pct = status.total ? Math.round((status.done / status.total) * 100) : 0;
+    if (progressFillEl) progressFillEl.style.width = `${pct}%`;
+    if (progressLabelEl) {
+      progressLabelEl.textContent = status.running
+        ? `Searching ${status.current_source || "..."}… (${status.done}/${status.total})`
+        : "Finishing up…";
+    }
+    if (!status.running) break;
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  if (progressEl) progressEl.style.display = "none";
+
+  const events = document.getElementById("future-events");
+  if (status.error) {
+    noteEl.textContent = `Search failed: ${status.error}`;
+    events.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
+    return;
+  }
+  const data = status.result;
+  if (!data) return; // shouldn't happen (no error, not running, no result), but don't render garbage if it does
+
+  noteEl.textContent = data.message || "";
   const regionInput = document.getElementById("future-region-input");
   if (regionInput && !regionInput.value) regionInput.value = data.region || "";
   const daysSelect = document.getElementById("future-days-select");
   if (daysSelect && data.days) daysSelect.value = String(data.days);
 
-  const events = document.getElementById("future-events");
   events.innerHTML = data.events.length
     ? data.events.map(_futureEventCard).join("")
     : '<p class="empty-note">Nothing here yet.</p>';

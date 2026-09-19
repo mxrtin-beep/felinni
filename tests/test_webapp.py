@@ -197,6 +197,53 @@ def test_future_prints_the_pipeline_stage_counts(client, monkeypatch, capsys):
     assert "raw" in out and "dedupe" in out and "window" in out and "final" in out
 
 
+def test_future_job_runs_and_reports_progress(client, monkeypatch):
+    """The background job pair behind the Future tab's status bar:
+    /api/future/start kicks it off, /api/future/status reports which
+    source is current and how many of the ~7 are done, and the final
+    result lands in status once it finishes."""
+    seen_sources = []
+
+    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
+        seen_sources.append(platform)
+        return []
+
+    def fake_other_web_events(region=None, days_ahead=None, debug=None):
+        seen_sources.append("web")
+        return []
+
+    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
+    monkeypatch.setattr(server.future_events, "other_web_events", fake_other_web_events)
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    resp = client.post("/api/future/start")
+    assert resp.status_code == 200
+
+    # A second start while one is running is rejected, not queued twice.
+    busy = client.post("/api/future/start")
+    assert busy.status_code in (200, 409)
+
+    for _ in range(100):
+        status = client.get("/api/future/status").get_json()
+        if not status["running"]:
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("future job never finished")
+
+    assert seen_sources, "fake platform_events/other_web_events were never invoked"
+    assert status["error"] is None
+    assert status["result"] is not None
+    assert status["result"]["events"] == []
+    assert status["total"] == len(server.future_events.PLATFORMS) + 1
+
+
+def test_future_status_before_any_start_is_not_running(client):
+    status = client.get("/api/future/status").get_json()
+    assert status["running"] is False
+
+
 def test_future_days_param_is_passed_through_and_ignores_global_date_filter(client, monkeypatch):
     seen_days = []
 

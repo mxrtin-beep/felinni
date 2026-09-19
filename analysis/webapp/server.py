@@ -553,52 +553,61 @@ def _default_future_search_region(df: pd.DataFrame, cache: dict) -> str | None:
     return None
 
 
-@app.get("/api/future")
-def future_view():
-    """Future tab: events found for Eventbrite/Luma/Meetup/Camber/Partiful/
-    Posh plus anywhere else a web search turns up, enriched with
-    start/end/duration/location from each event's own page (see
-    felinni.future_events - no platform API key/OAuth needed).
-
-    Uses the full, unfiltered dataset (not `_get_df()`) for ranking/
-    conflict-checking - your habits and existing calendar are what matter
-    here, regardless of whatever date range the Overview tab's global
-    filter happens to be set to; that filter has nothing to do with a
-    forward-looking event search.
-
-    `region` defaults to a "City, State" label for wherever you're
-    geocoded most often (see `_default_future_search_region` - a better
-    search term than the Travel tab's "City, Country" grouping label),
-    falling back to felinni.future_events.DEFAULT_REGION if nothing's been
-    geocoded yet; `?region=` overrides either for a one-off search
-    elsewhere. `?days=`
-    (default 7) bounds how far ahead to look - both nudging the search
-    itself toward near-term results and actually dropping anything whose
-    confirmed date falls outside that window (see
-    felinni.future_events.within_search_window). Duplicates of the same
-    real event found on more than one aggregator site are collapsed first
-    (felinni.future_events.dedupe_events). `events` is one ranked list -
-    every candidate scored by fit with your calendar history and flagged
-    with any scheduling conflicts (both against your own calendar and
-    against other candidate events) - rather than a separate "suggested"
-    list duplicating the same events in a different order. If a local
-    Ollama server is running, a few AI-brainstormed (clearly labeled, not
-    real listings) event ideas are folded in too."""
+def _default_future_search_args():
     df = DF
     cache = _load_geocode_cache()
     default_region = _default_future_search_region(df, cache) or regions.home_region(regions.visits_by_region(df, cache))
     region = request.args.get("region") or default_region or future_events.DEFAULT_REGION
     days = request.args.get("days", future_events.DEFAULT_SEARCH_WINDOW_DAYS, type=int)
+    return region, days
+
+
+def _search_future_events(region: str, days: int, on_progress=None) -> dict:
+    """Runs the actual multi-source search+enrich+rank pipeline - shared
+    by the synchronous `/api/future` (no progress reporting, used by
+    tests and any direct caller) and the background job behind
+    `/api/future/start`/`/api/future/status` (reports progress via
+    `on_progress(current_source, done, total)` so the frontend can show a
+    real status bar instead of one long unexplained wait - this search
+    hits ~7 sources sequentially with a politeness pause between each,
+    which easily takes 10-20+ real seconds).
+
+    Uses the full, unfiltered dataset (not `_get_df()`) for ranking/
+    conflict-checking - your habits and existing calendar are what matter
+    here, regardless of whatever date range the Overview tab's global
+    filter happens to be set to; that filter has nothing to do with a
+    forward-looking event search. `days` bounds how far ahead to look -
+    both nudging the search itself toward near-term results and actually
+    dropping anything whose confirmed date falls outside that window (see
+    felinni.future_events.within_search_window). Duplicates of the same
+    real event found on more than one aggregator site are collapsed first
+    (felinni.future_events.dedupe_events). The returned `events` is one
+    ranked list - every candidate scored by fit with your calendar
+    history and flagged with any scheduling conflicts (both against your
+    own calendar and against other candidate events) - rather than a
+    separate "suggested" list duplicating the same events in a different
+    order. If a local Ollama server is running, a few AI-brainstormed
+    (clearly labeled, not real listings) event ideas are folded in too."""
+    df = DF
+    sources = list(future_events.PLATFORMS) + ["web"]
+    total = len(sources)
+
+    def report(i, source):
+        if on_progress:
+            on_progress(source, i, total)
 
     source_status: dict[str, str] = {}
     raw_events = []
     for i, platform in enumerate(future_events.PLATFORMS):
+        report(i, platform)
         if i > 0:
             time.sleep(0.5)  # a small gap between platforms
         raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
+    report(len(future_events.PLATFORMS), "web")
     time.sleep(0.5)
     raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
+    report(total, None)
 
     deduped = future_events.dedupe_events(raw_events)
     windowed = future_events.within_search_window(deduped, days_ahead=days)
@@ -627,13 +636,74 @@ def future_view():
         detail = "; ".join(f"{source}: {status}" for source, status in source_status.items())
         message = f"No results for \"{region}\" right now." + (f" {detail}" if detail else "")
 
-    return jsonify({
+    return {
         "region": region,
         "days": days,
         "events": events,
         "message": message,
         "source_status": source_status,
-    })
+    }
+
+
+@app.get("/api/future")
+def future_view():
+    """Synchronous version of the Future tab search - see
+    `_search_future_events` for the actual pipeline. `region`/`days`
+    default via `_default_future_search_args`. Kept as a plain
+    request/response endpoint (no progress reporting) for tests and any
+    direct caller; the dashboard itself uses the background-job pair
+    below (`/api/future/start`/`/api/future/status`) so it can show a
+    status bar during the ~7-source search instead of one long wait."""
+    region, days = _default_future_search_args()
+    return jsonify(_search_future_events(region, days))
+
+
+_future_lock = threading.Lock()
+FUTURE_STATE = {"running": False, "current_source": None, "done": 0, "total": 0, "result": None, "error": None}
+
+
+def _run_future_job(region: str, days: int) -> None:
+    def on_progress(source, done, total):
+        with _future_lock:
+            FUTURE_STATE["current_source"] = source
+            FUTURE_STATE["done"] = done
+            FUTURE_STATE["total"] = total
+
+    try:
+        result = _search_future_events(region, days, on_progress=on_progress)
+        with _future_lock:
+            FUTURE_STATE["result"] = result
+    except Exception as e:
+        with _future_lock:
+            FUTURE_STATE["error"] = str(e)
+    finally:
+        with _future_lock:
+            FUTURE_STATE["running"] = False
+            FUTURE_STATE["current_source"] = None
+
+
+@app.post("/api/future/start")
+def future_start():
+    """Kicks off the same search `/api/future` runs, in a background
+    thread, so the frontend can poll `/api/future/status` for a status
+    bar (current source, how many of ~7 are done) instead of one long
+    unexplained wait. `?region=`/`?days=` same as `/api/future`."""
+    region, days = _default_future_search_args()
+    with _future_lock:
+        if FUTURE_STATE["running"]:
+            return jsonify({"error": "already running"}), 409
+        FUTURE_STATE.update({
+            "running": True, "current_source": None, "done": 0,
+            "total": len(future_events.PLATFORMS) + 1, "result": None, "error": None,
+        })
+    threading.Thread(target=_run_future_job, args=(region, days), daemon=True).start()
+    return jsonify({"started": True, "region": region, "days": days})
+
+
+@app.get("/api/future/status")
+def future_status():
+    with _future_lock:
+        return jsonify(dict(FUTURE_STATE))
 
 
 def _background_sync_loop(interval_seconds: float) -> None:

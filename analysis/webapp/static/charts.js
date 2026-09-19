@@ -507,8 +507,14 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
     .filter(e => e.a !== undefined && e.b !== undefined);
   let draggingIndex = null; // declared up front - referenced by node listeners wired below, before the drag handlers further down
 
+  // Margins account for the name label (below each node, roughly
+  // 6-7px/char) overflowing past the node's own radius, not just the
+  // circle itself - without this, a node near the wall renders fine but
+  // its label clips off the edge of the box.
+  const marginX = 55, marginTop = 20, marginBottom = 36;
+  const cx = w / 2, cy = h / 2;
   const k = Math.sqrt((w * h) / sim.length); // ideal inter-node spacing
-  const iterations = 200;
+  const iterations = 250;
   for (let iter = 0; iter < iterations; iter++) {
     const temp = k * (1 - iter / iterations); // cooling: big jumps early, tiny by the end
     sim.forEach(n => { n.vx = 0; n.vy = 0; });
@@ -531,13 +537,23 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
       a.vx -= fx; a.vy -= fy;
       b.vx += fx; b.vy += fy;
     });
+    // A gentle pull toward the center for every node, not just connected
+    // ones - otherwise unbounded pairwise repulsion (above) just pushes
+    // everyone as far apart as the box allows, which in a finite box
+    // means piled up against the walls/corners rather than spread across
+    // the actual middle of the canvas, and an isolated node with no
+    // edges has nothing else pulling it inward at all.
+    sim.forEach(n => {
+      n.vx += (cx - n.x) * 0.02;
+      n.vy += (cy - n.y) * 0.02;
+    });
     sim.forEach(n => {
       const disp = Math.sqrt(n.vx * n.vx + n.vy * n.vy) || 0.01;
       const capped = Math.min(disp, temp);
       n.x += (n.vx / disp) * capped;
       n.y += (n.vy / disp) * capped;
-      n.x = Math.max(n.r + 10, Math.min(w - n.r - 10, n.x));
-      n.y = Math.max(n.r + 10, Math.min(h - n.r - 10, n.y));
+      n.x = Math.max(marginX, Math.min(w - marginX, n.x));
+      n.y = Math.max(marginTop, Math.min(h - marginBottom, n.y));
     });
   }
 
@@ -600,8 +616,8 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
     if (draggingIndex === null) return;
     const rect = svg.getBoundingClientRect();
     const n = sim[draggingIndex];
-    n.x = Math.max(n.r, Math.min(w - n.r, evt.clientX - rect.left));
-    n.y = Math.max(n.r, Math.min(h - n.r, evt.clientY - rect.top));
+    n.x = Math.max(marginX, Math.min(w - marginX, evt.clientX - rect.left));
+    n.y = Math.max(marginTop, Math.min(h - marginBottom, evt.clientY - rect.top));
     updateNode(draggingIndex);
   });
   const endDrag = () => {

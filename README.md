@@ -54,15 +54,16 @@ tab's own filters stack on top.
 
 ![People tab](docs/images/people.png)
 
-- **People** — frequency, growing/fading relationships, an "events over
-  time" chart with a dropdown for who to plot and a draggable range slider
-  to zoom into a sub-range. All-day events are excluded everywhere hours
-  are counted, so a full-day placeholder doesn't inflate anyone's total.
-  A "time since you last saw them" tracker shows a days-ago count per
-  person with a ring that fills and shifts from green to red the longer
-  it's been. A friend network graph plots everyone as a node, linked to
-  whoever they've shared a real, timed event with (thicker link = more
-  shared events, draggable to rearrange).
+- **People** — one table per person consolidating time spent (a mini
+  bar), time since you last saw them (a ring that fills and shifts from
+  green to red the longer it's been), and growing/fading (a small
+  diverging bar, green/right for more often, red/left for less), plus an
+  "events over time" chart with a dropdown for who to plot and a
+  draggable range slider to zoom into a sub-range. All-day events are
+  excluded everywhere hours are counted, so a full-day placeholder
+  doesn't inflate anyone's total. A friend network graph plots everyone
+  as a node, linked to whoever they've shared a real, timed event with
+  (thicker link = more shared events, draggable to rearrange).
 - **Habits & repeating events** — streaks/gaps for any category you pick,
   plus auto-detected recurring series (Book Club, Standup, ...) flagged
   active/slowing down/stopped against their own historical cadence.
@@ -109,7 +110,10 @@ tab's own filters stack on top.
   anywhere else a web search turns up for your home region (or any region
   you type in) within the next 7 days by default (7/14/30/90 selectable) —
   narrower than "everything upcoming forever," which tends to surface
-  far-future festivals over what's actually happening soon.
+  far-future festivals over what's actually happening soon. Searches ~7
+  sources one at a time (with a brief pause between each, to stay
+  polite), so a status bar shows which source it's on and how far along
+  it is rather than one long unexplained wait.
   Enriched with start/end time, duration, and location straight from each
   event's own page — no API key/OAuth needed. (Camber's a Substack roundup
   rather than a per-event platform, so its results usually keep their date
