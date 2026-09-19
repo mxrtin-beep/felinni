@@ -811,3 +811,81 @@ def test_other_web_events_drops_a_plain_text_only_date_on_an_unknown_domain():
     with patcher, patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.other_web_events(region="Los Angeles, CA")
     assert events == []
+
+
+def test_fallback_datetime_does_not_treat_a_random_capitalized_word_as_a_month():
+    """"Camber | Mady Maio - Substack 9/15: A Dolly Parton..." - the
+    original broadened month/day pattern matched ANY capitalized word
+    followed by a number ("Substack 9") as if "Substack" were a month
+    name, producing a bogus date instead of reaching the real "9/15" a
+    few words later. Only real month names should match."""
+    title = "LA Happenings | Camber | Mady Maio - Substack"
+    snippet = "9/15 - 9/21: A Dolly Parton tribute concert, 9/14: Babe's pancake tour"
+    parsed = future_events._fallback_datetime_from_text(f"{title} {snippet}")
+    assert parsed is not None
+    assert parsed.month == 9 and parsed.day == 15
+
+
+def test_looks_like_listing_does_not_flag_a_real_event_titled_with_event_in():
+    """"events? in" alone is too broad - a real single event can
+    legitimately be titled "Speed Dating Event in Los Angeles"."""
+    assert not future_events._looks_like_listing("Speed Dating Event in Los Angeles")
+    assert future_events._looks_like_listing("All Upcoming events in Thousand Oaks")
+
+
+def test_looks_like_listing_does_not_flag_a_real_promotional_handle_tag():
+    """A bare "(@handle)" is too broad - a real event can legitimately
+    tag a promotional handle in its own title. Only flagged alongside an
+    explicit platform name (the actual social-profile-mirror shape)."""
+    assert not future_events._looks_like_listing("Live Show ft. DJ Snake (@djsnake)")
+    assert future_events._looks_like_listing("Luma (@luma_hq) • Instagram photos and videos")
+
+
+def test_camber_result_gets_the_first_date_out_of_a_multi_date_roundup():
+    results = [{
+        "title": "LA Happenings | Camber | Mady Maio - Substack",
+        "href": "https://camberplaces.substack.com/p/la-happenings",
+        "body": "9/15 - 9/21: A Dolly Parton tribute concert, 9/14: Babe's pancake tour",
+    }]
+    patcher, _ = _mock_ddgs(results)
+    with patcher, patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        events = future_events.platform_events("camber", region="Los Angeles, CA")
+    assert len(events) == 1
+    assert events[0]["start"] is not None
+    assert events[0]["start"].startswith("2026-09-15")
+
+
+def test_location_fit_ignores_an_unconfirmed_generic_region_location():
+    """An event whose location is just the fallback search region (no
+    real venue - date_confirmed/location_confirmed both False) shouldn't
+    substring-match a specific address in your history and claim
+    proximity that isn't real."""
+    event = {"location": "Los Angeles, CA", "location_confirmed": False}
+    df = pd.DataFrame({"location": ["747 S Mansfield Ave Los Angeles, CA, United States"]})
+    score, reasons = future_events._location_fit(df, event)
+    assert score == 0.0
+    assert reasons == []
+
+
+def test_location_fit_uses_a_confirmed_specific_venue(df):
+    event = {"location": "Griffith Park", "location_confirmed": True}
+    score, reasons = future_events._location_fit(df, event)
+    assert score == 1.0
+    assert "Griffith Park" in reasons[0]
+
+
+def test_suggestions_for_does_not_use_an_unconfirmed_location_for_people(df):
+    """Regression: a Camber-style event with no real venue (location is
+    just the generic region) previously still fed that generic location
+    into suggested_people, which could substring-match an unrelated
+    specific address from your history and wrongly claim "who you've
+    recently gone to <address> with"."""
+    event = {
+        "title": "Roundup", "url": "urlX", "source": "camber",
+        "start": None, "end": None, "location": "Los Angeles, CA",
+        "location_confirmed": False, "snippet": "",
+    }
+    annotated = future_events.annotate_conflicts([event], df)
+    ranked = future_events.suggestions_for(df, annotated)
+    assert "recently gone to" not in ranked[0]["people_reason"]
+    assert "usually go to" not in ranked[0]["people_reason"]

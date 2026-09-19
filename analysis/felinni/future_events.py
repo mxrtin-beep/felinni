@@ -72,7 +72,27 @@ as "date/time unknown" even with a perfectly readable date sitting right
 in the text. `other_web_events` only trusts this guess when it also comes
 with `date_confirmed` (a real schema.org date, not just a text guess) -
 an arbitrary, untrusted domain is far more likely to have some unrelated
-date-shaped text on the page than an event platform is.
+date-shaped text on the page than an event platform is. The month/day
+half of the pattern only recognizes real month names (matching any
+capitalized word followed by a number matched things like "Substack 9"
+in a page title ending "... - Substack" glued onto a snippet starting
+"9/15: ...", parsing "Substack" as if it were a month).
+
+Only a *confirmed* specific venue (`location_confirmed`, set only from
+real schema.org data) is matched against your own visit history for the
+"near <place>, a place you already go" fit bonus and the "consider
+inviting" reason - an event whose location is just the generic search
+region (Camber's roundups, or anything without real structured location
+data) would otherwise substring-match almost any of your own addresses
+that happen to mention the same city, producing a "near <your specific
+address>" claim with no real connection to where the event actually is.
+
+`platform_events`/`other_web_events` both print a per-reason skip
+breakdown for every call (wrong domain, bare homepage, wrong URL shape,
+listing title, or - for `other_web_events` - no confirmed date) - a bare
+"N results found, 0 kept" doesn't say whether that's a real bug in the
+filtering or the search genuinely surfacing nothing but browse pages for
+that particular query.
 
 `suggested_people`/`_matched_frequent_location` try your last
 `_RECENT_HISTORY_DAYS` days of history before falling back to all-time -
@@ -194,15 +214,22 @@ _LISTING_TITLE_RE = re.compile(
     r"^(discover|explore|browse)\b.*\bevents\b"
     r"|things to do in|events (calendar|near me)\b"
     r"|\bevents?,?\s+(tickets|things to do)\b"
-    r"|\bupcoming events\b|\bevents? in\b|\bwhat'?s on\b|\bevents calendar\b"
+    # "all/upcoming events in <place>" - a whole-region roundup title, not
+    # a bare "events in" (too broad: real single-event titles legitimately
+    # say things like "Speed Dating Event in Los Angeles", which isn't a
+    # listing page at all and was getting wrongly caught here).
+    r"|\b(?:all\s+)?upcoming events\b|\ball\s+events?\s+in\b|\bwhat'?s on\b|\bevents calendar\b"
     # A page whose own indexed title is generic social-profile boilerplate
     # ("Luma (@luma_hq) - Instagram photos and videos") rather than
     # anything about a specific event - confirmed directly: a lu.ma page
     # with a slug that isn't in the excluded home/about/... list can still
     # be an account or tag landing page rather than one event, and some
     # sites fall back to their Instagram handle's own title metadata when
-    # the page itself never set a real one.
-    r"|instagram photos and videos|\(@[\w.]+\)",
+    # the page itself never set a real one. Requires the actual platform
+    # name alongside the "(@handle)" bit, not just a bare "(@handle)" -
+    # that alone is too broad and matches a real event's own promotional
+    # handle tag ("Live Show ft. DJ Snake (@djsnake)").
+    r"|instagram photos and videos|\(@[\w.]+\)\s*[•·-]\s*(?:instagram|tiktok|twitter|x)\b",
     re.I,
 )
 
@@ -419,7 +446,16 @@ def _pick_occurrence(nodes: list[dict], now: pd.Timestamp) -> tuple[dict, pd.Tim
 # treated as a naive local time, same precision loss as reading it off a
 # page by eye.
 _FALLBACK_WEEKDAY_PREFIX = r"(?:Mon|Tue(?:s)?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)[a-z]*\.?,?\s+"
-_FALLBACK_MONTH_DAY = r"[A-Z][a-z]{2,8}\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?"
+# An explicit month-name alternation, not "any capitalized word" - the
+# latter (this pattern's first version) matched things like "Substack 9"
+# in "Camber | Mady Maio - Substack 9/15: A Dolly Parton..." as if
+# "Substack" were a month name, producing a bogus parsed date instead of
+# reaching the real "9/15" a few words later.
+_MONTH_NAMES = (
+    r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|"
+    r"Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+)
+_FALLBACK_MONTH_DAY = rf"(?:{_MONTH_NAMES})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s*\d{{4}})?"
 _FALLBACK_NUMERIC_DATE = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
 _FALLBACK_TIME = r"\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm]\.?"
 _FALLBACK_DATE_RE = re.compile(
@@ -494,6 +530,7 @@ def enrich_with_event_page(event: dict, timeout: float = 10.0) -> dict:
         location = _location_from_jsonld(node.get("location"))
         if location:
             enriched["location"] = location
+            enriched["location_confirmed"] = True
         if node.get("name"):
             enriched["title"] = _strip_tags(str(node["name"])) or enriched["title"]
     return enriched
@@ -503,7 +540,7 @@ def _event_stub(title: str, url: str, source: str, region: str, snippet: str) ->
     return {
         "title": title, "url": url, "start": None, "end": None,
         "duration_hours": None, "location": region, "source": source, "snippet": snippet,
-        "date_confirmed": False,
+        "date_confirmed": False, "location_confirmed": False,
     }
 
 
@@ -561,22 +598,32 @@ def platform_events(
         debug[platform] = "search returned 0 results"
 
     events = []
-    skipped = 0
+    reasons = {"wrong_domain": 0, "bare_root": 0, "wrong_url_shape": 0, "listing_title": 0}
     for result in parsed:
         if domain not in result["url"]:
+            reasons["wrong_domain"] += 1
             continue  # the search sometimes surfaces an unrelated result despite the site: filter
-        if (
-            _is_bare_domain_root(result["url"])
-            or not _is_event_url(platform, result["url"])
-            or _looks_like_listing(result["title"])
-        ):
-            skipped += 1
+        if _is_bare_domain_root(result["url"]):
+            reasons["bare_root"] += 1
+            continue
+        if not _is_event_url(platform, result["url"]):
+            reasons["wrong_url_shape"] += 1
+            continue
+        if _looks_like_listing(result["title"]):
+            reasons["listing_title"] += 1
             continue
         title = _strip_platform_suffix(result["title"], platform)
         stub = _event_stub(title, result["url"], platform, region, _clean_snippet(result["snippet"]))
         events.append(enrich_with_event_page(stub))
         if len(events) >= max_results:
             break
+    skipped = sum(reasons.values())
+    # Printed unconditionally (not gated on `debug`) - a per-reason
+    # breakdown is what actually answers "why did N results become 0
+    # events", since a bare skipped-count alone can't distinguish a real
+    # filtering bug from the search genuinely surfacing nothing but
+    # listing pages/homepages for this query.
+    print(f"[future_events] {platform}: {len(parsed)} result(s) -> {skipped} skipped {reasons}, {len(events)} kept", flush=True)
     if debug is not None and parsed:
         debug[platform] = f"{len(parsed)} result(s), {skipped} filtered as unrelated/listing pages, {len(events)} kept"
     return events
@@ -616,23 +663,26 @@ def other_web_events(
 
     known_domains = tuple(PLATFORM_DOMAINS.values())
     events = []
-    no_date = 0
+    reasons = {"known_platform_domain": 0, "bare_root_or_listing": 0, "no_confirmed_date": 0}
     for result in parsed:
         domain = urllib.parse.urlparse(result["url"]).netloc.removeprefix("www.")
         if not domain or any(known in domain for known in known_domains):
+            reasons["known_platform_domain"] += 1
             continue  # already covered by platform_events - avoid duplicates
         if _is_bare_domain_root(result["url"]) or _looks_like_listing(result["title"]):
+            reasons["bare_root_or_listing"] += 1
             continue
         stub = _event_stub(result["title"], result["url"], domain, region, _clean_snippet(result["snippet"]))
         enriched = enrich_with_event_page(stub)
         if not enriched.get("start") or not enriched.get("date_confirmed"):
-            no_date += 1
+            reasons["no_confirmed_date"] += 1
             continue  # no confirmed real event date - too likely a listing/blog page to trust
         events.append(enriched)
         if len(events) >= max_results:
             break
+    print(f"[future_events] web: {len(parsed)} result(s) -> {sum(reasons.values())} skipped {reasons}, {len(events)} kept", flush=True)
     if debug is not None and parsed:
-        debug["web"] = f"{len(parsed)} result(s), {no_date} dropped for no confirmed date, {len(events)} kept"
+        debug["web"] = f"{len(parsed)} result(s), {reasons['no_confirmed_date']} dropped for no confirmed date, {len(events)} kept"
     return events
 
 
@@ -897,6 +947,17 @@ def _day_time_fit(df: pd.DataFrame, event: dict, category: str | None) -> tuple[
 
 
 def _location_fit(df: pd.DataFrame, event: dict) -> tuple[float, list[str]]:
+    # Only a confirmed, specific venue (from real schema.org data) is
+    # worth matching against your own history - an event whose location
+    # is just the generic search region ("Los Angeles, CA", the fallback
+    # when there's no real address) will substring-match almost anything
+    # in your history that's also broadly in that region, producing a
+    # "near <your own specific address>" claim that has nothing to do
+    # with actual proximity (observed directly: a Camber roundup with no
+    # real venue "matched" a specific address 6+ miles away purely
+    # because both strings mention "Los Angeles, CA").
+    if not event.get("location_confirmed"):
+        return 0.0, []
     place = _matched_frequent_location(df, event.get("location"))
     return (1.0, [f"near {place}, a place you already go"]) if place else (0.0, [])
 
@@ -939,7 +1000,8 @@ def suggestions_for(df: pd.DataFrame, candidate_events: list[dict] | None = None
                 "conflicts with your calendar" if "calendar" in conflict_types else "conflicts with another suggested event"
             )
 
-        people, people_reason = suggested_people(df, category, event.get("location"))
+        location_for_people = event.get("location") if event.get("location_confirmed") else None
+        people, people_reason = suggested_people(df, category, location_for_people)
         suggestion = dict(event)
         suggestion["matched_category"] = category
         suggestion["fit_score"] = score
