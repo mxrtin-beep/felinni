@@ -67,16 +67,62 @@ tab's own filters stack on top.
   (OpenStreetMap Nominatim, cached to disk, ~1/sec). Nearby cities group
   into one metro area for trip-counting, with a neighborhood drill-down for
   your home area. Wrong pin? Fix it inline from the **Fix a location** card
-  — no re-geocoding needed.
+  — no re-geocoding needed. A location that can't be resolved on its own
+  but matches a campus/workplace anchor with known coordinates (see
+  `DEFAULT_LOCATION_ANCHORS` in `felinni/geocode.py`) is placed there
+  instead of left off the map — e.g. "Boelter 5800" (a UCLA room number,
+  not its own addressable point) lands at "UCLA, Los Angeles, CA." Before
+  giving up on an address, a few common calendar-export quirks are fixed
+  automatically: embedded newlines/extra whitespace, a missing comma
+  between street and city, a business name glued directly onto its own
+  house number ("101 Boxing Club 1714 Newbury Rd..." retries as "1714
+  Newbury Rd..."), a directional qualifier after the street suffix kept
+  with the street instead of getting absorbed into the city ("...4th St
+  NW Washington DC..." -> "...St NW, Washington, DC..." rather than
+  city "NW Washington") and, if that alone doesn't resolve it, dropped
+  from the street entirely ("...4th St NW..." -> "...4th St..." — Nominatim
+  often doesn't index the abbreviated direction at all), and a unit/suite/apartment/floor/room clause dropped
+  ("...Ave, Unit 1420, Los Angeles..." retries as "...Ave, Los
+  Angeles..."). If the street address still won't resolve at all, a
+  landmark's own name plus its city is tried on its own ("Balboa Park 1549
+  El Prado, San Diego..." retries as "Balboa Park, San Diego") - some
+  parks/campuses/plazas are indexed by name rather than mailing address.
+  A handful of well-known Los Angeles-area neighborhoods used as the
+  mailing city (Van Nuys, Pacific Palisades, Woodland Hills, ...) are also
+  retried against "Los Angeles" itself, since they're not their own
+  incorporated city. Anything that still fails, or was only placed
+  approximately, shows up with its reason in the **Geocoding notes** card,
+  instead of a bare "N not geocoded" count with no way to tell why.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server
   runs. Duplicate events across sources are matched and only counted once.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
-- **Future** — a skeleton for suggesting upcoming events (Eventbrite/Luma/
-  Meetup) ranked by fit with your habits. Not implemented — no API access
-  is configured for any of the three — just laid out for later.
+- **Future** — one ranked list of upcoming events from Eventbrite, Luma,
+  Meetup, Camber (the "LA Happenings" newsletter), Partiful, Posh, and
+  anywhere else a web search turns up for your home region (or any region
+  you type in) within the next 7 days by default (7/14/30/90 selectable) —
+  narrower than "everything upcoming forever," which tends to surface
+  far-future festivals over what's actually happening soon.
+  Enriched with start/end time, duration, and location straight from each
+  event's own page — no API key/OAuth needed. (Camber's a Substack roundup
+  rather than a per-event platform, so its results usually keep their date
+  unknown — there's no event page to enrich them from.)
+  Skips browse/listing pages ("Discover LA Events", a platform's own
+  homepage or account page) in favor of actual single events, picks the
+  soonest occurrence for a "multiple dates" listing rather than blending
+  across them, dedupes the same real event when it's independently
+  listed on more than one aggregator site, and flags anything that
+  overlaps your calendar or another suggestion. Ranks by fit with your
+  habits (category, usual day/time, familiar venues) and suggests people
+  to invite with a reason, weighted toward your *recent* history first —
+  who you usually do that category/venue with lately, or your most
+  frequent people recently as a last resort, so someone you saw
+  constantly a while back but haven't since doesn't keep outranking who
+  you're actually spending time with now. If a local Ollama server is
+  running, a few clearly-labeled AI-brainstormed event ideas are folded
+  in too — never presented as a real listing.
 
 ### Or skip the browser
 

@@ -131,13 +131,25 @@
     </div>
     <div class="card">
       <h2>Fix a location</h2>
-      <p class="card-note">Wrong pin, or missing entirely? Pick the location and give a corrected address (or exact coordinates) - it always wins over the cache and the map updates right away.</p>
-      <div class="controls">
-        <label>Location <select id="fix-location-select"></select></label>
-        <label>Corrected address <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA" style="min-width:280px"></label>
+      <div class="controls fix-location-controls">
+        <label class="field">
+          <span>Location</span>
+          <select id="fix-location-select"></select>
+        </label>
+        <label class="field">
+          <span>Corrected address</span>
+          <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA">
+        </label>
         <button id="fix-location-btn" type="button">Fix</button>
       </div>
       <p class="card-note" id="fix-location-status"></p>
+    </div>
+    <div class="card" id="geocode-failures-card" style="display:none">
+      <h2>Geocoding notes</h2>
+      <p class="card-note" id="geocode-failures-summary"></p>
+      <div class="scroll-list" id="geocode-failures-list"></div>
+      <p class="card-note" id="geocode-approximate-summary" style="display:none"></p>
+      <div class="scroll-list" id="geocode-approximate-list" style="display:none"></div>
     </div>
   </section>
 
@@ -277,27 +289,33 @@
 
   <section class="panel" id="panel-future">
     <div class="card">
-      <h2>Future <span class="badge planned">Coming soon</span></h2>
+      <h2>Future</h2>
       <p class="card-note">
-        The idea: use your own history - the categories, people, places, and
-        times you already gravitate toward - to surface upcoming events
-        worth going to, pulled from Eventbrite, Luma, and Meetup. Nothing
-        below is wired up yet (each needs its own API access, which isn't
-        configured), but here's the shape of it.
+        Upcoming events from Eventbrite, Luma, Meetup, Camber, Partiful,
+        Posh, and anywhere else DuckDuckGo turns up for your region within
+        the next week, enriched with start/end time, duration, and location
+        from each event's own page - no platform API key/login needed.
+        Ranked by fit with your habits (category overlap, your usual
+        day/time, places you already frequent), each with people you might
+        want to invite and why, and flagged in red if it overlaps your
+        calendar or another suggestion. Defaults to your geocoded home
+        metro (Map tab) and the next 7 days; search a different region or
+        window below.
       </p>
+      <div class="controls">
+        <input type="text" id="future-region-input" placeholder="e.g. Los Angeles, CA">
+        <label>Within <select id="future-days-select">
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+        </select></label>
+        <button type="button" id="future-region-btn">Search</button>
+      </div>
       <p class="card-note" id="future-note"></p>
     </div>
     <div class="card">
-      <h2>Suggested for you</h2>
-      <p class="card-note">Would rank upcoming events by fit with your habits - category overlap, your usual day/time, places you already frequent, people you tend to see.</p>
-      <div id="future-suggestions"><p class="empty-note">Nothing here yet - no platforms connected.</p></div>
-    </div>
-    <div class="card">
-      <div class="controls" style="justify-content:space-between">
-        <h2 style="margin:0">Upcoming events</h2>
-        <button type="button" id="future-connect-btn" disabled>Connect a platform</button>
-      </div>
-      <p class="card-note">Pulled from Eventbrite, Luma, and Meetup once connected - needs each platform's own API access (Eventbrite/Luma: an API key, Meetup: OAuth), none of which is configured yet.</p>
+      <h2>Upcoming events</h2>
       <div id="future-events"><p class="empty-note">Nothing here yet.</p></div>
     </div>
   </section>

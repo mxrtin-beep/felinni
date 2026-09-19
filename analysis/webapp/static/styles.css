@@ -199,7 +199,37 @@ main {
   font-size: 13px;
 }
 
-select, input[type="number"] {
+.fix-location-controls {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.fix-location-controls .field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.fix-location-controls .field select,
+.fix-location-controls .field input {
+  width: 100%;
+}
+
+.fix-location-controls #fix-location-select {
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.fix-location-controls button {
+  flex-shrink: 0;
+}
+
+select, input[type="number"], input[type="text"] {
   font: inherit;
   font-size: 13px;
   padding: 5px 8px;
@@ -377,6 +407,50 @@ th.sortable:hover {
   color: var(--text-muted);
   font-size: 13px;
   padding: 8px 0;
+}
+
+.future-event {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--grid);
+}
+
+.future-event:last-child {
+  border-bottom: none;
+}
+
+.future-event.has-conflict {
+  border-left: 3px solid var(--status-critical);
+  padding-left: 10px;
+}
+
+.future-conflict {
+  font-size: 12px;
+  color: var(--status-critical);
+  margin: 4px 0 0;
+}
+
+.future-ai-idea {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+.scroll-list {
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 12px;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+.scroll-list p {
+  padding: 4px 0;
+  margin: 0;
+  border-bottom: 1px solid var(--grid);
+}
+
+.scroll-list p:last-child {
+  border-bottom: none;
 }
 
 .badge {

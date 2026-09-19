@@ -126,9 +126,89 @@ def test_exclude_categories_filter_applies_globally(client):
 def test_future_returns_empty_skeleton(client):
     resp = client.get("/api/future")
     body = resp.get_json()
-    assert body["suggestions"] == []
     assert body["events"] == []
     assert body["message"]
+    assert body["days"] == 7
+    assert "source_status" in body
+
+
+def test_future_message_includes_per_source_status_when_empty(client, monkeypatch):
+    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
+        if debug is not None:
+            debug[platform] = "search failed: connection refused"
+        return []
+
+    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
+    monkeypatch.setattr(server.future_events, "other_web_events", lambda region=None, days_ahead=None, debug=None: [])
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    resp = client.get("/api/future")
+    body = resp.get_json()
+
+    assert body["source_status"]["eventbrite"] == "search failed: connection refused"
+    assert "eventbrite: search failed" in body["message"]
+
+
+def test_future_days_param_is_passed_through_and_ignores_global_date_filter(client, monkeypatch):
+    seen_days = []
+
+    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
+        seen_days.append(days_ahead)
+        return []
+
+    def fake_other_web_events(region=None, days_ahead=None, debug=None):
+        seen_days.append(days_ahead)
+        return []
+
+    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
+    monkeypatch.setattr(server.future_events, "other_web_events", fake_other_web_events)
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    # start_date/end_date would normally narrow _get_df(), but the Future
+    # tab must ignore them entirely - it isn't filtering past history.
+    resp = client.get("/api/future?days=30&start_date=2015-01-01&end_date=2015-01-02")
+    body = resp.get_json()
+
+    assert body["days"] == 30
+    assert seen_days and all(d == 30 for d in seen_days)
+
+
+def test_future_default_region_prefers_city_state_over_city_country(client, monkeypatch):
+    seen_regions = []
+
+    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
+        seen_regions.append(region)
+        return []
+
+    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
+    monkeypatch.setattr(server.future_events, "other_web_events", lambda region=None, days_ahead=None, debug=None: [])
+    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    most_common_location = server.DF["location"].dropna().value_counts().index[0]
+    fake_cache = {most_common_location: {"city": "Thousand Oaks", "state": "California", "country": "United States"}}
+    monkeypatch.setattr(server, "_load_geocode_cache", lambda: fake_cache)
+
+    resp = client.get("/api/future")
+    body = resp.get_json()
+
+    assert body["region"] == "Thousand Oaks, California"
+    assert seen_regions and all(r == "Thousand Oaks, California" for r in seen_regions)
+
+
+def test_default_future_search_region_falls_back_to_city_country_without_state():
+    import pandas as pd
+    df = pd.DataFrame({"location": ["Some Cafe", "Some Cafe", "Elsewhere"]})
+    cache = {"Some Cafe": {"city": "Thousand Oaks", "country": "United States"}}
+    assert server._default_future_search_region(df, cache) == "Thousand Oaks, United States"
+
+
+def test_default_future_search_region_none_without_any_geocoded_city():
+    import pandas as pd
+    df = pd.DataFrame({"location": ["Some Cafe"]})
+    assert server._default_future_search_region(df, {}) is None
 
 
 def test_travel_returns_region_based_shape(client):
@@ -156,6 +236,8 @@ def test_person_trend_empty_people_param_returns_no_rows(client):
 def test_geocode_override_saves_and_reflects_immediately(client, monkeypatch, tmp_path):
     overrides_path = tmp_path / "overrides.json"
     monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", tmp_path / "diagnostics.json")
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", tmp_path / "approximations.json")
 
     resp = client.post("/api/geocode/override", json={
         "location": "Royce 160", "lat": 34.0722, "lon": -118.4441, "display_name": "Royce Hall, UCLA",
@@ -171,6 +253,73 @@ def test_geocode_override_saves_and_reflects_immediately(client, monkeypatch, tm
 def test_geocode_override_requires_location(client):
     resp = client.post("/api/geocode/override", json={"lat": 1, "lon": 2})
     assert resp.status_code == 400
+
+
+def test_geocode_override_clears_any_prior_failure_diagnostics(client, monkeypatch, tmp_path):
+    overrides_path = tmp_path / "overrides.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    diagnostics_path.write_text(json.dumps({"Royce 160": "Nominatim found no match for this query"}))
+    monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", diagnostics_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", tmp_path / "approximations.json")
+
+    resp = client.post("/api/geocode/override", json={
+        "location": "Royce 160", "lat": 34.0722, "lon": -118.4441,
+    })
+    assert resp.status_code == 200
+    assert "Royce 160" not in server.geocode.load_diagnostics(diagnostics_path)
+
+
+def test_geocode_override_clears_any_prior_approximation(client, monkeypatch, tmp_path):
+    overrides_path = tmp_path / "overrides.json"
+    approximations_path = tmp_path / "approximations.json"
+    approximations_path.write_text(json.dumps({"Boelter 5800": "UCLA, Los Angeles, CA"}))
+    monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", tmp_path / "diagnostics.json")
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", approximations_path)
+
+    resp = client.post("/api/geocode/override", json={
+        "location": "Boelter 5800", "lat": 34.0689, "lon": -118.4452,
+    })
+    assert resp.status_code == 200
+    assert "Boelter 5800" not in server.geocode.load_approximations(approximations_path)
+
+
+def test_geocode_failures_groups_by_reason_and_filters_to_current_locations(client, monkeypatch, tmp_path):
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+    events = [{
+        "id": "evt-1", "title": "Something", "notes": None, "location": "Boelter 5800",
+        "startDate": "2024-01-01T09:00:00Z", "endDate": "2024-01-01T10:00:00Z",
+        "isAllDay": False, "calendarTitle": "School", "calendarColorHex": None,
+        "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+    }, {
+        "id": "evt-2", "title": "Something Else", "notes": None, "location": "Ackerman 2408",
+        "startDate": "2024-01-02T09:00:00Z", "endDate": "2024-01-02T10:00:00Z",
+        "isAllDay": False, "calendarTitle": "School", "calendarColorHex": None,
+        "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+    }]
+    diagnostics_path.write_text(json.dumps({
+        "Ackerman 2408": "Nominatim found no match for this query",
+        "A Stale Location Not In The Current Dataset": "timed out after 10s",
+    }))
+    approximations_path.write_text(json.dumps({
+        "Boelter 5800": "UCLA, Los Angeles, CA",
+        "A Stale Approximation Not In The Current Dataset": "UCLA, Los Angeles, CA",
+    }))
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", diagnostics_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", approximations_path)
+    original_df = server.DF
+    try:
+        server.DF = ingest.load_events_from_records(events)
+        body = client.get("/api/geocode/failures").get_json()
+    finally:
+        server.DF = original_df
+
+    assert body["total_failed"] == 1  # the stale location isn't in the current dataset
+    assert body["failures"] == [{"location": "Ackerman 2408", "reason": "Nominatim found no match for this query"}]
+    assert body["by_reason"] == [["Nominatim found no match for this query", 1]]
+    assert body["approximate"] == [{"location": "Boelter 5800", "placed_at": "UCLA, Los Angeles, CA"}]
 
 
 def test_geocode_job_runs_and_reports_progress(client, monkeypatch):

@@ -5,6 +5,14 @@ flask>=3.0
 # Optional, only needed for felinni.geocode / mapping:
 geopy>=2.4
 folium>=0.15
-# Optional, only needed for felinni.calendar_sources (importing Google/Outlook/Apple ICS calendars):
+# requests is used by felinni.calendar_sources (importing Google/Outlook/Apple
+# ICS calendars) and felinni.future_events (fetching an event's own page):
 requests>=2.31
+# Optional, only needed for felinni.calendar_sources:
 icalendar>=5.0
+# Optional, only needed for felinni.future_events (the Future tab's event
+# discovery search) - a maintained metasearch client that impersonates a
+# real browser's TLS/HTTP fingerprint and falls back across several
+# backend search engines, which a hand-rolled requests-based scrape of
+# one endpoint can't reliably do:
+ddgs>=9.0

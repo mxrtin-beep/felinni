@@ -234,6 +234,46 @@ def geocode_status():
         return jsonify(dict(GEOCODE_STATE))
 
 
+@app.get("/api/geocode/failures")
+def geocode_failures():
+    """Why each currently-unresolved location failed on its last attempt
+    (see felinni.geocode.geocode_locations) - a timeout, a Nominatim
+    service error (often a rate limit/temporary block), or a genuine "no
+    match" - grouped so a systemic problem (most failures share one reason)
+    is obvious at a glance instead of just a bare "N not geocoded" count.
+    `approximate` is a separate, less alarming list: locations that DO have
+    a pin (placed at a campus/workplace anchor's own coordinates, e.g.
+    "Boelter 5800" at "UCLA, Los Angeles, CA") because their own address
+    couldn't be resolved, not a failure to report on. Only locations still
+    in the current dataset are included in either list, in case the
+    underlying file has entries from a since-changed events export."""
+    current_locations = set(DF["location"].dropna().unique().tolist())
+
+    diagnostics = geocode.load_diagnostics(geocode.DEFAULT_DIAGNOSTICS_PATH)
+    relevant = {loc: reason for loc, reason in diagnostics.items() if loc in current_locations}
+
+    by_reason: dict[str, int] = {}
+    for reason in relevant.values():
+        key = reason.split(" (query:")[0]
+        by_reason[key] = by_reason.get(key, 0) + 1
+
+    failures = [{"location": loc, "reason": reason} for loc, reason in sorted(relevant.items())]
+
+    approximations = geocode.load_approximations(geocode.DEFAULT_APPROXIMATIONS_PATH)
+    approximate = [
+        {"location": loc, "placed_at": placed_at}
+        for loc, placed_at in sorted(approximations.items())
+        if loc in current_locations
+    ]
+
+    return jsonify({
+        "total_failed": len(failures),
+        "by_reason": sorted(by_reason.items(), key=lambda kv: kv[1], reverse=True),
+        "failures": failures,
+        "approximate": approximate,
+    })
+
+
 @app.post("/api/geocode/override")
 def geocode_override():
     """Recode a location from the Map tab: given the exact location string
@@ -260,6 +300,8 @@ def geocode_override():
             return jsonify({"error": f"couldn't find a match for {query!r}"}), 404
 
     geocode.save_override(location_str, entry, geocode.DEFAULT_OVERRIDES_PATH)
+    geocode.clear_diagnostics_entry(location_str, geocode.DEFAULT_DIAGNOSTICS_PATH)
+    geocode.clear_approximation_entry(location_str, geocode.DEFAULT_APPROXIMATIONS_PATH)
     return jsonify({"location": location_str, "entry": entry})
 
 
@@ -470,19 +512,98 @@ def anomalies_view():
     return jsonify({"weekly": records(weekly), "anomalies": records(flagged), "by_category": by_category})
 
 
+def _default_future_search_region(df: pd.DataFrame, cache: dict) -> str | None:
+    """A "City, State" label for wherever you're geocoded most often - a
+    better free-text region for an event search than
+    felinni.regions.home_region's "City, Country" travel-grouping label
+    (which is right for its own purpose - "Thousand Oaks, United States"
+    is a perfectly good trip label, but a much weaker search term on
+    Eventbrite/Meetup/etc. than "Thousand Oaks, CA" for anywhere outside a
+    handful of globally-famous cities). Falls back to "City, Country" for
+    a location geocoded before `state` was captured, or a non-US address
+    where a state doesn't apply the same way."""
+    located = df.dropna(subset=["location"])
+    if located.empty:
+        return None
+    for loc in located["location"].value_counts().index:
+        entry = cache.get(loc)
+        city = entry.get("city") if entry else None
+        if not city:
+            continue
+        state = entry.get("state")
+        return f"{city}, {state}" if state else f"{city}, {entry.get('country')}" if entry.get("country") else city
+    return None
+
+
 @app.get("/api/future")
 def future_view():
-    """Skeleton for the Future tab - always empty for now (see
-    felinni.future_events). `events` merges every platform's results into
-    one list (each tagged with its "source") rather than a separate
-    section per platform, since none is connected yet anyway."""
-    events = []
-    for platform in future_events.PLATFORMS:
-        events.extend(future_events.platform_events(platform))
+    """Future tab: events found for Eventbrite/Luma/Meetup/Camber/Partiful/
+    Posh plus anywhere else a web search turns up, enriched with
+    start/end/duration/location from each event's own page (see
+    felinni.future_events - no platform API key/OAuth needed).
+
+    Uses the full, unfiltered dataset (not `_get_df()`) for ranking/
+    conflict-checking - your habits and existing calendar are what matter
+    here, regardless of whatever date range the Overview tab's global
+    filter happens to be set to; that filter has nothing to do with a
+    forward-looking event search.
+
+    `region` defaults to a "City, State" label for wherever you're
+    geocoded most often (see `_default_future_search_region` - a better
+    search term than the Travel tab's "City, Country" grouping label),
+    falling back to felinni.future_events.DEFAULT_REGION if nothing's been
+    geocoded yet; `?region=` overrides either for a one-off search
+    elsewhere. `?days=`
+    (default 7) bounds how far ahead to look - both nudging the search
+    itself toward near-term results and actually dropping anything whose
+    confirmed date falls outside that window (see
+    felinni.future_events.within_search_window). Duplicates of the same
+    real event found on more than one aggregator site are collapsed first
+    (felinni.future_events.dedupe_events). `events` is one ranked list -
+    every candidate scored by fit with your calendar history and flagged
+    with any scheduling conflicts (both against your own calendar and
+    against other candidate events) - rather than a separate "suggested"
+    list duplicating the same events in a different order. If a local
+    Ollama server is running, a few AI-brainstormed (clearly labeled, not
+    real listings) event ideas are folded in too."""
+    df = DF
+    cache = _load_geocode_cache()
+    default_region = _default_future_search_region(df, cache) or regions.home_region(regions.visits_by_region(df, cache))
+    region = request.args.get("region") or default_region or future_events.DEFAULT_REGION
+    days = request.args.get("days", future_events.DEFAULT_SEARCH_WINDOW_DAYS, type=int)
+
+    source_status: dict[str, str] = {}
+    raw_events = []
+    for i, platform in enumerate(future_events.PLATFORMS):
+        if i > 0:
+            time.sleep(0.5)  # a small gap between platforms
+        raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
+    time.sleep(0.5)
+    raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
+    raw_events.extend(future_events.ollama_event_ideas(df, region=region))
+
+    deduped = future_events.dedupe_events(raw_events)
+    windowed = future_events.within_search_window(deduped, days_ahead=days)
+    annotated = future_events.annotate_conflicts(windowed, df)
+    events = future_events.suggestions_for(df, annotated)
+
+    message = None
+    if not events:
+        # A generic "try a different region" guess isn't useful once
+        # you've already tried that (and a famous city fails the exact
+        # same way a small one did) - source_status says what actually
+        # happened per platform (a search error, "0 results", or how many
+        # were filtered out), which is what actually points at whether
+        # this is a search/network issue vs. a real empty result.
+        detail = "; ".join(f"{source}: {status}" for source, status in source_status.items())
+        message = f"No results for \"{region}\" right now." + (f" {detail}" if detail else "")
+
     return jsonify({
-        "suggestions": future_events.suggestions_for(_get_df()),
+        "region": region,
+        "days": days,
         "events": events,
-        "message": "Upcoming events aren't wired up yet - each platform needs its own API access, which isn't configured.",
+        "message": message,
+        "source_status": source_status,
     })
 
 

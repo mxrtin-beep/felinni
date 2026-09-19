@@ -3,12 +3,14 @@
 // everywhere else too.
 const GLOBAL_FILTERS = { startDate: "", endDate: "", excludeCategories: [] };
 
-function api(path) {
+function api(path, { skipGlobalFilters = false } = {}) {
   const [base, query] = path.split("?");
   const params = new URLSearchParams(query || "");
-  if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
-  if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
-  if (GLOBAL_FILTERS.excludeCategories.length) params.set("exclude_categories", GLOBAL_FILTERS.excludeCategories.join(","));
+  if (!skipGlobalFilters) {
+    if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
+    if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
+    if (GLOBAL_FILTERS.excludeCategories.length) params.set("exclude_categories", GLOBAL_FILTERS.excludeCategories.join(","));
+  }
   const qs = params.toString();
   return fetch(`/api/${base}${qs ? `?${qs}` : ""}`).then(r => r.json());
 }
@@ -78,6 +80,18 @@ function table(container, columns, rows) {
 
 function fmtHours(h) { return h == null ? "-" : `${Math.round(h)}h`; }
 function fmtDate(d) { return d ? d.slice(0, 10) : "-"; }
+function fmtDateTime(d) {
+  if (!d) return "-";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function fmtDuration(hours) {
+  if (hours == null) return null;
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
 function fmtPct(p) { return p == null ? "-" : `${(p * 100).toFixed(0)}%`; }
 function cssVarSafe(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
@@ -774,20 +788,82 @@ async function loadAnomalies() {
     ], data.by_category.slice(0, 30));
 }
 
-// --- Future (skeleton - Eventbrite/Luma/Meetup, nothing wired up yet) ---
-async function loadFuture() {
-  const data = await api("future");
+// --- Future (Eventbrite/Luma/Meetup/other-site events found via a DuckDuckGo search) ---
+const FUTURE_CONFLICTS_SHOWN = 4;
+
+function _futureConflictNote(e) {
+  if (!e.conflicts || !e.conflicts.length) return "";
+  const shown = e.conflicts.slice(0, FUTURE_CONFLICTS_SHOWN).map(c => {
+    const label = c.type === "calendar" ? "your calendar" : `another suggestion (${escapeHtml(c.source || "")})`;
+    return `${escapeHtml(c.title)} on ${label}`;
+  }).join("; ");
+  const more = e.conflicts.length > FUTURE_CONFLICTS_SHOWN ? ` (+${e.conflicts.length - FUTURE_CONFLICTS_SHOWN} more)` : "";
+  return `<p class="future-conflict">&#9888; Conflicts with ${shown}${more}</p>`;
+}
+
+function _futureEventCard(e) {
+  if (e.is_ai_suggestion) {
+    return `
+      <div class="future-event future-ai-idea">
+        <p><span class="badge planned">AI idea, not a live listing</span></p>
+        <p>${escapeHtml(e.title)}</p>
+      </div>`;
+  }
+
+  const when = e.start
+    ? `${fmtDateTime(e.start)}${e.end ? ` – ${fmtDateTime(e.end)}` : ""}${e.duration_hours ? ` (${fmtDuration(e.duration_hours)})` : ""}`
+    : "Date/time unknown";
+  const people = e.suggested_people && e.suggested_people.length
+    ? `<p class="card-note">Consider inviting: ${e.suggested_people.map(escapeHtml).join(", ")} (${escapeHtml(e.people_reason || "")})</p>`
+    : "";
+  const fit = e.fit_reasons && e.fit_reasons.length
+    ? `<p class="card-note">${e.fit_reasons.map(escapeHtml).join(" · ")}</p>`
+    : "";
+  return `
+    <div class="future-event${e.has_conflict ? " has-conflict" : ""}">
+      <p>
+        <a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a>
+        <span class="source-meta">${escapeHtml(e.source || "")}</span>
+      </p>
+      <p class="card-note">${escapeHtml(when)}${e.location ? ` &middot; ${escapeHtml(e.location)}` : ""}</p>
+      ${e.snippet ? `<p class="card-note">${escapeHtml(e.snippet)}</p>` : ""}
+      ${fit}
+      ${people}
+      ${_futureConflictNote(e)}
+    </div>`;
+}
+
+async function loadFuture(region, days) {
+  // A forward-looking event search has nothing to do with the Overview
+  // tab's global date-range filter (that filters your past calendar
+  // history) - sending it here was just confusing noise in the request.
+  const params = new URLSearchParams();
+  if (region) params.set("region", region);
+  if (days) params.set("days", days);
+  const qs = params.toString();
+  const data = await api(`future${qs ? `?${qs}` : ""}`, { skipGlobalFilters: true });
   document.getElementById("future-note").textContent = data.message || "";
 
-  const suggestions = document.getElementById("future-suggestions");
-  suggestions.innerHTML = data.suggestions.length
-    ? data.suggestions.map(s => `<p>${escapeHtml(s.title)}</p>`).join("")
-    : '<p class="empty-note">Nothing here yet - no platforms connected.</p>';
+  const regionInput = document.getElementById("future-region-input");
+  if (regionInput && !regionInput.value) regionInput.value = data.region || "";
+  const daysSelect = document.getElementById("future-days-select");
+  if (daysSelect && data.days) daysSelect.value = String(data.days);
 
   const events = document.getElementById("future-events");
   events.innerHTML = data.events.length
-    ? data.events.map(e => `<p>${escapeHtml(e.title)} <span class="source-meta">${escapeHtml(e.source || "")}</span></p>`).join("")
+    ? data.events.map(_futureEventCard).join("")
     : '<p class="empty-note">Nothing here yet.</p>';
+}
+
+function wireFutureRegionSearch() {
+  const btn = document.getElementById("future-region-btn");
+  const input = document.getElementById("future-region-input");
+  const daysSelect = document.getElementById("future-days-select");
+  if (!btn || !input) return;
+  const run = () => loadFuture(input.value.trim() || undefined, daysSelect ? daysSelect.value : undefined);
+  btn.addEventListener("click", run);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+  if (daysSelect) daysSelect.addEventListener("change", run);
 }
 
 // --- Category colors (shared across Map, Habits, Time & Spend) ---
@@ -921,7 +997,51 @@ async function loadMap(meta) {
     });
   }
   await refreshMap();
+  await loadGeocodeFailures();
   await pollGeocodeStatus(); // resumes the progress bar if a job was already running
+}
+
+async function loadGeocodeFailures() {
+  const data = await fetch("/api/geocode/failures").then(r => r.json());
+  const card = document.getElementById("geocode-failures-card");
+  const hasApproximate = data.approximate && data.approximate.length;
+  if (!data.total_failed && !hasApproximate) {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "block";
+
+  const failuresSummary = document.getElementById("geocode-failures-summary");
+  const failuresList = document.getElementById("geocode-failures-list");
+  if (data.total_failed) {
+    failuresSummary.style.display = "block";
+    failuresList.style.display = "block";
+    failuresSummary.textContent =
+      `${data.total_failed} location${data.total_failed === 1 ? "" : "s"} failed on ` +
+      `their last geocode attempt: ${data.by_reason.map(([reason, count]) => `${count} ${reason}`).join("; ")}.`;
+    failuresList.innerHTML = data.failures
+      .map(f => `<p><strong>${escapeHtml(f.location)}</strong> — ${escapeHtml(f.reason)}</p>`)
+      .join("");
+  } else {
+    failuresSummary.style.display = "none";
+    failuresList.style.display = "none";
+  }
+
+  const approxSummary = document.getElementById("geocode-approximate-summary");
+  const approxList = document.getElementById("geocode-approximate-list");
+  if (hasApproximate) {
+    approxSummary.style.display = "block";
+    approxList.style.display = "block";
+    approxSummary.textContent =
+      `${data.approximate.length} location${data.approximate.length === 1 ? "" : "s"} couldn't be pinned exactly, ` +
+      `so ${data.approximate.length === 1 ? "it's" : "they're"} placed at the nearest known campus/workplace instead:`;
+    approxList.innerHTML = data.approximate
+      .map(a => `<p><strong>${escapeHtml(a.location)}</strong> — placed at ${escapeHtml(a.placed_at)}</p>`)
+      .join("");
+  } else {
+    approxSummary.style.display = "none";
+    approxList.style.display = "none";
+  }
 }
 
 function updateGeocodeButton(locationsData) {
@@ -938,6 +1058,9 @@ function updateGeocodeButton(locationsData) {
   }
 }
 
+let geocodePollTicks = 0;
+const GEOCODE_FAILURES_REFRESH_EVERY_N_TICKS = 5; // ~5s at the 1s poll interval - live, but not refetching every single tick
+
 async function pollGeocodeStatus() {
   const status = await fetch("/api/geocode/status").then(r => r.json());
   const btn = document.getElementById("map-geocode-btn");
@@ -948,7 +1071,9 @@ async function pollGeocodeStatus() {
     if (geocodePollTimer) {
       clearInterval(geocodePollTimer);
       geocodePollTimer = null;
+      geocodePollTicks = 0;
       await refreshMap(); // job just finished - show the newly-geocoded points
+      await loadGeocodeFailures(); // ...and why anything left over still isn't
     }
     progressWrap.style.display = "none";
     // A run that stopped early (rather than working through every
@@ -970,6 +1095,14 @@ async function pollGeocodeStatus() {
   const pct = status.total ? Math.round((status.done / status.total) * 100) : 0;
   document.getElementById("map-geocode-fill").style.width = pct + "%";
   document.getElementById("map-geocode-label").textContent = status.total ? `${status.done} / ${status.total}` : "Starting…";
+
+  // A run already in progress (e.g. this tab was reloaded mid-run) still
+  // has a live diagnostics file worth showing, not just once the whole
+  // batch finishes - refreshed periodically rather than every single tick.
+  geocodePollTicks += 1;
+  if (geocodePollTicks % GEOCODE_FAILURES_REFRESH_EVERY_N_TICKS === 0) {
+    await loadGeocodeFailures();
+  }
 
   if (!geocodePollTimer) {
     geocodePollTimer = setInterval(pollGeocodeStatus, 1000);
@@ -1097,4 +1230,5 @@ async function refreshMap() {
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();
+  wireFutureRegionSearch();
 })();
