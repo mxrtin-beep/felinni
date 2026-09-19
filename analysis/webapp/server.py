@@ -538,9 +538,9 @@ def _default_future_search_region(df: pd.DataFrame, cache: dict) -> str | None:
 @app.get("/api/future")
 def future_view():
     """Future tab: events found for Eventbrite/Luma/Meetup/Camber/Partiful/
-    Posh plus anywhere else DuckDuckGo turns up, via a DuckDuckGo search,
-    enriched with start/end/duration/location from each event's own page
-    (see felinni.future_events - no platform API key/OAuth needed).
+    Posh plus anywhere else a web search turns up, enriched with
+    start/end/duration/location from each event's own page (see
+    felinni.future_events - no platform API key/OAuth needed).
 
     Uses the full, unfiltered dataset (not `_get_df()`) for ranking/
     conflict-checking - your habits and existing calendar are what matter
@@ -572,19 +572,11 @@ def future_view():
     source_status: dict[str, str] = {}
     raw_events = []
     for i, platform in enumerate(future_events.PLATFORMS):
-        if future_events.is_rate_limited_by_ddg(source_status):
-            # The first source already came back with DuckDuckGo's actual
-            # block page (confirmed by keyword match, not just an empty
-            # result) - every remaining source would hit the identical
-            # wall, so stop here rather than needlessly repeating (and
-            # likely extending) an already-confirmed block.
-            break
         if i > 0:
-            time.sleep(0.5)  # a small gap between platforms - back off DuckDuckGo's rate limiting a bit
+            time.sleep(0.5)  # a small gap between platforms
         raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
-    if not future_events.is_rate_limited_by_ddg(source_status):
-        time.sleep(0.5)
-        raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
+    time.sleep(0.5)
+    raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
 
     windowed = future_events.within_search_window(raw_events, days_ahead=days)
@@ -596,19 +588,11 @@ def future_view():
         # A generic "try a different region" guess isn't useful once
         # you've already tried that (and a famous city fails the exact
         # same way a small one did) - source_status says what actually
-        # happened per platform (a request error, "0 parsed results", or
-        # how many were filtered out), which is what actually points at
-        # whether this is a network/blocking issue vs. a real empty result.
+        # happened per platform (a search error, "0 results", or how many
+        # were filtered out), which is what actually points at whether
+        # this is a search/network issue vs. a real empty result.
         detail = "; ".join(f"{source}: {status}" for source, status in source_status.items())
-        if future_events.is_rate_limited_by_ddg(source_status):
-            message = (
-                f"DuckDuckGo is blocking this network's requests right now (confirmed by its own "
-                f"rate-limit page, not a guess) - stopped early instead of repeating it. This isn't "
-                f"something a different region or a code change here fixes; it clears on its own "
-                f"after a while. {detail}"
-            )
-        else:
-            message = f"No results for \"{region}\" right now." + (f" {detail}" if detail else "")
+        message = f"No results for \"{region}\" right now." + (f" {detail}" if detail else "")
 
     return jsonify({
         "region": region,

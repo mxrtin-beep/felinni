@@ -135,7 +135,7 @@ def test_future_returns_empty_skeleton(client):
 def test_future_message_includes_per_source_status_when_empty(client, monkeypatch):
     def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
         if debug is not None:
-            debug[platform] = "DuckDuckGo request failed: connection refused"
+            debug[platform] = "search failed: connection refused"
         return []
 
     monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
@@ -146,40 +146,8 @@ def test_future_message_includes_per_source_status_when_empty(client, monkeypatc
     resp = client.get("/api/future")
     body = resp.get_json()
 
-    assert body["source_status"]["eventbrite"] == "DuckDuckGo request failed: connection refused"
-    assert "eventbrite: DuckDuckGo request failed" in body["message"]
-
-
-def test_future_stops_early_once_ddg_block_page_is_confirmed(client, monkeypatch):
-    """Once one source's debug note confirms DuckDuckGo's actual block
-    page (not just an empty result), the remaining platforms/web search
-    are skipped rather than repeating (and likely extending) an
-    already-confirmed block."""
-    calls = []
-
-    def fake_platform_events(platform, region=None, days_ahead=None, debug=None):
-        calls.append(platform)
-        if debug is not None:
-            debug[platform] = (
-                "DuckDuckGo returned 0 parsed results (response was 14230 chars) - "
-                "looks like DuckDuckGo's rate-limit/anomaly page, not real results"
-            )
-        return []
-
-    def fake_other_web_events(region=None, days_ahead=None, debug=None):
-        calls.append("web")
-        return []
-
-    monkeypatch.setattr(server.future_events, "platform_events", fake_platform_events)
-    monkeypatch.setattr(server.future_events, "other_web_events", fake_other_web_events)
-    monkeypatch.setattr(server.future_events, "ollama_event_ideas", lambda df, region=None: [])
-    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
-
-    resp = client.get("/api/future")
-    body = resp.get_json()
-
-    assert calls == [server.future_events.PLATFORMS[0]]  # stopped after the first platform, never reached "web"
-    assert "blocking this network's requests" in body["message"]
+    assert body["source_status"]["eventbrite"] == "search failed: connection refused"
+    assert "eventbrite: search failed" in body["message"]
 
 
 def test_future_days_param_is_passed_through_and_ignores_global_date_filter(client, monkeypatch):

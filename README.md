@@ -101,7 +101,7 @@ tab's own filters stack on top.
   category was consistently active when.
 - **Future** — one ranked list of upcoming events from Eventbrite, Luma,
   Meetup, Camber (the "LA Happenings" newsletter), Partiful, Posh, and
-  anywhere else DuckDuckGo turns up for your home region (or any region
+  anywhere else a web search turns up for your home region (or any region
   you type in) within the next 7 days by default (7/14/30/90 selectable) —
   narrower than "everything upcoming forever," which tends to surface
   far-future festivals over what's actually happening soon.

@@ -6,17 +6,34 @@ calendar history.
 
 None of Eventbrite/Luma/Meetup has a public API that's usable without
 registering for a developer key/OAuth app, so instead of gating this behind
-"sign up for a Meetup app", event *discovery* scrapes DuckDuckGo's HTML
-search results page (no key required, no account, no rate-limit approval)
-for a `site:<platform domain> <region> events` query, then *enriches* each
-result by fetching its event page and reading the schema.org Event JSON-LD
-block most event sites embed for SEO (the same structured data Google uses
-for its own event rich results) - that's where start/end/location actually
-come from. `other_web_events` runs the same discovery+enrichment pipeline
-without a site: filter, keeping only results that actually resolve to a
-real schema.org Event on their own page - which is what lets "and anywhere
-else" work without an ever-growing hardcoded domain list, and without
-mistaking a random blog post for a real listing.
+"sign up for a Meetup app", event *discovery* runs a `site:<platform
+domain> <region> events` query through the `ddgs` package (no key
+required, no account) for a `site:<platform domain> <region> events`
+query, then *enriches* each result by fetching its event page and reading
+the schema.org Event JSON-LD block most event sites embed for SEO (the
+same structured data Google uses for its own event rich results) - that's
+where start/end/location actually come from. `other_web_events` runs the
+same discovery+enrichment pipeline without a site: filter, keeping only
+results that actually resolve to a real schema.org Event on their own
+page - which is what lets "and anywhere else" work without an
+ever-growing hardcoded domain list, and without mistaking a random blog
+post for a real listing.
+
+Discovery used to hand-roll a POST/GET to html.duckduckgo.com and
+regex-parse the result page. That broke outright: DuckDuckGo started
+returning an HTTP 202 "please verify" challenge page (a JS-check
+interstitial, not real results) to every request from a plain `requests`
+client, regardless of query, HTTP method, or User-Agent header - because
+none of those change the one thing that actually gave it away, a
+`requests`/urllib3 TLS handshake looks nothing like a real browser's at
+the network level, independent of any header content. `ddgs` uses
+`primp`, an HTTP client built specifically to reproduce a real browser's
+TLS/HTTP2 fingerprint, and - as of this writing - queries several backend
+search engines (DuckDuckGo via Bing, Brave, Mojeek, Startpage, ...) with
+automatic fallback if one is unreachable or rate-limits it. Both of those
+are exactly what a hand-rolled `requests` scraper of one single endpoint
+can't do without reimplementing a maintained project's worth of
+cat-and-mouse upkeep.
 
 Camber is different from the other three: it's a Substack newsletter (the
 "LA Happenings" section at camberplaces.substack.com/s/la-happenings)
@@ -95,43 +112,24 @@ MAX_PLAUSIBLE_DURATION_HOURS = 24 * 7
 # conflict-checking to mean something, not a claim about the real length.
 _FALLBACK_DURATION_HOURS = 2
 
-_DDG_HTML_URL = "https://html.duckduckgo.com/html/"
-# A self-identifying bot User-Agent ("felinni-future-tab/1.0;
-# +https://github.com/") was used here previously - and is exactly the
-# kind of thing DuckDuckGo's anomaly detection blocks outright, regardless
-# of the query, which matches what a real run looked like: every single
-# platform's search (and the domain-agnostic web search) came back with
-# 0 parsed results and a near-identical response size, all at once - not
-# what a genuinely empty result set for 7 different queries looks like.
-# A plain, current desktop-browser User-Agent (with matching Accept/
-# Accept-Language headers, since a real browser always sends those too)
-# is what every other DuckDuckGo-scraping tool relies on for exactly this
-# reason - it's still just an unauthenticated page fetch, no key/login
-# involved, just not self-flagged as automated traffic.
+# A plain, current desktop-browser User-Agent for `_fetch_page` (enriching
+# an already-found event page) - this is a normal single-page fetch, not
+# search discovery, so it's never hit the blocking issue discovery did,
+# but it's kept realistic rather than a self-identifying bot string for
+# the same reason discovery's used to cause trouble.
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
-_BROWSER_HEADERS = {
-    "User-Agent": _USER_AGENT,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-}
 
-# Matches the whole opening <a> tag's attributes as one group rather than
-# requiring class="result__a" to appear before href="..." in a fixed
-# order - the previous version (`class="result__a"[^>]*href="..."`) would
-# silently find nothing at all (indistinguishable from a real block) if
-# DuckDuckGo ever emits href before class, or wraps result__a with
-# another class alongside it (`class="result__a extra-class"`), neither
-# of which is an actual block - just markup this parser didn't expect.
-_RESULT_A_RE = re.compile(
-    r'<a\s+(?P<attrs>[^>]*\bclass="[^"]*\bresult__a\b[^"]*"[^>]*)>(?P<title>.*?)</a>', re.S
-)
-_HREF_ATTR_RE = re.compile(r'href="(?P<href>[^"]*)"')
-_RESULT_SNIPPET_RE = re.compile(
-    r'class="[^"]*\bresult__snippet\b[^"]*"[^>]*>(?P<snippet>.*?)</a>', re.S
-)
+# How many raw search results to pull per query before filtering - a
+# generous multiple of `max_results` since `_is_event_url`/
+# `_looks_like_listing` (platform_events) and "no confirmed date"
+# (other_web_events) both drop a chunk of what comes back.
+_SEARCH_OVERFETCH_FACTOR = 4
+
+_DDG_SEARCH_TIMEOUT_SECONDS = 10.0
+
 _TAG_RE = re.compile(r"<[^>]+>")
 _JSONLD_RE = re.compile(
     r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(?P<body>.*?)</script>', re.S | re.I
@@ -174,110 +172,31 @@ def _looks_like_listing(title: str) -> bool:
     return bool(_LISTING_TITLE_RE.search(title or ""))
 
 
-def _resolve_ddg_href(href: str) -> str:
-    """DuckDuckGo's HTML results wrap every outbound link in a redirect
-    (`//duckduckgo.com/l/?uddg=<url-encoded target>&rut=...`) - unwrap that
-    back to the real URL. Left unchanged if it's already a direct link."""
-    if href.startswith("//"):
-        href = "https:" + href
-    parsed = urllib.parse.urlparse(href)
-    if parsed.netloc.endswith("duckduckgo.com") and parsed.path == "/l/":
-        qs = urllib.parse.parse_qs(parsed.query)
-        if "uddg" in qs:
-            return urllib.parse.unquote(qs["uddg"][0])
-    return href
+def _ddg_text_search(query: str, max_results: int, timeout: float = _DDG_SEARCH_TIMEOUT_SECONDS) -> list[dict]:
+    """Runs `query` through `ddgs.DDGS().text(...)` - see the module
+    docstring for why this replaced a hand-rolled scrape of
+    html.duckduckgo.com. Returns each result as {title, url, snippet}.
+    Raises on total failure (every backend engine blocked/unreachable) -
+    callers decide how to degrade, same as the previous direct-HTTP
+    approach. Prints the query and result count either way, so DuckDuckGo
+    activity is visible in the terminal this runs from rather than
+    silent regardless of outcome."""
+    from ddgs import DDGS
 
-
-_DDG_BLOCK_NOTE = "looks like DuckDuckGo's rate-limit/anomaly page, not real results"
-
-
-def _looks_like_ddg_block_page(page_html: str) -> bool:
-    """True when the response is DuckDuckGo's anomaly/rate-limit
-    interstitial rather than a real results page - it has no
-    `id="links"` results container and usually mentions the block
-    directly. Used only to make a "0 parsed results" diagnostic more
-    specific than a guess."""
-    lowered = page_html.lower()
-    return 'id="links"' not in lowered and (
-        "anomaly" in lowered or "unusual traffic" in lowered or "detected an unusual" in lowered
-    )
-
-
-def _log_empty_ddg_response(source: str, page_html: str) -> None:
-    """Prints the actual start of DuckDuckGo's response whenever nothing
-    gets parsed out of it - so a real block/rate-limit page, a changed
-    page layout this module's parser no longer recognizes, and a
-    network-level interceptor silently swapping in its own page (a
-    corporate/ISP filter, a captive portal - none of which raise a
-    Python exception, since they still return a normal 200) are all
-    visible directly in the terminal this ran from, not indistinguishable
-    behind a bare "0 results". Always prints (not gated by whether a
-    `debug` dict was passed) - this is what makes DuckDuckGo activity
-    show up in the terminal the way any other library's request/response
-    logging would, addressing that nothing was visible there before."""
-    preview = re.sub(r"\s+", " ", page_html).strip()[:300]
-    print(f"[future_events] {source}: 0 parsed results, response starts: {preview!r}", flush=True)
-
-
-def is_rate_limited_by_ddg(debug: dict[str, str]) -> bool:
-    """True once any per-source debug note (see `platform_events`/
-    `other_web_events`) has confirmed DuckDuckGo's actual block page
-    (not just an empty result) - a real, keyword-matched block, not a
-    guess. Callers use this to stop issuing further DuckDuckGo requests
-    for the rest of a batch once it's clear they'd all hit the identical
-    wall - repeating a request that's already confirmed blocked doesn't
-    reveal anything new and risks extending the block further."""
-    return any(_DDG_BLOCK_NOTE in status for status in debug.values())
-
-
-def _parse_ddg_html_results(page_html: str) -> list[dict]:
-    """Each search result as {title, url, snippet}, in the order DuckDuckGo
-    returned them."""
-    titles = []
-    for match in _RESULT_A_RE.finditer(page_html):
-        href_match = _HREF_ATTR_RE.search(match.group("attrs"))
-        if href_match:
-            titles.append((href_match.group("href"), match.group("title")))
-    snippets = list(_RESULT_SNIPPET_RE.finditer(page_html))
-    results = []
-    for i, (href, title) in enumerate(titles):
-        snippet = _strip_tags(snippets[i].group("snippet")) if i < len(snippets) else ""
-        results.append({
-            "title": _strip_tags(title),
-            "url": _resolve_ddg_href(href),
-            "snippet": snippet,
-        })
-    return results
-
-
-def _ddg_search(query: str, timeout: float = 10.0) -> str:
-    """Raw DuckDuckGo HTML results page for `query`. Raises on any network
-    error/non-2xx response - callers decide how to degrade.
-
-    Uses GET with `q` as a query param, not POST: a POST to this endpoint
-    doesn't reliably run the actual search - it can come back 200 with a
-    generic page that's the same size regardless of what was searched for,
-    which is exactly what "every platform's query gets 0 parsed results
-    with a near-identical response length" looks like. GET is also what a
-    browser actually sends for this page, so it's the well-trodden path."""
-    import requests
-
-    print(f"[future_events] DuckDuckGo search: {query!r}", flush=True)
-    resp = requests.get(
-        _DDG_HTML_URL,
-        params={"q": query},
-        headers=_BROWSER_HEADERS,
-        timeout=timeout,
-    )
-    print(f"[future_events] DuckDuckGo response: HTTP {resp.status_code}, {len(resp.text)} chars", flush=True)
-    resp.raise_for_status()
-    return resp.text
+    print(f"[future_events] search: {query!r}", flush=True)
+    results = DDGS(timeout=timeout).text(query, max_results=max_results)
+    print(f"[future_events] search returned {len(results)} result(s)", flush=True)
+    return [
+        {"title": r.get("title") or "", "url": r.get("href") or "", "snippet": r.get("body") or ""}
+        for r in results
+        if r.get("href")
+    ]
 
 
 def _fetch_page(url: str, timeout: float = 10.0) -> str:
     import requests
 
-    resp = requests.get(url, headers=_BROWSER_HEADERS, timeout=timeout)
+    resp = requests.get(url, headers={"User-Agent": _USER_AGENT}, timeout=timeout)
     resp.raise_for_status()
     return resp.text
 
@@ -452,24 +371,24 @@ def platform_events(
 ) -> list[dict]:
     """Upcoming events for `platform` in `region`, normalized to {title,
     url, start, end, duration_hours, location, source, snippet}. Found via a
-    DuckDuckGo `site:` search, then enriched by fetching each result's own
-    page for its schema.org Event data - see the module docstring. Skips
+    `site:` search (see the module docstring for how), then enriched by
+    fetching each result's own page for its schema.org Event data. Skips
     results that are clearly a browse/listing page rather than one specific
     event (by URL shape and title) before ever fetching them. `days_ahead`
     only shapes the search phrase ("this week"/"this month"/...) - it's a
-    bias toward DuckDuckGo results that are actually near-term, not a
-    guarantee; `within_search_window` is what actually enforces the window
-    once a result's real date is known. Never raises: a DuckDuckGo/
-    page-fetch failure (offline, rate-limited, blocked) just means fewer or
-    plainer results, same as an unconnected platform did before.
+    bias toward results that are actually near-term, not a guarantee;
+    `within_search_window` is what actually enforces the window once a
+    result's real date is known. Never raises: a search/page-fetch
+    failure (offline, every backend blocked) just means fewer or plainer
+    results, same as an unconnected platform did before.
 
     If given, `debug[platform]` is set to a short note on what actually
-    happened (a request error, "0 results parsed", or how many results
-    were found vs. kept after filtering) - a silent `[]` here looks
-    identical whether DuckDuckGo is offline, blocking this client, or
-    genuinely has nothing for the query, and that ambiguity is exactly what
-    made a much bigger set of failures hard to diagnose in
-    felinni.geocode before its own per-location diagnostics were added."""
+    happened (a request error, "0 results", or how many results were
+    found vs. kept after filtering) - a silent `[]` here looks identical
+    whether search is offline, blocked, or genuinely has nothing for the
+    query, and that ambiguity is exactly what made a much bigger set of
+    failures hard to diagnose in felinni.geocode before its own
+    per-location diagnostics were added."""
     if platform not in PLATFORMS:
         raise ValueError(f"unknown platform: {platform!r} (expected one of {PLATFORMS})")
 
@@ -477,24 +396,20 @@ def platform_events(
     site_query = PLATFORM_QUERY_SITE.get(platform, domain)
     query = f"site:{site_query} {region} events {_time_window_phrase(days_ahead)}"
     try:
-        page_html = _ddg_search(query)
+        parsed = _ddg_text_search(query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
     except Exception as e:
         if debug is not None:
-            debug[platform] = f"DuckDuckGo request failed: {e}"
+            debug[platform] = f"search failed: {e}"
         return []
 
-    parsed = _parse_ddg_html_results(page_html)
-    if not parsed:
-        _log_empty_ddg_response(platform, page_html)
-        if debug is not None:
-            blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
-            debug[platform] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
+    if debug is not None and not parsed:
+        debug[platform] = "search returned 0 results"
 
     events = []
     skipped = 0
     for result in parsed:
         if domain not in result["url"]:
-            continue  # DDG sometimes surfaces an unrelated result despite the site: filter
+            continue  # the search sometimes surfaces an unrelated result despite the site: filter
         if not _is_event_url(platform, result["url"]) or _looks_like_listing(result["title"]):
             skipped += 1
             continue
@@ -503,7 +418,7 @@ def platform_events(
         if len(events) >= max_results:
             break
     if debug is not None and parsed:
-        debug[platform] = f"{len(parsed)} DuckDuckGo result(s), {skipped} filtered as unrelated/listing pages, {len(events)} kept"
+        debug[platform] = f"{len(parsed)} result(s), {skipped} filtered as unrelated/listing pages, {len(events)} kept"
     return events
 
 
@@ -513,7 +428,7 @@ def other_web_events(
     days_ahead: int = DEFAULT_SEARCH_WINDOW_DAYS,
     debug: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Events from anywhere else DuckDuckGo turns up for `region` - not
+    """Events from anywhere else search turns up for `region` - not
     restricted to Eventbrite/Luma/Meetup via a site: filter, so results
     could be a venue's own site, a local listings site, a ticketing
     platform, ... With no domain allowlist to lean on, a result is only
@@ -524,18 +439,14 @@ def other_web_events(
     `platform_events` for what `debug` (keyed "web" here) records."""
     query = f"{region} events {_time_window_phrase(days_ahead)}"
     try:
-        page_html = _ddg_search(query)
+        parsed = _ddg_text_search(query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
     except Exception as e:
         if debug is not None:
-            debug["web"] = f"DuckDuckGo request failed: {e}"
+            debug["web"] = f"search failed: {e}"
         return []
 
-    parsed = _parse_ddg_html_results(page_html)
-    if not parsed:
-        _log_empty_ddg_response("web", page_html)
-        if debug is not None:
-            blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
-            debug["web"] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
+    if debug is not None and not parsed:
+        debug["web"] = "search returned 0 results"
 
     known_domains = tuple(PLATFORM_DOMAINS.values())
     events = []
@@ -555,7 +466,7 @@ def other_web_events(
         if len(events) >= max_results:
             break
     if debug is not None and parsed:
-        debug["web"] = f"{len(parsed)} DuckDuckGo result(s), {no_date} dropped for no confirmed date, {len(events)} kept"
+        debug["web"] = f"{len(parsed)} result(s), {no_date} dropped for no confirmed date, {len(events)} kept"
     return events
 
 
