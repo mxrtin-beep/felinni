@@ -225,11 +225,12 @@ const NETWORK_COLOR_MODES = {
   },
 };
 
-// Holds the most recently fetched network/trend data so the color-by
-// dropdown and reset-view button (bound once, since a re-render of this
-// tab shouldn't pile up duplicate listeners) always act on the current
-// data rather than whatever was in scope the first time they were wired.
-let currentNetworkData = null;
+// Holds the color-scale context (trend lookup, max values to normalize
+// against) from the most recent full layout render, so switching the
+// color-by dropdown can recolor in place - via networkGraph's
+// _networkSetColor - without rerunning the force layout or resetting the
+// current pan/zoom, which a full re-render would otherwise do every time.
+let currentNetworkColorCtx = null;
 
 function renderNetworkLegend(mode) {
   const el = document.getElementById("network-legend");
@@ -238,18 +239,34 @@ function renderNetworkLegend(mode) {
   el.innerHTML = `<span>${low}</span><div class="network-legend-bar" style="background:${gradient}"></div><span>${high}</span>`;
 }
 
+function networkModeSpec(mode) {
+  return NETWORK_COLOR_MODES[mode] || NETWORK_COLOR_MODES.recency;
+}
+
+// Full render: (re)runs the force layout from scratch. Only needed when
+// the underlying node/edge set actually changes (tab load, filter change).
 function renderFriendNetwork(nodes, edges, trends, mode) {
-  const trendByPerson = new Map(trends.map(t => [t.person, t]));
-  const ctx = {
-    trendByPerson,
+  currentNetworkColorCtx = {
+    trendByPerson: new Map(trends.map(t => [t.person, t])),
     maxHours: Math.max(...nodes.map(n => n.total_hours || 0), 1),
     maxKnownDays: Math.max(...nodes.map(n => daysSince(n.first_seen) ?? 0), 1),
   };
-  const modeSpec = NETWORK_COLOR_MODES[mode] || NETWORK_COLOR_MODES.recency;
+  const modeSpec = networkModeSpec(mode);
   renderNetworkLegend(mode in NETWORK_COLOR_MODES ? mode : "recency");
   networkGraph(document.getElementById("friend-network-graph"), nodes, edges, {
-    getColor: n => modeSpec.getColor(n, ctx),
+    getColor: n => modeSpec.getColor(n, currentNetworkColorCtx),
   });
+}
+
+// Color-only update for the dropdown: reuses the already-laid-out graph
+// and cached color context, so the view doesn't jump/reset on every change.
+function recolorFriendNetwork(mode) {
+  const container = document.getElementById("friend-network-graph");
+  if (!container || !currentNetworkColorCtx || typeof container._networkSetColor !== "function") return false;
+  const modeSpec = networkModeSpec(mode);
+  renderNetworkLegend(mode in NETWORK_COLOR_MODES ? mode : "recency");
+  container._networkSetColor(n => modeSpec.getColor(n, currentNetworkColorCtx));
+  return true;
 }
 
 function renderPeopleSummaryTable(people, trends) {
@@ -672,15 +689,14 @@ async function loadPeople() {
     })(),
     (async () => {
       const [network, trends] = await Promise.all([api("social/network"), api("trends")]);
-      currentNetworkData = { nodes: network.nodes, edges: network.edges, trends };
       const colorSelect = document.getElementById("network-color-by");
-      renderFriendNetwork(currentNetworkData.nodes, currentNetworkData.edges, currentNetworkData.trends, colorSelect ? colorSelect.value : "recency");
+      renderFriendNetwork(network.nodes, network.edges, trends, colorSelect ? colorSelect.value : "recency");
       if (colorSelect && !colorSelect._networkListenerBound) {
         colorSelect._networkListenerBound = true;
-        colorSelect.addEventListener("change", () => {
-          if (!currentNetworkData) return;
-          renderFriendNetwork(currentNetworkData.nodes, currentNetworkData.edges, currentNetworkData.trends, colorSelect.value);
-        });
+        // A color-only change - recolorFriendNetwork() fades the existing
+        // nodes in place rather than rerunning the whole layout, so this
+        // doesn't reset the current pan/zoom or restart the simulation.
+        colorSelect.addEventListener("change", () => recolorFriendNetwork(colorSelect.value));
       }
       const resetBtn = document.getElementById("network-reset-view");
       if (resetBtn && !resetBtn._networkListenerBound) {

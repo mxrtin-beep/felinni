@@ -483,14 +483,11 @@ function statTile(label, value) {
 // being a one-shot render, not a live simulation. Dragging a node just
 // repositions it and its own edges; it doesn't restart the simulation.
 //
-// The simulation itself runs in a "world" coordinate space sized to fit
-// the node count comfortably (simW x simH below) rather than whatever
-// pixel size the container happens to be - with enough people, cramming
-// the layout into a ~640x480 box is what was forcing nodes and labels to
-// overlap regardless of how good the force layout was. The visible <svg>
-// stays fixed at the container's pixel size; a <g> holding everything is
-// panned/zoomed via an SVG transform, defaulting to a zoomed-out view that
-// fits the whole world so nothing starts clipped.
+// The simulation itself runs in a "world" coordinate space sized well
+// beyond the container's own pixel size (simW x simH below), Obsidian-
+// graph-style: the visible <svg> pans/zooms into it via an SVG transform
+// on a wrapping <g>, defaulting to a view that fits the whole world so
+// nothing starts clipped, with plenty of room to zoom into any cluster.
 function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) {
   container.innerHTML = "";
   if (!nodes.length) {
@@ -499,11 +496,20 @@ function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) 
   }
   const w = container.clientWidth || 640;
   const h = height;
-
-  // ~90px^2 of world space per node, keeping the container's own aspect
-  // ratio, and never smaller than the visible box itself.
-  const worldArea = Math.max(nodes.length, 1) * 9000;
   const aspect = w / h;
+
+  // The repulsion/spring layout below settles every node pair this far
+  // apart (in world units) at equilibrium - it has to comfortably clear a
+  // long name's label width ("Leo Tavera-Montiel" at 11px font is ~120
+  // world-units wide) on both sides, or two barely/unconnected people
+  // will render with overlapping labels regardless of how much total
+  // canvas area surrounds them. Total world area is just this spacing
+  // squared per node (never smaller than the container itself, so a
+  // handful of people don't end up zoomed in oddly far), which is what
+  // actually gives real room to pan around rather than a "world" that
+  // silently matches the viewport 1:1 like it did before.
+  const K_TARGET = 170;
+  const worldArea = K_TARGET * K_TARGET * nodes.length;
   const simH = Math.max(h, Math.sqrt(worldArea / aspect));
   const simW = Math.max(w, simH * aspect);
 
@@ -584,7 +590,11 @@ function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) 
   svg.appendChild(world);
 
   const fitScale = Math.min(w / simW, h / simH);
-  const minScale = fitScale * 0.6, maxScale = 4;
+  // maxScale is generous since the world is now sized well beyond the
+  // viewport - reading a label inside a dense, mutually-connected cluster
+  // (which the spring force pulls tighter than K_TARGET regardless of
+  // total world size) means zooming in well past the default fit.
+  const minScale = fitScale * 0.6, maxScale = 8;
   const view = { x: (w - simW * fitScale) / 2, y: (h - simH * fitScale) / 2, k: fitScale };
   function applyTransform() {
     world.setAttribute("transform", `translate(${view.x.toFixed(1)},${view.y.toFixed(1)}) scale(${view.k.toFixed(4)})`);
@@ -610,7 +620,8 @@ function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) 
   sim.forEach((n, i) => {
     const circle = el("circle", {
       cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: n.r.toFixed(1),
-      fill: colorFn(n), stroke: cssVar("--surface-1"), "stroke-width": 1.5, style: "cursor:grab",
+      fill: colorFn(n), stroke: cssVar("--surface-1"), "stroke-width": 1.5,
+      style: "cursor:grab;transition:fill 0.3s ease",
     });
     const label = el("text", {
       x: n.x.toFixed(1), y: (n.y + n.r + 12).toFixed(1), "text-anchor": "middle",
@@ -706,5 +717,12 @@ function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) 
     view.y = (h - simH * fitScale) / 2;
     view.k = fitScale;
     applyTransform();
+  };
+  // Lets a caller (e.g. the People tab's "color by" dropdown) recolor
+  // nodes in place - a CSS transition on `fill` above makes it a smooth
+  // fade rather than a snap - without rerunning the layout or resetting
+  // the current pan/zoom, which a full re-render would otherwise do.
+  container._networkSetColor = newGetColor => {
+    sim.forEach((n, i) => circleEls[i].setAttribute("fill", newGetColor(n)));
   };
 }
