@@ -940,3 +940,24 @@ def test_ddg_text_search_prints_on_failure_not_just_success(capsys):
     out = capsys.readouterr().out
     assert "search failed" in out
     assert "all backends rate-limited" in out
+
+
+def test_ddg_text_search_restricts_to_a_fixed_backend_list():
+    """`ddgs`'s own "auto" backend mode shuffles through ALL registered
+    engines (including Wikipedia/Grokipedia, which can't satisfy a
+    `site:`-scoped web search at all) in a different order every call -
+    confirmed directly as the cause of the same query returning a
+    completely different result set (and sometimes an outright "no
+    results found" failure) from one run to the next. A fixed backend
+    list avoids that."""
+    patcher, mock_instance = _mock_ddgs([])
+    with patcher:
+        future_events._ddg_text_search("some query", max_results=5)
+    assert mock_instance.text.call_args.kwargs["backend"] == future_events._SEARCH_BACKENDS
+    assert "wikipedia" not in future_events._SEARCH_BACKENDS
+    assert "grokipedia" not in future_events._SEARCH_BACKENDS
+
+
+def test_looks_like_listing_catches_a_popular_events_roundup_title():
+    assert future_events._looks_like_listing("Popular events in Los Angeles")
+    assert not future_events._looks_like_listing("KELELA NIGHT @ YOU Los Angeles")

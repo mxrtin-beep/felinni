@@ -226,7 +226,7 @@ _EVENT_URL_PATTERNS = {
 # neither started with discover/explore/browse, so the original pattern
 # let them straight through as if they were one specific event.
 _LISTING_TITLE_RE = re.compile(
-    r"^(discover|explore|browse)\b.*\bevents\b"
+    r"^(discover|explore|browse|popular)\b.*\bevents\b"
     r"|things to do in|events (calendar|near me)\b"
     r"|\bevents?,?\s+(tickets|things to do)\b"
     # "all/upcoming events in <place>" - a whole-region roundup title, not
@@ -302,20 +302,42 @@ def _looks_like_listing(title: str) -> bool:
     return bool(_LISTING_TITLE_RE.search(title or ""))
 
 
+# `ddgs`'s own "auto" backend mode picks from ALL registered text engines
+# - bing, brave, duckduckgo, google, mojeek, yahoo, yandex, wikipedia,
+# grokipedia - in a freshly SHUFFLED order every single call, and (per its
+# own source) always puts wikipedia and grokipedia FIRST regardless of
+# that shuffle. Neither of those two supports a `site:`-scoped web search
+# at all - they're an encyclopedia and an AI-knowledge search - so "auto"
+# mode wastes a chunk of its limited per-call worker budget on engines
+# that can never satisfy this module's queries, then only tries a random
+# handful of the general web engines after that. That's the real cause
+# of two things observed directly: the *same* query returning a
+# completely different set of results (and a different "no results
+# found" outright failure) from one run to the next - not a caching or
+# code-determinism issue, a randomly different subset of search engines
+# being consulted each time. Restricting to a fixed set of general web
+# engines that reliably support `site:` avoids both the wasted workers
+# and (mostly) the run-to-run randomness - "mostly" since a shared,
+# still-shuffled subset of even this fixed list is what actually gets
+# queried per call when there are more listed than fit the worker budget.
+_SEARCH_BACKENDS = "google,bing,brave,mojeek,yahoo"
+
+
 def _ddg_text_search(query: str, max_results: int, timeout: float = _DDG_SEARCH_TIMEOUT_SECONDS) -> list[dict]:
-    """Runs `query` through `ddgs.DDGS().text(...)` - see the module
-    docstring for why this replaced a hand-rolled scrape of
-    html.duckduckgo.com. Returns each result as {title, url, snippet}.
-    Raises on total failure (every backend engine blocked/unreachable) -
-    callers decide how to degrade, same as the previous direct-HTTP
-    approach. Prints the query and result count either way, so DuckDuckGo
-    activity is visible in the terminal this runs from rather than
-    silent regardless of outcome."""
+    """Runs `query` through `ddgs.DDGS().text(...)`, restricted to
+    `_SEARCH_BACKENDS` - see the module docstring for why this replaced a
+    hand-rolled scrape of html.duckduckgo.com, and the comment above
+    `_SEARCH_BACKENDS` for why "auto" mode isn't used as-is. Returns each
+    result as {title, url, snippet}. Raises on total failure (every
+    backend engine blocked/unreachable) - callers decide how to degrade,
+    same as the previous direct-HTTP approach. Prints the query and
+    result count either way, so search activity is visible in the
+    terminal this runs from rather than silent regardless of outcome."""
     from ddgs import DDGS
 
     print(f"[future_events] search: {query!r}", flush=True)
     try:
-        results = DDGS(timeout=timeout).text(query, max_results=max_results)
+        results = DDGS(timeout=timeout).text(query, max_results=max_results, backend=_SEARCH_BACKENDS)
     except Exception as e:
         # The docstring's "prints either way" was previously false on
         # this path - a raised exception skipped straight past the
