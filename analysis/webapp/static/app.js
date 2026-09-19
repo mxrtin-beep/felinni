@@ -201,11 +201,15 @@ function renderPeopleSummaryTable(people, trends) {
   }));
   const maxKnownDays = Math.max(...rows.map(r => r.known_days || 0), 1);
   table(container, [
+    // Unlike a plain right-aligned number column, these cells are
+    // left-anchored bar/ring visualizations - so skip `num` (which would
+    // right-align the header and stretch a bare "-" away from the bar
+    // start) and let both header and cell fall back to left alignment.
     { key: "person", label: "Person" },
-    { key: "total_hours", label: "Time spent together", num: true, format: v => miniBarCellHtml(v, maxHours) },
-    { key: "days_since", label: "Last seen", num: true, format: v => miniLastSeenCellHtml(v) },
-    { key: "known_days", label: "Known since", num: true, format: v => miniBarCellHtml(v, maxKnownDays, fmtTenure, "--series-3") },
-    { key: "trend", label: "Recent trend", num: true, format: v => miniTrendCellHtml(v) },
+    { key: "total_hours", label: "Time spent together", format: v => miniBarCellHtml(v, maxHours) },
+    { key: "days_since", label: "Last seen", format: v => miniLastSeenCellHtml(v) },
+    { key: "known_days", label: "Known since", format: v => miniBarCellHtml(v, maxKnownDays, fmtTenure, "--series-3") },
+    { key: "trend", label: "Recent trend", format: v => miniTrendCellHtml(v) },
   ], rows);
 }
 
