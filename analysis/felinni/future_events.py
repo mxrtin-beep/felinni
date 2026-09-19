@@ -1021,6 +1021,28 @@ def _matched_frequent_location(df: pd.DataFrame, location: str | None, top_n: in
     return None
 
 
+# A one-off encounter shouldn't count as someone you're "overdue" to see
+# again - this is the minimum event count (with anyone, anywhere) before
+# _most_overdue_person will nudge you to reconnect with them.
+_OVERDUE_MIN_EVENTS = 3
+
+
+def _most_overdue_person(df: pd.DataFrame, exclude: list[str]) -> str | None:
+    """Whoever you have a real history with (`_OVERDUE_MIN_EVENTS`+
+    events, anywhere) but haven't seen in the longest time, excluding
+    anyone already in `exclude` - a reconnection nudge to blend in
+    alongside "who you'd normally bring", not instead of it."""
+    from felinni import social
+
+    if df.empty:
+        return None
+    freq = social.person_frequency(df)
+    freq = freq[~freq.index.isin(exclude) & (freq["events"] >= _OVERDUE_MIN_EVENTS)]
+    if freq.empty:
+        return None
+    return freq.sort_values("last_seen").index[0]
+
+
 def suggested_people(df: pd.DataFrame, category: str | None = None, location: str | None = None, limit: int = 3) -> tuple[list[str], str]:
     """People you'd plausibly want to invite, with a reason: your most
     frequent *recent* companions for `category` if it matched one of your
@@ -1029,9 +1051,16 @@ def suggested_people(df: pd.DataFrame, category: str | None = None, location: st
     whoever you usually go to a matching `location` with; then your most
     frequent companions overall, recent-first too - someone you saw
     constantly a while back but haven't since shouldn't keep outranking
-    who you're actually spending time with now. Returns ([], "...")
-    rather than a name list you have no real reason to trust when there's
-    no history to go on at all."""
+    who you're actually spending time with now.
+
+    The last slot is reserved for a reconnection nudge - whoever you have
+    a real history with but haven't seen in the longest time (see
+    `_most_overdue_person`) - blended in alongside the category/location
+    picks above rather than replacing them, so a suggestion is "who you'd
+    normally bring, plus someone you haven't seen in a while" rather than
+    one or the other. Returns ([], "...") rather than a name list you
+    have no real reason to trust when there's no history to go on at
+    all."""
     from felinni import social
 
     if df.empty:
@@ -1050,13 +1079,23 @@ def suggested_people(df: pd.DataFrame, category: str | None = None, location: st
     candidates.append((_recent(df), "your most frequent people recently"))
     candidates.append((df, "your most frequent people overall"))
 
+    base_people: list[str] = []
+    base_reason = "no history to go on yet"
     for pool, reason in candidates:
         if pool.empty:
             continue
         freq = social.person_frequency(pool)
         if not freq.empty:
-            return list(freq.head(limit).index), reason
-    return [], "no history to go on yet"
+            base_people, base_reason = list(freq.head(limit).index), reason
+            break
+
+    overdue = _most_overdue_person(df, exclude=base_people)
+    if not overdue:
+        return base_people, base_reason
+
+    people = base_people[: max(limit - 1, 0)] + [overdue]
+    reason = f"{base_reason}, plus {overdue} (haven't seen them in a while)" if base_people else f"haven't seen {overdue} in a while"
+    return people, reason
 
 
 def _day_time_fit(df: pd.DataFrame, event: dict, category: str | None) -> tuple[float, list[str]]:

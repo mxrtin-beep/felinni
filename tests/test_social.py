@@ -60,3 +60,48 @@ def test_person_trend_by_period_excludes_all_day_events(df):
     trend = social.person_trend_by_period(df, granularity="year")
     assert trend.loc[trend.index[0], "Alice"] == 2
     assert "Bob" not in trend.columns
+
+
+def test_friend_network_edges_links_co_attendees():
+    events = [
+        _event(1, "Dinner", "2024-01-01T19:00:00Z", "2024-01-01T21:00:00Z", people=["Alice", "Bob"]),
+        _event(2, "Dinner", "2024-01-08T19:00:00Z", "2024-01-08T21:00:00Z", people=["Alice", "Bob"]),
+        _event(3, "Coffee", "2024-01-10T09:00:00Z", "2024-01-10T10:00:00Z", people=["Alice"]),
+    ]
+    df = ingest.load_events_from_records(events)
+    edges = social.friend_network_edges(df)
+    assert len(edges) == 1
+    row = edges.iloc[0]
+    assert {row["person_a"], row["person_b"]} == {"Alice", "Bob"}
+    assert row["shared_events"] == 2
+
+
+def test_friend_network_edges_ignores_solo_events():
+    events = [
+        _event(1, "Coffee", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z", people=["Alice"]),
+    ]
+    df = ingest.load_events_from_records(events)
+    assert social.friend_network_edges(df).empty
+
+
+def test_friend_network_edges_ignores_all_day_events():
+    """An all-day placeholder (a trip, a birthday) isn't "hanging out
+    together" the way a timed event is - same exclusion as person_frequency."""
+    events = [
+        _event(1, "Trip", "2024-02-01T00:00:00Z", "2024-02-03T00:00:00Z",
+               people=["Alice", "Bob"], is_all_day=True, category="Travel"),
+    ]
+    df = ingest.load_events_from_records(events)
+    assert social.friend_network_edges(df).empty
+
+
+def test_friend_network_edges_handles_three_way_events():
+    """A three-person event should produce all three pairs."""
+    events = [
+        _event(1, "Group hang", "2024-01-01T19:00:00Z", "2024-01-01T21:00:00Z", people=["Alice", "Bob", "Carol"]),
+    ]
+    df = ingest.load_events_from_records(events)
+    edges = social.friend_network_edges(df)
+    pairs = {frozenset([row["person_a"], row["person_b"]]) for _, row in edges.iterrows()}
+    assert pairs == {frozenset(["Alice", "Bob"]), frozenset(["Alice", "Carol"]), frozenset(["Bob", "Carol"])}
+    assert all(row["shared_events"] == 1 for _, row in edges.iterrows())

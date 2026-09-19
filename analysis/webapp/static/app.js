@@ -95,6 +95,65 @@ function fmtDuration(hours) {
 function fmtPct(p) { return p == null ? "-" : `${(p * 100).toFixed(0)}%`; }
 function cssVarSafe(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
+// --- "Time since you last saw them" ring tracker (People tab) ---
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const ms = Date.now() - new Date(dateStr).getTime();
+  return Math.max(0, Math.floor(ms / 86400000));
+}
+
+// Ring is fully filled (and fully "critical") by this many days out -
+// beyond this, longer just means longer, the visual has already made
+// its point.
+const LAST_SEEN_RING_CAP_DAYS = 60;
+const LAST_SEEN_GOOD_DAYS = 14;
+const LAST_SEEN_WARNING_DAYS = 45;
+
+function lastSeenColor(days) {
+  if (days <= LAST_SEEN_GOOD_DAYS) return cssVarSafe("--status-good") || "#0ca30c";
+  if (days <= LAST_SEEN_WARNING_DAYS) return cssVarSafe("--status-warning") || "#fab219";
+  return cssVarSafe("--status-critical") || "#d03b3b";
+}
+
+function lastSeenRingSvg(days) {
+  const fraction = Math.min(days / LAST_SEEN_RING_CAP_DAYS, 1);
+  const color = lastSeenColor(days);
+  const r = 16, c = 2 * Math.PI * r;
+  const offset = (c * (1 - fraction)).toFixed(2);
+  return `
+    <svg width="40" height="40" viewBox="0 0 40 40" class="last-seen-ring" aria-hidden="true">
+      <circle cx="20" cy="20" r="${r}" fill="none" stroke="var(--grid)" stroke-width="4"></circle>
+      <circle cx="20" cy="20" r="${r}" fill="none" stroke="${color}" stroke-width="4"
+        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset}"
+        stroke-linecap="round" transform="rotate(-90 20 20)"></circle>
+    </svg>`;
+}
+
+function lastSeenLabel(days) {
+  if (days === 0) return "Today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+function renderLastSeenTracker(people) {
+  const container = document.getElementById("people-last-seen-list");
+  if (!container) return;
+  const withDays = people
+    .map(p => ({ ...p, daysSince: daysSince(p.last_seen) }))
+    .filter(p => p.daysSince !== null)
+    .sort((a, b) => b.daysSince - a.daysSince); // longest overdue first
+  container.innerHTML = withDays.length
+    ? withDays.slice(0, 20).map(p => `
+        <div class="last-seen-card">
+          ${lastSeenRingSvg(p.daysSince)}
+          <div class="last-seen-info">
+            <div class="last-seen-name">${escapeHtml(p.person)}</div>
+            <div class="last-seen-days">${lastSeenLabel(p.daysSince)}</div>
+          </div>
+        </div>`).join("")
+    : '<p class="empty-note">No data yet.</p>';
+}
+
 // --- Tabs ---
 document.getElementById("tabs").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-panel]");
@@ -481,6 +540,7 @@ async function loadPeople() {
       horizontalBarChart(document.getElementById("people-chart"),
         sorted.slice(0, 15).map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
       populatePeoplePickerList(sorted);
+      renderLastSeenTracker(sorted);
       // The slider spans your full calendar history (not just what's
       // currently in view), so it always has room to zoom into any part
       // of it - fetched fresh in case a calendar source added new history.
@@ -496,6 +556,10 @@ async function loadPeople() {
           { key: "total_events", label: "Total events", num: true },
           { key: "slope_events_per_year", label: "Trend (events/yr)", num: true, format: v => v?.toFixed(2) },
         ], trends);
+    })(),
+    (async () => {
+      const network = await api("social/network");
+      networkGraph(document.getElementById("friend-network-graph"), network.nodes, network.edges);
     })(),
   ]);
   results.forEach(r => { if (r.status === "rejected") console.error("People tab section failed:", r.reason); });

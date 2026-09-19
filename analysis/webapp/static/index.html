@@ -159,6 +159,11 @@
       <div id="people-chart"></div>
     </div>
     <div class="card">
+      <h2>Time since you last saw them</h2>
+      <p class="card-note">Ring fills and shifts from green to red the longer it's been.</p>
+      <div id="people-last-seen-list" class="last-seen-list"></div>
+    </div>
+    <div class="card">
       <div class="controls">
         <h2 style="margin:0">Events over time, top people</h2>
         <select id="people-granularity">
@@ -193,6 +198,11 @@
       <h2>Growing vs. fading</h2>
       <p class="card-note">Linear trend in events/year. Negative = seeing them less over time.</p>
       <div id="trends-table"></div>
+    </div>
+    <div class="card">
+      <h2>Friend network</h2>
+      <p class="card-note">Each node is a person; a link means they showed up in a real, timed event together with you (thicker = more shared events). Drag a node to reposition it.</p>
+      <div id="friend-network-graph"></div>
     </div>
   </section>
 

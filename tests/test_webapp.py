@@ -66,6 +66,26 @@ def test_meta_lists_people(client):
     assert body["category_colors"]["Gym"] == "#8E24AA"
 
 
+def test_social_network_returns_nodes_and_edges(client):
+    resp = client.get("/api/social/network")
+    body = resp.get_json()
+    assert "nodes" in body and "edges" in body
+    assert body["nodes"]
+    people_in_nodes = {n["person"] for n in body["nodes"]}
+    for edge in body["edges"]:
+        # Every edge's endpoints must be in the returned node set - no
+        # dangling link to someone outside the (limit-capped) node list.
+        assert edge["person_a"] in people_in_nodes
+        assert edge["person_b"] in people_in_nodes
+        assert edge["shared_events"] >= 1
+
+
+def test_social_network_respects_limit(client):
+    resp = client.get("/api/social/network?limit=1")
+    body = resp.get_json()
+    assert len(body["nodes"]) <= 1
+
+
 def test_anomalies_includes_category_breakdown(client):
     resp = client.get("/api/anomalies")
     body = resp.get_json()

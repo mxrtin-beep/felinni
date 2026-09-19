@@ -394,6 +394,24 @@ def trends():
     return jsonify(records(social.fading_or_growing(_get_df())))
 
 
+@app.get("/api/social/network")
+def social_network():
+    """Friend network: every person as a node (events, hours - same
+    numbers as /api/people), linked to everyone they've shared a real,
+    timed event with (felinni.social.friend_network_edges), weighted by
+    how many events they share. Capped to the `limit` most-frequent
+    people (default 40) so the graph stays readable - an edge is dropped
+    if either endpoint falls outside that set, rather than pulling in a
+    long tail of one-off acquaintances with no connections of their own."""
+    limit = request.args.get("limit", 40, type=int)
+    df = _get_df()
+    nodes = social.person_frequency(df).reset_index().head(limit)
+    included = set(nodes["person"])
+    edges = social.friend_network_edges(df)
+    edges = edges[edges["person_a"].isin(included) & edges["person_b"].isin(included)]
+    return jsonify({"nodes": records(nodes), "edges": records(edges)})
+
+
 @app.get("/api/person-trend")
 def person_trend():
     granularity = request.args.get("granularity", "year")

@@ -58,6 +58,11 @@ tab's own filters stack on top.
   time" chart with a dropdown for who to plot and a draggable range slider
   to zoom into a sub-range. All-day events are excluded everywhere hours
   are counted, so a full-day placeholder doesn't inflate anyone's total.
+  A "time since you last saw them" tracker shows a days-ago count per
+  person with a ring that fills and shifts from green to red the longer
+  it's been. A friend network graph plots everyone as a node, linked to
+  whoever they've shared a real, timed event with (thicker link = more
+  shared events, draggable to rearrange).
 - **Habits & repeating events** — streaks/gaps for any category you pick,
   plus auto-detected recurring series (Book Club, Standup, ...) flagged
   active/slowing down/stopped against their own historical cadence.
@@ -120,7 +125,10 @@ tab's own filters stack on top.
   who you usually do that category/venue with lately, or your most
   frequent people recently as a last resort, so someone you saw
   constantly a while back but haven't since doesn't keep outranking who
-  you're actually spending time with now. If a local Ollama server is
+  you're actually spending time with now. The last suggested person is
+  reserved as a reconnection nudge — whoever you have a real history with
+  but haven't seen in the longest time — blended in alongside your usual
+  company rather than instead of it. If a local Ollama server is
   running, a few clearly-labeled AI-brainstormed event ideas are folded
   in too — never presented as a real listing.
 

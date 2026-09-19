@@ -474,3 +474,143 @@ function statTile(label, value) {
   div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
   return div;
 }
+
+// --- Friend network graph ---
+// A simple force-directed layout (Fruchterman-Reingold-ish: every pair of
+// nodes repels, every edge pulls its two ends together, cooled over a
+// fixed number of iterations to a settled static layout) rendered once,
+// not animated continuously - consistent with every other chart here
+// being a one-shot render, not a live simulation. Dragging a node just
+// repositions it and its own edges; it doesn't restart the simulation.
+function networkGraph(container, nodes, edges, { height = 480 } = {}) {
+  container.innerHTML = "";
+  if (!nodes.length) {
+    container.innerHTML = '<p class="empty-note">No data yet.</p>';
+    return;
+  }
+  const w = container.clientWidth || 640;
+  const h = height;
+
+  const maxEvents = Math.max(...nodes.map(n => n.events), 1);
+  const sim = nodes.map(n => ({
+    person: n.person,
+    events: n.events,
+    total_hours: n.total_hours,
+    x: w / 2 + (Math.random() - 0.5) * w * 0.6,
+    y: h / 2 + (Math.random() - 0.5) * h * 0.6,
+    vx: 0, vy: 0,
+    r: 6 + 10 * Math.sqrt(n.events / maxEvents),
+  }));
+  const indexByPerson = new Map(sim.map((n, i) => [n.person, i]));
+  const edgeList = edges
+    .map(e => ({ a: indexByPerson.get(e.person_a), b: indexByPerson.get(e.person_b), w: e.shared_events }))
+    .filter(e => e.a !== undefined && e.b !== undefined);
+  let draggingIndex = null; // declared up front - referenced by node listeners wired below, before the drag handlers further down
+
+  const k = Math.sqrt((w * h) / sim.length); // ideal inter-node spacing
+  const iterations = 200;
+  for (let iter = 0; iter < iterations; iter++) {
+    const temp = k * (1 - iter / iterations); // cooling: big jumps early, tiny by the end
+    sim.forEach(n => { n.vx = 0; n.vy = 0; });
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        let dx = sim[i].x - sim[j].x, dy = sim[i].y - sim[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const force = (k * k) / dist;
+        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+        sim[i].vx += fx; sim[i].vy += fy;
+        sim[j].vx -= fx; sim[j].vy -= fy;
+      }
+    }
+    edgeList.forEach(e => {
+      const a = sim[e.a], b = sim[e.b];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const force = ((dist * dist) / k) * Math.min(e.w, 5) * 0.3;
+      const fx = (dx / dist) * force, fy = (dy / dist) * force;
+      a.vx -= fx; a.vy -= fy;
+      b.vx += fx; b.vy += fy;
+    });
+    sim.forEach(n => {
+      const disp = Math.sqrt(n.vx * n.vx + n.vy * n.vy) || 0.01;
+      const capped = Math.min(disp, temp);
+      n.x += (n.vx / disp) * capped;
+      n.y += (n.vy / disp) * capped;
+      n.x = Math.max(n.r + 10, Math.min(w - n.r - 10, n.x));
+      n.y = Math.max(n.r + 10, Math.min(h - n.r - 10, n.y));
+    });
+  }
+
+  const svg = el("svg", { width: w, height: h, viewBox: `0 0 ${w} ${h}` });
+  const edgeColor = cssVar("--grid");
+  const lineEls = edgeList.map(e => {
+    const a = sim[e.a], b = sim[e.b];
+    const line = el("line", {
+      x1: a.x.toFixed(1), y1: a.y.toFixed(1), x2: b.x.toFixed(1), y2: b.y.toFixed(1),
+      stroke: edgeColor, "stroke-width": Math.min(1 + e.w, 6), opacity: 0.6,
+    });
+    svg.appendChild(line);
+    return line;
+  });
+
+  const nodeColor = cssVar("--series-1");
+  const circleEls = [], labelEls = [];
+  sim.forEach((n, i) => {
+    const circle = el("circle", {
+      cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: n.r.toFixed(1),
+      fill: nodeColor, stroke: cssVar("--surface-1"), "stroke-width": 1.5, style: "cursor:grab",
+    });
+    const label = el("text", {
+      x: n.x.toFixed(1), y: (n.y + n.r + 12).toFixed(1), "text-anchor": "middle",
+      fill: cssVar("--text-secondary"), "font-size": 11,
+    });
+    label.textContent = n.person;
+    svg.appendChild(label);
+    svg.appendChild(circle);
+    circleEls.push(circle);
+    labelEls.push(label);
+
+    const tooltipHtml = () => `<strong>${n.person}</strong><br>${n.events} events &middot; ${Math.round(n.total_hours)}h`;
+    circle.addEventListener("mouseenter", evt => showTooltip(evt, tooltipHtml()));
+    circle.addEventListener("mousemove", evt => { if (draggingIndex === null) showTooltip(evt, tooltipHtml()); });
+    circle.addEventListener("mouseleave", () => { if (draggingIndex === null) hideTooltip(); });
+    circle.addEventListener("mousedown", evt => {
+      draggingIndex = i;
+      circle.style.cursor = "grabbing";
+      evt.preventDefault();
+    });
+  });
+
+  // One shared drag handler on the SVG itself (not `window`) so it's
+  // garbage-collected along with the SVG on the next render, rather than
+  // an ever-growing pile of stale listeners from a previous graph if this
+  // tab reloads repeatedly (a global filter change re-fetches every tab).
+  function updateNode(i) {
+    const n = sim[i];
+    circleEls[i].setAttribute("cx", n.x.toFixed(1));
+    circleEls[i].setAttribute("cy", n.y.toFixed(1));
+    labelEls[i].setAttribute("x", n.x.toFixed(1));
+    labelEls[i].setAttribute("y", (n.y + n.r + 12).toFixed(1));
+    edgeList.forEach((e, idx) => {
+      if (e.a === i) { lineEls[idx].setAttribute("x1", n.x.toFixed(1)); lineEls[idx].setAttribute("y1", n.y.toFixed(1)); }
+      if (e.b === i) { lineEls[idx].setAttribute("x2", n.x.toFixed(1)); lineEls[idx].setAttribute("y2", n.y.toFixed(1)); }
+    });
+  }
+  svg.addEventListener("mousemove", evt => {
+    if (draggingIndex === null) return;
+    const rect = svg.getBoundingClientRect();
+    const n = sim[draggingIndex];
+    n.x = Math.max(n.r, Math.min(w - n.r, evt.clientX - rect.left));
+    n.y = Math.max(n.r, Math.min(h - n.r, evt.clientY - rect.top));
+    updateNode(draggingIndex);
+  });
+  const endDrag = () => {
+    if (draggingIndex === null) return;
+    circleEls[draggingIndex].style.cursor = "grab";
+    draggingIndex = null;
+  };
+  svg.addEventListener("mouseup", endDrag);
+  svg.addEventListener("mouseleave", endDrag);
+
+  container.appendChild(svg);
+}

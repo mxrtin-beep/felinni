@@ -599,8 +599,13 @@ def test_suggested_people_prefers_recent_company_over_old_history():
     ]
     recent_df = ingest.load_events_from_records(events)
     people, reason = future_events.suggested_people(recent_df, category=None, location=None)
-    assert people == ["NewFriend"]
+    # NewFriend still leads (your recent company); OldFriend is blended
+    # in as a reconnection nudge - a real history (3+ events), just a
+    # stale one - rather than dropped entirely.
+    assert people[0] == "NewFriend"
+    assert "OldFriend" in people
     assert "recently" in reason
+    assert "haven't seen" in reason
 
 
 def test_suggested_people_falls_back_to_all_time_when_nothing_recent(df):
@@ -1036,3 +1041,55 @@ def test_platform_events_end_to_end_keeps_venue_local_time():
     assert len(events) == 1
     assert events[0]["start"] == "2026-09-18T20:00:00"
     assert events[0]["end"] == "2026-09-18T21:00:00"
+
+
+def test_most_overdue_person_picks_the_stalest_real_relationship():
+    events = [
+        _event(1, "A", "2023-01-01T17:00:00Z", "2023-01-01T19:00:00Z", people=["StaleFriend"]),
+        _event(2, "A", "2023-02-01T17:00:00Z", "2023-02-01T19:00:00Z", people=["StaleFriend"]),
+        _event(3, "A", "2023-03-01T17:00:00Z", "2023-03-01T19:00:00Z", people=["StaleFriend"]),
+        _event(4, "B", "2026-01-01T17:00:00Z", "2026-01-01T19:00:00Z", people=["LessStaleFriend"]),
+        _event(5, "B", "2026-02-01T17:00:00Z", "2026-02-01T19:00:00Z", people=["LessStaleFriend"]),
+        _event(6, "B", "2026-03-01T17:00:00Z", "2026-03-01T19:00:00Z", people=["LessStaleFriend"]),
+    ]
+    df = ingest.load_events_from_records(events)
+    assert future_events._most_overdue_person(df, exclude=[]) == "StaleFriend"
+
+
+def test_most_overdue_person_ignores_a_one_off_encounter():
+    """A single event shouldn't count as a real relationship worth
+    nudging a reconnection for."""
+    events = [
+        _event(1, "A", "2023-01-01T17:00:00Z", "2023-01-01T19:00:00Z", people=["OneTimeStranger"]),
+    ]
+    df = ingest.load_events_from_records(events)
+    assert future_events._most_overdue_person(df, exclude=[]) is None
+
+
+def test_most_overdue_person_excludes_already_suggested_people():
+    events = [
+        _event(1, "A", "2023-01-01T17:00:00Z", "2023-01-01T19:00:00Z", people=["StaleFriend"]),
+        _event(2, "A", "2023-02-01T17:00:00Z", "2023-02-01T19:00:00Z", people=["StaleFriend"]),
+        _event(3, "A", "2023-03-01T17:00:00Z", "2023-03-01T19:00:00Z", people=["StaleFriend"]),
+    ]
+    df = ingest.load_events_from_records(events)
+    assert future_events._most_overdue_person(df, exclude=["StaleFriend"]) is None
+
+
+def test_suggested_people_blends_location_company_with_a_reconnection_nudge():
+    """The exact ask: base suggestions on people you normally hang out
+    with in that area, plus someone you haven't spent time with in a
+    while."""
+    events = [
+        _event(1, "Dinner", "2026-09-01T19:00:00Z", "2026-09-01T21:00:00Z", people=["FairfaxFriend"], location="El Coyote, 419 N Fairfax Ave, Los Angeles, CA 90036"),
+        _event(2, "Dinner", "2026-09-08T19:00:00Z", "2026-09-08T21:00:00Z", people=["FairfaxFriend"], location="El Coyote, 419 N Fairfax Ave, Los Angeles, CA 90036"),
+        _event(3, "Hangout", "2023-01-01T17:00:00Z", "2023-01-01T19:00:00Z", people=["StaleFriend"]),
+        _event(4, "Hangout", "2023-02-01T17:00:00Z", "2023-02-01T19:00:00Z", people=["StaleFriend"]),
+        _event(5, "Hangout", "2023-03-01T17:00:00Z", "2023-03-01T19:00:00Z", people=["StaleFriend"]),
+    ]
+    df = ingest.load_events_from_records(events)
+    people, reason = future_events.suggested_people(df, category=None, location="Molly Malone's, 575 S Fairfax Ave, Los Angeles, CA 90036")
+    assert "FairfaxFriend" in people
+    assert "StaleFriend" in people
+    assert "Fairfax" in reason
+    assert "haven't seen" in reason

@@ -467,6 +467,30 @@ th.sortable:hover {
 .badge.stopped { background: rgba(208, 59, 59, 0.15); color: var(--status-critical); }
 .badge.planned { background: var(--grid); color: var(--text-secondary); font-weight: 500; margin-left: 8px; vertical-align: middle; }
 
+.last-seen-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.last-seen-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 140px;
+}
+.last-seen-ring {
+  flex: none;
+}
+.last-seen-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.last-seen-days {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 button {
   font: inherit;
   font-size: 13px;
