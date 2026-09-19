@@ -1,13 +1,26 @@
-"""Recurring event tracker: for each named recurring series (a real
-Calendar repeat rule - `is_recurring`, not just a shared category), infer
-its usual cadence from its own history and flag whether it's falling off
+"""Recurring event tracker: for each named recurring series, infer its
+usual cadence from its own history and flag whether it's falling off
 relative to that cadence. Complements felinni.habits (which tracks a
 category you pick) by auto-detecting every named commitment - "Book
 Club", "Poker Night", ... - without you having to name it.
+
+Detected from the title repeating at least `min_occurrences` times, not
+from Calendar's own `is_recurring` repeat-rule flag: a real habit like a
+gym rotation ("Push Day", "Pull Day", ...) is often typed in fresh each
+time rather than set up as a formal repeat rule, and even a properly
+recurring series can pick up an irregular per-occurrence title (e.g. a
+"with A, B" guest list attached by hand on some occurrences but not
+others) that would make `is_recurring` unreliable as the sole signal
+either way. Titles are also normalized by stripping a trailing "with
+A, B" guest list (felinni.ingest.strip_with_suffix) before grouping, so
+"Dinner with Alice" and "Dinner with Bob" count as the same series
+rather than each falling short of the occurrence threshold alone.
 """
 from __future__ import annotations
 
 import pandas as pd
+
+from .ingest import strip_with_suffix
 
 STATUS_ORDER = {"stopped": 0, "slowing down": 1, "active": 2}
 
@@ -34,10 +47,10 @@ def recurring_series(
     happens to be dated later still.
     """
     as_of = as_of or pd.Timestamp.now()
-    recurring = df[df["is_recurring"]]
+    normalized = df.assign(_series_title=df["title"].apply(strip_with_suffix))
 
     rows = []
-    for title, group in recurring.groupby("title"):
+    for title, group in normalized.groupby("_series_title"):
         dates = group["start"].sort_values()
         if len(dates) < min_occurrences:
             continue

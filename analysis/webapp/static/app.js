@@ -187,6 +187,71 @@ function miniTrendCellHtml(slope) {
     </div>`;
 }
 
+// --- Friend network graph: color-by dropdown + legend ---
+function lerpColor(hexA, hexB, t) {
+  const a = parseInt(hexA.slice(1), 16), b = parseInt(hexB.slice(1), 16);
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+// One entry per "color by" dropdown option: getColor(node, ctx) computes
+// a node's fill, and legend describes the same scale for display. ctx
+// carries whatever per-render context a mode needs (a trend lookup, or
+// the max value in view to normalize against) - built fresh each render
+// in renderFriendNetwork() below, since it depends on the current node set.
+const NETWORK_COLOR_MODES = {
+  recency: {
+    legend: { gradient: "linear-gradient(to right, var(--status-good), var(--status-warning), var(--status-critical))", low: "Seen recently", high: "Not seen in a while" },
+    getColor: n => lastSeenColor(daysSince(n.last_seen) ?? 0),
+  },
+  tenure: {
+    legend: { gradient: "linear-gradient(to right, #dbeafe, #4338ca)", low: "Recently met", high: "Known longest" },
+    getColor: (n, ctx) => lerpColor("#dbeafe", "#4338ca", ctx.maxKnownDays > 0 ? Math.min((daysSince(n.first_seen) ?? 0) / ctx.maxKnownDays, 1) : 0),
+  },
+  trend: {
+    legend: { gradient: "linear-gradient(to right, var(--status-critical), var(--grid), var(--status-good))", low: "Fading", high: "Growing" },
+    getColor: (n, ctx) => {
+      const slope = ctx.trendByPerson.get(n.person)?.slope_events_per_year;
+      if (slope == null) return cssVarSafe("--text-muted") || "#999";
+      const t = Math.max(-1, Math.min(1, slope / TREND_CAP_EVENTS_PER_YEAR));
+      return t >= 0 ? lerpColor("#d9d9d9", "#0ca30c", t) : lerpColor("#d9d9d9", "#d03b3b", -t);
+    },
+  },
+  hours: {
+    legend: { gradient: "linear-gradient(to right, #dbeafe, #1d4ed8)", low: "Least time together", high: "Most time together" },
+    getColor: (n, ctx) => lerpColor("#dbeafe", "#1d4ed8", ctx.maxHours > 0 ? Math.min((n.total_hours || 0) / ctx.maxHours, 1) : 0),
+  },
+};
+
+// Holds the most recently fetched network/trend data so the color-by
+// dropdown and reset-view button (bound once, since a re-render of this
+// tab shouldn't pile up duplicate listeners) always act on the current
+// data rather than whatever was in scope the first time they were wired.
+let currentNetworkData = null;
+
+function renderNetworkLegend(mode) {
+  const el = document.getElementById("network-legend");
+  if (!el) return;
+  const { gradient, low, high } = NETWORK_COLOR_MODES[mode].legend;
+  el.innerHTML = `<span>${low}</span><div class="network-legend-bar" style="background:${gradient}"></div><span>${high}</span>`;
+}
+
+function renderFriendNetwork(nodes, edges, trends, mode) {
+  const trendByPerson = new Map(trends.map(t => [t.person, t]));
+  const ctx = {
+    trendByPerson,
+    maxHours: Math.max(...nodes.map(n => n.total_hours || 0), 1),
+    maxKnownDays: Math.max(...nodes.map(n => daysSince(n.first_seen) ?? 0), 1),
+  };
+  const modeSpec = NETWORK_COLOR_MODES[mode] || NETWORK_COLOR_MODES.recency;
+  renderNetworkLegend(mode in NETWORK_COLOR_MODES ? mode : "recency");
+  networkGraph(document.getElementById("friend-network-graph"), nodes, edges, {
+    getColor: n => modeSpec.getColor(n, ctx),
+  });
+}
+
 function renderPeopleSummaryTable(people, trends) {
   const container = document.getElementById("people-summary-table");
   if (!container) return;
@@ -606,8 +671,24 @@ async function loadPeople() {
       await refreshPeopleTrend();
     })(),
     (async () => {
-      const network = await api("social/network");
-      networkGraph(document.getElementById("friend-network-graph"), network.nodes, network.edges);
+      const [network, trends] = await Promise.all([api("social/network"), api("trends")]);
+      currentNetworkData = { nodes: network.nodes, edges: network.edges, trends };
+      const colorSelect = document.getElementById("network-color-by");
+      renderFriendNetwork(currentNetworkData.nodes, currentNetworkData.edges, currentNetworkData.trends, colorSelect ? colorSelect.value : "recency");
+      if (colorSelect && !colorSelect._networkListenerBound) {
+        colorSelect._networkListenerBound = true;
+        colorSelect.addEventListener("change", () => {
+          if (!currentNetworkData) return;
+          renderFriendNetwork(currentNetworkData.nodes, currentNetworkData.edges, currentNetworkData.trends, colorSelect.value);
+        });
+      }
+      const resetBtn = document.getElementById("network-reset-view");
+      if (resetBtn && !resetBtn._networkListenerBound) {
+        resetBtn._networkListenerBound = true;
+        resetBtn.addEventListener("click", () => {
+          document.getElementById("friend-network-graph")._networkResetView?.();
+        });
+      }
     })(),
   ]);
   results.forEach(r => { if (r.status === "rejected") console.error("People tab section failed:", r.reason); });

@@ -381,6 +381,21 @@ th.sortable:hover {
   margin-bottom: 6px;
 }
 
+.network-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.network-legend .network-legend-bar {
+  width: 140px;
+  height: 8px;
+  border-radius: 4px;
+}
+
 .legend .swatch {
   display: inline-block;
   width: 10px;

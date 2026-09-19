@@ -190,7 +190,18 @@
       </div>
     </div>
     <div class="card">
-      <h2>Friend network</h2>
+      <div class="controls">
+        <h2 style="margin:0">Friend network</h2>
+        <label>Color by <select id="network-color-by">
+          <option value="recency">Time since last seen</option>
+          <option value="tenure">Known since</option>
+          <option value="trend">Recent trend</option>
+          <option value="hours">Time spent together</option>
+        </select></label>
+        <button type="button" id="network-reset-view">Reset view</button>
+      </div>
+      <p class="card-note">Scroll/pinch to zoom, drag the background to pan, drag a node to rearrange it.</p>
+      <div class="network-legend" id="network-legend"></div>
       <div id="friend-network-graph"></div>
     </div>
   </section>

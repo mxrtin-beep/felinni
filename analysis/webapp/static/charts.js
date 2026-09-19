@@ -482,7 +482,16 @@ function statTile(label, value) {
 // not animated continuously - consistent with every other chart here
 // being a one-shot render, not a live simulation. Dragging a node just
 // repositions it and its own edges; it doesn't restart the simulation.
-function networkGraph(container, nodes, edges, { height = 480 } = {}) {
+//
+// The simulation itself runs in a "world" coordinate space sized to fit
+// the node count comfortably (simW x simH below) rather than whatever
+// pixel size the container happens to be - with enough people, cramming
+// the layout into a ~640x480 box is what was forcing nodes and labels to
+// overlap regardless of how good the force layout was. The visible <svg>
+// stays fixed at the container's pixel size; a <g> holding everything is
+// panned/zoomed via an SVG transform, defaulting to a zoomed-out view that
+// fits the whole world so nothing starts clipped.
+function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) {
   container.innerHTML = "";
   if (!nodes.length) {
     container.innerHTML = '<p class="empty-note">No data yet.</p>';
@@ -491,14 +500,22 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
   const w = container.clientWidth || 640;
   const h = height;
 
+  // ~90px^2 of world space per node, keeping the container's own aspect
+  // ratio, and never smaller than the visible box itself.
+  const worldArea = Math.max(nodes.length, 1) * 9000;
+  const aspect = w / h;
+  const simH = Math.max(h, Math.sqrt(worldArea / aspect));
+  const simW = Math.max(w, simH * aspect);
+
   const maxEvents = Math.max(...nodes.map(n => n.events), 1);
   const sim = nodes.map(n => ({
     person: n.person,
     events: n.events,
     total_hours: n.total_hours,
     last_seen: n.last_seen,
-    x: w / 2 + (Math.random() - 0.5) * w * 0.6,
-    y: h / 2 + (Math.random() - 0.5) * h * 0.6,
+    first_seen: n.first_seen,
+    x: simW / 2 + (Math.random() - 0.5) * simW * 0.6,
+    y: simH / 2 + (Math.random() - 0.5) * simH * 0.6,
     vx: 0, vy: 0,
     r: 6 + 10 * Math.sqrt(n.events / maxEvents),
   }));
@@ -513,8 +530,8 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
   // circle itself - without this, a node near the wall renders fine but
   // its label clips off the edge of the box.
   const marginX = 55, marginTop = 20, marginBottom = 36;
-  const cx = w / 2, cy = h / 2;
-  const k = Math.sqrt((w * h) / sim.length); // ideal inter-node spacing
+  const cx = simW / 2, cy = simH / 2;
+  const k = Math.sqrt((simW * simH) / sim.length); // ideal inter-node spacing
   const iterations = 250;
   for (let iter = 0; iter < iterations; iter++) {
     const temp = k * (1 - iter / iterations); // cooling: big jumps early, tiny by the end
@@ -553,12 +570,27 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
       const capped = Math.min(disp, temp);
       n.x += (n.vx / disp) * capped;
       n.y += (n.vy / disp) * capped;
-      n.x = Math.max(marginX, Math.min(w - marginX, n.x));
-      n.y = Math.max(marginTop, Math.min(h - marginBottom, n.y));
+      n.x = Math.max(marginX, Math.min(simW - marginX, n.x));
+      n.y = Math.max(marginTop, Math.min(simH - marginBottom, n.y));
     });
   }
 
-  const svg = el("svg", { width: w, height: h, viewBox: `0 0 ${w} ${h}` });
+  // The visible <svg> is pinned to the container's own pixel size; a <g>
+  // ("world") holding every edge/node/label is panned and zoomed via an
+  // SVG transform, so dragging/zooming never has to touch node positions
+  // themselves - just the transform.
+  const svg = el("svg", { width: w, height: h, viewBox: `0 0 ${w} ${h}`, style: "cursor:grab" });
+  const world = el("g", {});
+  svg.appendChild(world);
+
+  const fitScale = Math.min(w / simW, h / simH);
+  const minScale = fitScale * 0.6, maxScale = 4;
+  const view = { x: (w - simW * fitScale) / 2, y: (h - simH * fitScale) / 2, k: fitScale };
+  function applyTransform() {
+    world.setAttribute("transform", `translate(${view.x.toFixed(1)},${view.y.toFixed(1)}) scale(${view.k.toFixed(4)})`);
+  }
+  applyTransform();
+
   const edgeColor = cssVar("--grid");
   const lineEls = edgeList.map(e => {
     const a = sim[e.a], b = sim[e.b];
@@ -566,28 +598,27 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
       x1: a.x.toFixed(1), y1: a.y.toFixed(1), x2: b.x.toFixed(1), y2: b.y.toFixed(1),
       stroke: edgeColor, "stroke-width": Math.min(1 + e.w, 6), opacity: 0.6,
     });
-    svg.appendChild(line);
+    world.appendChild(line);
     return line;
   });
 
-  // Colored by how long it's been since you last saw them - the same
-  // green/orange/red scale as the People table's "Time since" ring, so
-  // it reads consistently across the tab (a stale connection stands out
-  // red at a glance, not just on hover).
+  // Colored per the caller's getColor (defaults to the same green/orange/
+  // red "time since last seen" scale as the People table's ring, so it
+  // reads consistently across the tab even with no colorBy control).
+  const colorFn = getColor || (n => typeof lastSeenColor === "function" ? lastSeenColor(daysSince(n.last_seen) ?? 0) : cssVar("--series-1"));
   const circleEls = [], labelEls = [];
   sim.forEach((n, i) => {
-    const nodeColor = typeof lastSeenColor === "function" ? lastSeenColor(daysSince(n.last_seen) ?? 0) : cssVar("--series-1");
     const circle = el("circle", {
       cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: n.r.toFixed(1),
-      fill: nodeColor, stroke: cssVar("--surface-1"), "stroke-width": 1.5, style: "cursor:grab",
+      fill: colorFn(n), stroke: cssVar("--surface-1"), "stroke-width": 1.5, style: "cursor:grab",
     });
     const label = el("text", {
       x: n.x.toFixed(1), y: (n.y + n.r + 12).toFixed(1), "text-anchor": "middle",
       fill: cssVar("--text-secondary"), "font-size": 11,
     });
     label.textContent = n.person;
-    svg.appendChild(label);
-    svg.appendChild(circle);
+    world.appendChild(label);
+    world.appendChild(circle);
     circleEls.push(circle);
     labelEls.push(label);
 
@@ -599,13 +630,10 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
       draggingIndex = i;
       circle.style.cursor = "grabbing";
       evt.preventDefault();
+      evt.stopPropagation(); // don't also start a background pan (see mousedown below)
     });
   });
 
-  // One shared drag handler on the SVG itself (not `window`) so it's
-  // garbage-collected along with the SVG on the next render, rather than
-  // an ever-growing pile of stale listeners from a previous graph if this
-  // tab reloads repeatedly (a global filter change re-fetches every tab).
   function updateNode(i) {
     const n = sim[i];
     circleEls[i].setAttribute("cx", n.x.toFixed(1));
@@ -617,21 +645,66 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
       if (e.b === i) { lineEls[idx].setAttribute("x2", n.x.toFixed(1)); lineEls[idx].setAttribute("y2", n.y.toFixed(1)); }
     });
   }
+
+  // Screen pixels -> world coordinates, accounting for the current pan/zoom.
+  function toWorld(evt, rect) {
+    return {
+      x: (evt.clientX - rect.left - view.x) / view.k,
+      y: (evt.clientY - rect.top - view.y) / view.k,
+    };
+  }
+
+  let panStart = null; // {mouseX, mouseY, viewX, viewY} while dragging the background
+  svg.addEventListener("mousedown", evt => {
+    if (draggingIndex !== null) return;
+    panStart = { mouseX: evt.clientX, mouseY: evt.clientY, viewX: view.x, viewY: view.y };
+    svg.style.cursor = "grabbing";
+  });
   svg.addEventListener("mousemove", evt => {
-    if (draggingIndex === null) return;
-    const rect = svg.getBoundingClientRect();
-    const n = sim[draggingIndex];
-    n.x = Math.max(marginX, Math.min(w - marginX, evt.clientX - rect.left));
-    n.y = Math.max(marginTop, Math.min(h - marginBottom, evt.clientY - rect.top));
-    updateNode(draggingIndex);
+    if (draggingIndex !== null) {
+      const rect = svg.getBoundingClientRect();
+      const n = sim[draggingIndex];
+      const world_pt = toWorld(evt, rect);
+      n.x = Math.max(marginX, Math.min(simW - marginX, world_pt.x));
+      n.y = Math.max(marginTop, Math.min(simH - marginBottom, world_pt.y));
+      updateNode(draggingIndex);
+      return;
+    }
+    if (panStart) {
+      view.x = panStart.viewX + (evt.clientX - panStart.mouseX);
+      view.y = panStart.viewY + (evt.clientY - panStart.mouseY);
+      applyTransform();
+    }
   });
   const endDrag = () => {
-    if (draggingIndex === null) return;
-    circleEls[draggingIndex].style.cursor = "grab";
+    if (draggingIndex !== null) circleEls[draggingIndex].style.cursor = "grab";
     draggingIndex = null;
+    panStart = null;
+    svg.style.cursor = "grab";
   };
   svg.addEventListener("mouseup", endDrag);
   svg.addEventListener("mouseleave", endDrag);
 
+  // Zoom toward the cursor (or pinch-zoom, which browsers report as a
+  // ctrlKey wheel event) rather than always toward the canvas center, so
+  // the part of the graph the user's actually pointing at stays put.
+  svg.addEventListener("wheel", evt => {
+    evt.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const mx = evt.clientX - rect.left, my = evt.clientY - rect.top;
+    const wx = (mx - view.x) / view.k, wy = (my - view.y) / view.k;
+    const factor = evt.deltaY < 0 ? 1.12 : 1 / 1.12;
+    view.k = Math.max(minScale, Math.min(maxScale, view.k * factor));
+    view.x = mx - wx * view.k;
+    view.y = my - wy * view.k;
+    applyTransform();
+  }, { passive: false });
+
   container.appendChild(svg);
+  container._networkResetView = () => {
+    view.x = (w - simW * fitScale) / 2;
+    view.y = (h - simH * fitScale) / 2;
+    view.k = fitScale;
+    applyTransform();
+  };
 }

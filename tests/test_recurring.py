@@ -1,6 +1,7 @@
 """Tests for felinni.recurring: cadence inference and falling-off status
-for named recurring event series (EventKit's own repeat rule, not just a
-shared category)."""
+for named recurring event series, detected from a repeated (and
+participant-list-normalized) title rather than EventKit's own repeat-rule
+flag."""
 import json
 import sys
 from pathlib import Path
@@ -108,13 +109,38 @@ def test_series_with_too_few_occurrences_is_skipped(tmp_path):
     assert "New Thing" not in result["title"].values
 
 
-def test_non_recurring_events_are_excluded(tmp_path):
-    events = [_recurring_event(i, "Book Club", pd.Timestamp("2024-01-01") + pd.Timedelta(weeks=i)) for i in range(5)]
+def test_repeated_title_is_detected_even_without_native_recurring_flag(tmp_path):
+    # A real habit (a gym rotation typed in fresh each time, e.g. "Push
+    # Day") is often never set up as a formal Calendar repeat rule at all -
+    # relying on isRecurring alone would silently drop it.
+    events = [_recurring_event(i, "Push Day", pd.Timestamp("2024-01-01") + pd.Timedelta(weeks=i)) for i in range(5)]
     for e in events:
         e["isRecurring"] = False
     df = _load(tmp_path, events)
     result = recurring.recurring_series(df)
-    assert result.empty
+    assert "Push Day" in result["title"].values
+    assert result[result["title"] == "Push Day"].iloc[0]["occurrences"] == 5
+
+
+def test_with_suffix_is_stripped_so_varying_guests_count_as_one_series(tmp_path):
+    # "Dinner with Alice" and "Dinner with Bob" are the same recurring
+    # hangout with a different guest attached each time, not two
+    # unrelated one-off titles that individually fall short of
+    # min_occurrences.
+    start = pd.Timestamp("2024-01-01")
+    events = [
+        _recurring_event(0, "Dinner with Alice", start),
+        _recurring_event(1, "Dinner with Bob", start + pd.Timedelta(weeks=1)),
+        _recurring_event(2, "Dinner with Alice", start + pd.Timedelta(weeks=2)),
+        _recurring_event(3, "Dinner with Bob", start + pd.Timedelta(weeks=3)),
+    ]
+    for e in events:
+        e["isRecurring"] = False
+    df = _load(tmp_path, events)
+    result = recurring.recurring_series(df, min_occurrences=4)
+    assert "Dinner" in result["title"].values
+    assert "Dinner with Alice" not in result["title"].values
+    assert result[result["title"] == "Dinner"].iloc[0]["occurrences"] == 4
 
 
 @pytest.mark.parametrize("days,expected", [(1, "daily"), (7, "weekly"), (14, "biweekly"), (30, "monthly"), (90, "quarterly"), (365, "yearly")])

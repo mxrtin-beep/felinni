@@ -67,6 +67,25 @@ def _people_from_title(title: str | None) -> list[str]:
     return [c for c in candidates if c and _NAME_LIKE.match(c)]
 
 
+def strip_with_suffix(title: str | None) -> str | None:
+    """Drop a trailing "with A, B" people list from a title, e.g. "Drinks
+    and Dinner with Leo, Valerie" -> "Drinks and Dinner". Used by
+    felinni.recurring so the same recurring hangout with a varying guest
+    list (or one occurrence tagged via attendees vs. another spelled out
+    in the title) is recognized as one series rather than fragmented into
+    one-off titles that never individually clear the occurrence threshold.
+    Only strips when the trailing clause actually looks like a name list
+    (reuses _people_from_title's own check) - "Meeting with the board"
+    keeps its "with" clause since "the board" isn't a name.
+    """
+    if not title:
+        return title
+    match = _WITH_PATTERN.search(title)
+    if not match or not _people_from_title(title):
+        return title
+    return title[:match.start()].rstrip()
+
+
 def _people_for(row_attendees: list[str], note_tags: dict[str, list[str]], title: str | None) -> list[str]:
     people = set(row_attendees or [])
     for key in ("people", "with"):

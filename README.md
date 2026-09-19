@@ -63,12 +63,19 @@ tab's own filters stack on top.
   draggable range slider to zoom into a sub-range. All-day events are
   excluded everywhere hours are counted, so a full-day placeholder
   doesn't inflate anyone's total. A friend network graph plots everyone
-  as a node, colored the same green-to-red scale as "time since you last
-  saw them," linked to whoever they've shared a real, timed event with
-  (thicker link = more shared events, draggable to rearrange).
+  as a node, linked to whoever they've shared a real, timed event with
+  (thicker link = more shared events, draggable to rearrange), scroll/pinch
+  to zoom and drag the background to pan. Node color is switchable via a
+  dropdown between time since last seen, known since, recent trend, or
+  time spent together, with a legend for whichever is selected.
 - **Habits & repeating events** — streaks/gaps for any category you pick,
   plus auto-detected recurring series (Book Club, Standup, ...) flagged
   active/slowing down/stopped against their own historical cadence.
+  Detected from a repeated title, not Calendar's own repeat-rule flag, so
+  a habit typed in fresh each time (a gym rotation like "Push Day"/"Pull
+  Day") is still picked up; a trailing "with A, B" guest list is stripped
+  first so "Dinner with Alice" and "Dinner with Bob" count as the same
+  series instead of two one-offs.
 
   ![Habits tab](docs/images/habits.png)
 - **Map & Travel** — click **Geocode locations** to plot everything
