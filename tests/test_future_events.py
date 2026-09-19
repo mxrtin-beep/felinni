@@ -571,3 +571,13 @@ def test_suggested_people_falls_back_to_overall_frequency_when_nothing_matches(d
 def test_suggested_people_empty_for_empty_calendar():
     people, reason = future_events.suggested_people(pd.DataFrame(), category="Outdoors")
     assert people == []
+
+
+def test_is_rate_limited_by_ddg_true_only_for_a_confirmed_block_page():
+    blocked = {"eventbrite": "DuckDuckGo returned 0 parsed results (response was 14230 chars) - looks like DuckDuckGo's rate-limit/anomaly page, not real results"}
+    empty = {"eventbrite": "DuckDuckGo returned 0 parsed results (response was 500 chars)"}
+    failed = {"eventbrite": "DuckDuckGo request failed: connection refused"}
+    assert future_events.is_rate_limited_by_ddg(blocked) is True
+    assert future_events.is_rate_limited_by_ddg(empty) is False
+    assert future_events.is_rate_limited_by_ddg(failed) is False
+    assert future_events.is_rate_limited_by_ddg({}) is False

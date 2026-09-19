@@ -180,6 +180,9 @@ def _resolve_ddg_href(href: str) -> str:
     return href
 
 
+_DDG_BLOCK_NOTE = "looks like DuckDuckGo's rate-limit/anomaly page, not real results"
+
+
 def _looks_like_ddg_block_page(page_html: str) -> bool:
     """True when the response is DuckDuckGo's anomaly/rate-limit
     interstitial rather than a real results page - it has no
@@ -190,6 +193,17 @@ def _looks_like_ddg_block_page(page_html: str) -> bool:
     return 'id="links"' not in lowered and (
         "anomaly" in lowered or "unusual traffic" in lowered or "detected an unusual" in lowered
     )
+
+
+def is_rate_limited_by_ddg(debug: dict[str, str]) -> bool:
+    """True once any per-source debug note (see `platform_events`/
+    `other_web_events`) has confirmed DuckDuckGo's actual block page
+    (not just an empty result) - a real, keyword-matched block, not a
+    guess. Callers use this to stop issuing further DuckDuckGo requests
+    for the rest of a batch once it's clear they'd all hit the identical
+    wall - repeating a request that's already confirmed blocked doesn't
+    reveal anything new and risks extending the block further."""
+    return any(_DDG_BLOCK_NOTE in status for status in debug.values())
 
 
 def _parse_ddg_html_results(page_html: str) -> list[dict]:
@@ -441,7 +455,7 @@ def platform_events(
 
     parsed = _parse_ddg_html_results(page_html)
     if debug is not None and not parsed:
-        blocked = " - looks like DuckDuckGo's rate-limit/anomaly page, not real results" if _looks_like_ddg_block_page(page_html) else ""
+        blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
         debug[platform] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
 
     events = []
@@ -486,7 +500,7 @@ def other_web_events(
 
     parsed = _parse_ddg_html_results(page_html)
     if debug is not None and not parsed:
-        blocked = " - looks like DuckDuckGo's rate-limit/anomaly page, not real results" if _looks_like_ddg_block_page(page_html) else ""
+        blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
         debug["web"] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
 
     known_domains = tuple(PLATFORM_DOMAINS.values())
