@@ -139,14 +139,23 @@ function lastSeenLabel(days) {
 // growing/fading trend as three small inline visualizations per row,
 // rather than three separate charts/tables repeating the same person
 // list three times. ---
-function miniBarCellHtml(hours, maxHours) {
-  if (hours == null) return "-";
-  const pct = maxHours > 0 ? Math.max(hours / maxHours, 0) * 100 : 0;
+function miniBarCellHtml(value, max, formatFn = fmtHours, colorVar = "--series-1") {
+  if (value == null) return "-";
+  const pct = max > 0 ? Math.max(value / max, 0) * 100 : 0;
   return `
     <div class="mini-viz-cell">
-      <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${pct.toFixed(1)}%"></div></div>
-      <span class="mini-viz-label">${fmtHours(hours)}</span>
+      <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${pct.toFixed(1)}%;background:var(${colorVar})"></div></div>
+      <span class="mini-viz-label">${formatFn(value)}</span>
     </div>`;
+}
+
+// "45d" / "6mo" / "2.3yr" - a duration, not a calendar date, so it reads
+// at a glance next to the bar rather than needing a tooltip.
+function fmtTenure(days) {
+  if (days == null) return "-";
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${Math.round(days / 30)}mo`;
+  return `${(days / 365).toFixed(1)}yr`;
 }
 
 function miniLastSeenCellHtml(days) {
@@ -187,12 +196,15 @@ function renderPeopleSummaryTable(people, trends) {
     person: p.person,
     total_hours: p.total_hours,
     days_since: daysSince(p.last_seen),
+    known_days: daysSince(p.first_seen),
     trend: trendByPerson.get(p.person)?.slope_events_per_year ?? null,
   }));
+  const maxKnownDays = Math.max(...rows.map(r => r.known_days || 0), 1);
   table(container, [
     { key: "person", label: "Person" },
     { key: "total_hours", label: "Time spent", num: true, format: v => miniBarCellHtml(v, maxHours) },
     { key: "days_since", label: "Time since", num: true, format: v => miniLastSeenCellHtml(v) },
+    { key: "known_days", label: "Known since", num: true, format: v => miniBarCellHtml(v, maxKnownDays, fmtTenure, "--series-3") },
     { key: "trend", label: "Growing / fading", num: true, format: v => miniTrendCellHtml(v) },
   ], rows);
 }

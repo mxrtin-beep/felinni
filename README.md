@@ -56,13 +56,15 @@ tab's own filters stack on top.
 
 - **People** — one table per person consolidating time spent (a mini
   bar), time since you last saw them (a ring that fills and shifts from
-  green to red the longer it's been), and growing/fading (a small
+  green to red the longer it's been), known since (a mini bar off their
+  earliest event, e.g. "8mo" or "2.3yr"), and growing/fading (a small
   diverging bar, green/right for more often, red/left for less), plus an
   "events over time" chart with a dropdown for who to plot and a
   draggable range slider to zoom into a sub-range. All-day events are
   excluded everywhere hours are counted, so a full-day placeholder
   doesn't inflate anyone's total. A friend network graph plots everyone
-  as a node, linked to whoever they've shared a real, timed event with
+  as a node, colored the same green-to-red scale as "time since you last
+  saw them," linked to whoever they've shared a real, timed event with
   (thicker link = more shared events, draggable to rearrange).
 - **Habits & repeating events** — streaks/gaps for any category you pick,
   plus auto-detected recurring series (Book Club, Standup, ...) flagged

@@ -496,6 +496,7 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
     person: n.person,
     events: n.events,
     total_hours: n.total_hours,
+    last_seen: n.last_seen,
     x: w / 2 + (Math.random() - 0.5) * w * 0.6,
     y: h / 2 + (Math.random() - 0.5) * h * 0.6,
     vx: 0, vy: 0,
@@ -569,9 +570,13 @@ function networkGraph(container, nodes, edges, { height = 480 } = {}) {
     return line;
   });
 
-  const nodeColor = cssVar("--series-1");
+  // Colored by how long it's been since you last saw them - the same
+  // green/orange/red scale as the People table's "Time since" ring, so
+  // it reads consistently across the tab (a stale connection stands out
+  // red at a glance, not just on hover).
   const circleEls = [], labelEls = [];
   sim.forEach((n, i) => {
+    const nodeColor = typeof lastSeenColor === "function" ? lastSeenColor(daysSince(n.last_seen) ?? 0) : cssVar("--series-1");
     const circle = el("circle", {
       cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: n.r.toFixed(1),
       fill: nodeColor, stroke: cssVar("--surface-1"), "stroke-width": 1.5, style: "cursor:grab",
