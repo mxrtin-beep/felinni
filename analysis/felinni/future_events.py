@@ -118,11 +118,19 @@ _BROWSER_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-_RESULT_LINK_RE = re.compile(
-    r'class="result__a"[^>]*href="(?P<href>[^"]*)"[^>]*>(?P<title>.*?)</a>', re.S
+# Matches the whole opening <a> tag's attributes as one group rather than
+# requiring class="result__a" to appear before href="..." in a fixed
+# order - the previous version (`class="result__a"[^>]*href="..."`) would
+# silently find nothing at all (indistinguishable from a real block) if
+# DuckDuckGo ever emits href before class, or wraps result__a with
+# another class alongside it (`class="result__a extra-class"`), neither
+# of which is an actual block - just markup this parser didn't expect.
+_RESULT_A_RE = re.compile(
+    r'<a\s+(?P<attrs>[^>]*\bclass="[^"]*\bresult__a\b[^"]*"[^>]*)>(?P<title>.*?)</a>', re.S
 )
+_HREF_ATTR_RE = re.compile(r'href="(?P<href>[^"]*)"')
 _RESULT_SNIPPET_RE = re.compile(
-    r'class="result__snippet"[^>]*>(?P<snippet>.*?)</a>', re.S
+    r'class="[^"]*\bresult__snippet\b[^"]*"[^>]*>(?P<snippet>.*?)</a>', re.S
 )
 _TAG_RE = re.compile(r"<[^>]+>")
 _JSONLD_RE = re.compile(
@@ -195,6 +203,22 @@ def _looks_like_ddg_block_page(page_html: str) -> bool:
     )
 
 
+def _log_empty_ddg_response(source: str, page_html: str) -> None:
+    """Prints the actual start of DuckDuckGo's response whenever nothing
+    gets parsed out of it - so a real block/rate-limit page, a changed
+    page layout this module's parser no longer recognizes, and a
+    network-level interceptor silently swapping in its own page (a
+    corporate/ISP filter, a captive portal - none of which raise a
+    Python exception, since they still return a normal 200) are all
+    visible directly in the terminal this ran from, not indistinguishable
+    behind a bare "0 results". Always prints (not gated by whether a
+    `debug` dict was passed) - this is what makes DuckDuckGo activity
+    show up in the terminal the way any other library's request/response
+    logging would, addressing that nothing was visible there before."""
+    preview = re.sub(r"\s+", " ", page_html).strip()[:300]
+    print(f"[future_events] {source}: 0 parsed results, response starts: {preview!r}", flush=True)
+
+
 def is_rate_limited_by_ddg(debug: dict[str, str]) -> bool:
     """True once any per-source debug note (see `platform_events`/
     `other_web_events`) has confirmed DuckDuckGo's actual block page
@@ -209,14 +233,18 @@ def is_rate_limited_by_ddg(debug: dict[str, str]) -> bool:
 def _parse_ddg_html_results(page_html: str) -> list[dict]:
     """Each search result as {title, url, snippet}, in the order DuckDuckGo
     returned them."""
-    titles = list(_RESULT_LINK_RE.finditer(page_html))
+    titles = []
+    for match in _RESULT_A_RE.finditer(page_html):
+        href_match = _HREF_ATTR_RE.search(match.group("attrs"))
+        if href_match:
+            titles.append((href_match.group("href"), match.group("title")))
     snippets = list(_RESULT_SNIPPET_RE.finditer(page_html))
     results = []
-    for i, match in enumerate(titles):
+    for i, (href, title) in enumerate(titles):
         snippet = _strip_tags(snippets[i].group("snippet")) if i < len(snippets) else ""
         results.append({
-            "title": _strip_tags(match.group("title")),
-            "url": _resolve_ddg_href(match.group("href")),
+            "title": _strip_tags(title),
+            "url": _resolve_ddg_href(href),
             "snippet": snippet,
         })
     return results
@@ -234,12 +262,14 @@ def _ddg_search(query: str, timeout: float = 10.0) -> str:
     browser actually sends for this page, so it's the well-trodden path."""
     import requests
 
+    print(f"[future_events] DuckDuckGo search: {query!r}", flush=True)
     resp = requests.get(
         _DDG_HTML_URL,
         params={"q": query},
         headers=_BROWSER_HEADERS,
         timeout=timeout,
     )
+    print(f"[future_events] DuckDuckGo response: HTTP {resp.status_code}, {len(resp.text)} chars", flush=True)
     resp.raise_for_status()
     return resp.text
 
@@ -454,9 +484,11 @@ def platform_events(
         return []
 
     parsed = _parse_ddg_html_results(page_html)
-    if debug is not None and not parsed:
-        blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
-        debug[platform] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
+    if not parsed:
+        _log_empty_ddg_response(platform, page_html)
+        if debug is not None:
+            blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
+            debug[platform] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
 
     events = []
     skipped = 0
@@ -499,9 +531,11 @@ def other_web_events(
         return []
 
     parsed = _parse_ddg_html_results(page_html)
-    if debug is not None and not parsed:
-        blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
-        debug["web"] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
+    if not parsed:
+        _log_empty_ddg_response("web", page_html)
+        if debug is not None:
+            blocked = f" - {_DDG_BLOCK_NOTE}" if _looks_like_ddg_block_page(page_html) else ""
+            debug["web"] = f"DuckDuckGo returned 0 parsed results (response was {len(page_html)} chars){blocked}"
 
     known_domains = tuple(PLATFORM_DOMAINS.values())
     events = []

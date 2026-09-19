@@ -581,3 +581,49 @@ def test_is_rate_limited_by_ddg_true_only_for_a_confirmed_block_page():
     assert future_events.is_rate_limited_by_ddg(empty) is False
     assert future_events.is_rate_limited_by_ddg(failed) is False
     assert future_events.is_rate_limited_by_ddg({}) is False
+
+
+def test_parse_ddg_html_results_tolerates_href_before_class():
+    """A previous version of the parsing regex required class="result__a"
+    to appear before href="..." in the tag - if DuckDuckGo ever emits
+    them in the other order, that silently found nothing at all,
+    indistinguishable from a real block."""
+    html_reordered = '''
+    <div class="result"><div class="result__body">
+      <h2 class="result__title"><a href="https://partiful.com/e/abc123" class="result__a">A Party</a></h2>
+      <a class="result__snippet" href="https://partiful.com/e/abc123">You're invited!</a>
+    </div></div>
+    '''
+    results = future_events._parse_ddg_html_results(html_reordered)
+    assert len(results) == 1
+    assert results[0]["url"] == "https://partiful.com/e/abc123"
+    assert results[0]["title"] == "A Party"
+
+
+def test_parse_ddg_html_results_tolerates_extra_classes_alongside_result__a():
+    html_extra_class = '''
+    <div class="result"><div class="result__body">
+      <h2 class="result__title"><a class="result__a some-other-class" href="https://partiful.com/e/abc123">A Party</a></h2>
+      <a class="result__snippet some-other-class" href="https://partiful.com/e/abc123">You're invited!</a>
+    </div></div>
+    '''
+    results = future_events._parse_ddg_html_results(html_extra_class)
+    assert len(results) == 1
+    assert results[0]["snippet"] == "You're invited!"
+
+
+def test_ddg_search_prints_the_query_and_response_to_the_terminal(capsys):
+    with patch("requests.get", return_value=_mock_response(SAMPLE_DDG_HTML)):
+        future_events._ddg_search("site:eventbrite.com Los Angeles events")
+    out = capsys.readouterr().out
+    assert "DuckDuckGo search" in out
+    assert "site:eventbrite.com Los Angeles events" in out
+    assert "DuckDuckGo response" in out
+
+
+def test_platform_events_prints_a_response_preview_when_nothing_parses(capsys):
+    with patch("requests.get", return_value=_mock_response("<html>some unexpected page content here</html>")):
+        future_events.platform_events("luma")
+    out = capsys.readouterr().out
+    assert "0 parsed results" in out
+    assert "unexpected page content" in out
