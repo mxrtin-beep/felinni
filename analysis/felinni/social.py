@@ -83,16 +83,27 @@ def fading_or_growing(df: pd.DataFrame, min_total_events: int = 5) -> pd.DataFra
     by_year = by_year[by_year.sum(axis=1) >= min_total_events]
 
     rows = []
-    years = np.array(by_year.columns, dtype=float)
+    all_years = np.array(by_year.columns, dtype=float)
     for person, counts in by_year.iterrows():
         counts = counts.to_numpy(dtype=float)
+        # Fit only from this person's own first active year onward - the
+        # calendar's full year range (all_years) may start well before they
+        # ever show up, and those leading zero-years would otherwise get
+        # read as part of the trend, making a person who simply entered the
+        # picture partway through look "growing" no matter how their own
+        # history actually moved. Trailing zero-years (after their last
+        # event) are kept, since a recent gap is real fading signal.
+        first_idx = np.flatnonzero(counts)[0]
+        years, counts = all_years[first_idx:], counts[first_idx:]
+        if len(years) < 2:
+            continue
         slope, intercept = np.polyfit(years, counts, 1)
         rows.append({
             "person": person,
             "total_events": int(counts.sum()),
             "slope_events_per_year": slope,
-            "first_year": int(years.min()),
-            "last_year": int(years.max()),
+            "first_year": int(years[0]),
+            "last_year": int(all_years[-1]),
         })
     return pd.DataFrame(rows).sort_values("slope_events_per_year")
 

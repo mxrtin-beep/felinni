@@ -62,6 +62,33 @@ def test_person_trend_by_period_excludes_all_day_events(df):
     assert "Bob" not in trend.columns
 
 
+def test_fading_or_growing_ignores_years_before_person_first_appears():
+    # The calendar's own history spans 2015-2026 (via Carla, one event per
+    # year), but Dana doesn't show up until 2022, ramps up through 2024,
+    # then isn't seen at all in 2025 or 2026 - a real, recent fade. Fitting
+    # against the calendar's full year range used to zero-pad 2015-2021
+    # (years before Dana ever appears), which outweighed that drop-off and
+    # reported this as "growing" - see analysis/felinni/social.py history.
+    events = [
+        _event(f"carla-{y}", "Standing coffee", f"{y}-06-01T09:00:00Z", f"{y}-06-01T10:00:00Z", people=["Carla"])
+        for y in range(2015, 2027)
+    ]
+    idx = 0
+    for year, n in [(2022, 1), (2023, 2), (2024, 4)]:
+        for i in range(n):
+            events.append(_event(
+                f"dana-{idx}", "Hang out", f"{year}-{(i % 12) + 1:02d}-01T09:00:00Z",
+                f"{year}-{(i % 12) + 1:02d}-01T10:00:00Z", people=["Dana"],
+            ))
+            idx += 1
+    df = ingest.load_events_from_records(events)
+    trend = social.fading_or_growing(df, min_total_events=1)
+    dana = trend[trend["person"] == "Dana"].iloc[0]
+    assert dana["first_year"] == 2022  # not 2015, the calendar's own start
+    assert dana["last_year"] == 2026  # trailing silence is kept, not trimmed
+    assert dana["slope_events_per_year"] < 0  # unseen in 2025-2026 outweighs 2022-2024 ramp
+
+
 def test_friend_network_edges_links_co_attendees():
     events = [
         _event(1, "Dinner", "2024-01-01T19:00:00Z", "2024-01-01T21:00:00Z", people=["Alice", "Bob"]),
