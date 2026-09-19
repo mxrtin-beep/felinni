@@ -372,6 +372,18 @@ function wireCategoryFilter() {
 }
 
 async function reloadAll() {
+  // loadFuture()'s own comment already says the global date filter has
+  // nothing to do with a forward-looking event search - but calling it
+  // with no arguments here undid that in practice: any global-filter
+  // change (the date range, its reset button, a category checkbox)
+  // triggers reloadAll(), which silently reset the Future tab back to
+  // its default region/window, discarding whatever the user had actually
+  // searched (confirmed directly: a search for "Los Angeles, CA" got
+  // wiped back to the default "Thousand Oaks, CA" this way). Re-reads
+  // the Future tab's own inputs so a global-filter change refreshes it
+  // for the same region/window already showing, not a different one.
+  const futureRegionInput = document.getElementById("future-region-input");
+  const futureDaysSelect = document.getElementById("future-days-select");
   await Promise.all([
     refreshOverviewStats(),
     loadPlaces(),
@@ -382,7 +394,7 @@ async function reloadAll() {
     loadTime(),
     refreshSeasonality(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
-    loadFuture(),
+    loadFuture(futureRegionInput?.value.trim() || undefined, futureDaysSelect?.value || undefined),
   ]);
 }
 

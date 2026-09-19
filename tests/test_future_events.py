@@ -222,7 +222,7 @@ def test_platform_events_overfetches_relative_to_max_results():
 
 
 def test_within_search_window_drops_events_confirmed_beyond_the_window():
-    now = future_events._now_utc()
+    now = future_events._now_local()
     soon = {"title": "Soon", "start": (now + pd.Timedelta(days=2)).isoformat(), "end": None}
     far = {"title": "Far", "start": (now + pd.Timedelta(days=60)).isoformat(), "end": None}
     unknown = {"title": "Unknown", "start": None, "end": None}
@@ -233,7 +233,7 @@ def test_within_search_window_drops_events_confirmed_beyond_the_window():
 
 
 def test_within_search_window_keeps_something_that_started_very_recently():
-    now = future_events._now_utc()
+    now = future_events._now_local()
     just_started = {"title": "Just started", "start": (now - pd.Timedelta(hours=2)).isoformat(), "end": None}
     assert future_events.within_search_window([just_started], days_ahead=7) == [just_started]
 
@@ -329,12 +329,13 @@ def test_platform_events_enriches_from_event_page_jsonld():
         events = future_events.platform_events("meetup", max_results=1)
 
     event = events[0]
-    # startDate/endDate are given as -07:00 (Pacific); enrichment normalizes
-    # to naive UTC, matching how felinni.ingest stores every other event's
-    # start/end - so this becomes 2026-10-04T00:00/02:00, not the wall-clock
-    # Pacific time.
-    assert event["start"] == "2026-10-04T00:00:00"
-    assert event["end"] == "2026-10-04T02:00:00"
+    # startDate/endDate are given as -07:00 (Pacific) - kept as the venue's
+    # own wall-clock time (5pm/7pm), not converted to UTC: the frontend's
+    # `new Date(isoString)` parses a timezone-less string as local time,
+    # so converting to UTC here would silently shift the displayed time by
+    # the venue's offset once re-interpreted as if already local.
+    assert event["start"] == "2026-10-03T17:00:00"
+    assert event["end"] == "2026-10-03T19:00:00"
     assert event["duration_hours"] == 2.0
     assert "Griffith Park" in event["location"]
 
@@ -403,7 +404,7 @@ def test_multi_date_listing_picks_the_soonest_future_occurrence_not_a_blended_sp
     end - reported as a single event spanning many months. It should
     instead pick one whole, self-consistent occurrence: the soonest one
     still in the future."""
-    now = future_events._now_utc()
+    now = future_events._now_local()
     past_start = now - pd.Timedelta(days=30)
     soon_start = now + pd.Timedelta(days=10)
     later_start = now + pd.Timedelta(days=200)
@@ -993,3 +994,45 @@ def test_ddg_text_search_raises_after_two_failed_attempts():
         with patch("time.sleep"):
             with pytest.raises(RuntimeError, match="still failing"):
                 future_events._ddg_text_search("some query", max_results=5)
+
+
+def test_parse_jsonld_datetime_keeps_venue_wall_clock_time_not_utc():
+    """Confirmed directly against a real result: "Rapid Skateboarding"
+    with a JSON-LD startDate of "2026-09-18T20:00:00-07:00" (8pm Pacific)
+    displayed as "Sep 19 at 3:00 AM" - the previous behavior converted to
+    UTC (00:00 the next day, in this case actually 03:00 since the
+    example below uses a later evening time) and stored that number as a
+    timezone-less string, which the frontend's `new Date(isoString)` then
+    re-parsed as if it were already local time, silently shifting the
+    displayed time by the venue's UTC offset. The wall-clock time as
+    written should be kept unchanged."""
+    parsed = future_events._parse_jsonld_datetime("2026-09-18T20:00:00-07:00")
+    assert parsed == pd.Timestamp("2026-09-18T20:00:00")
+
+
+def test_parse_jsonld_datetime_handles_a_naive_datetime_with_no_offset():
+    parsed = future_events._parse_jsonld_datetime("2026-09-18T20:00:00")
+    assert parsed == pd.Timestamp("2026-09-18T20:00:00")
+
+
+def test_platform_events_end_to_end_keeps_venue_local_time():
+    """Regression test for the exact reported case: a Partiful result
+    whose page has JSON-LD with an explicit Pacific offset should show
+    the venue's own evening time, not a shifted early-morning time on
+    the following day."""
+    results = [{"title": "Rapid Skateboarding", "href": "https://partiful.com/e/rapid-skateboarding", "body": "..."}]
+    page_html = """
+    <html><head>
+    <script type="application/ld+json">
+    {"@type": "Event", "name": "Rapid Skateboarding",
+     "startDate": "2026-09-18T20:00:00-07:00", "endDate": "2026-09-18T21:00:00-07:00",
+     "location": {"name": "Rapid Skateboarding", "address": "1784 E Los Angeles Ave, Simi Valley, CA 93065"}}
+    </script>
+    </head></html>
+    """
+    patcher, _ = _mock_ddgs(results)
+    with patcher, patch("requests.get", return_value=_mock_response(page_html)):
+        events = future_events.platform_events("partiful", region="Los Angeles, CA")
+    assert len(events) == 1
+    assert events[0]["start"] == "2026-09-18T20:00:00"
+    assert events[0]["end"] == "2026-09-18T21:00:00"

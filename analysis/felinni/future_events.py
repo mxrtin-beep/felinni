@@ -451,16 +451,32 @@ def _location_from_jsonld(location) -> str | None:
 
 
 def _parse_jsonld_datetime(value) -> pd.Timestamp | None:
+    """schema.org dates commonly carry an explicit UTC offset ("-07:00"
+    for Pacific) - keep the wall-clock time the page itself specified
+    (its own venue/local timezone) rather than converting to UTC. Every
+    other stored start/end in this app (both here and in felinni.ingest,
+    for the user's own calendar) is naive local time, and the frontend's
+    `new Date(isoString)` parses a timezone-less string as local time per
+    the JS spec - converting to UTC here (the previous behavior) silently
+    shifted every timed result by its venue's UTC offset once the
+    browser re-interpreted that already-shifted number as if it were
+    already local (an 8pm Pacific show, "-07:00", displayed as 3am the
+    next day)."""
     if not value or not isinstance(value, str):
         return None
-    parsed = pd.to_datetime(value, utc=True, errors="coerce")
+    parsed = pd.to_datetime(value, errors="coerce")
     if pd.isna(parsed):
         return None
-    return parsed.tz_convert(None)
+    if parsed.tzinfo is not None:
+        parsed = parsed.tz_localize(None)
+    return parsed
 
 
-def _now_utc() -> pd.Timestamp:
-    return pd.Timestamp.now(tz="UTC").tz_convert(None)
+def _now_local() -> pd.Timestamp:
+    """Naive "now", in the same terms as everything else this module
+    compares timestamps against - a page's own local/venue wall-clock
+    time, not UTC (see `_parse_jsonld_datetime`)."""
+    return pd.Timestamp.now()
 
 
 def _pick_occurrence(nodes: list[dict], now: pd.Timestamp) -> tuple[dict, pd.Timestamp, pd.Timestamp] | None:
@@ -571,7 +587,7 @@ def enrich_with_event_page(event: dict, timeout: float = 10.0) -> dict:
     else:
         nodes = []
 
-    picked = _pick_occurrence(nodes, _now_utc()) if nodes else None
+    picked = _pick_occurrence(nodes, _now_local()) if nodes else None
     node, start, end = picked if picked else (None, None, None)
 
     if start is None:
@@ -880,7 +896,7 @@ def within_search_window(events: list[dict], days_ahead: int = DEFAULT_SEARCH_WI
     "this week"/"this month" phrase in the DuckDuckGo query is only a
     bias toward near-term results, not a guarantee, since a lot of pages
     don't literally repeat that phrase back."""
-    now = _now_utc()
+    now = _now_local()
     cutoff = now + pd.Timedelta(days=days_ahead)
     kept = []
     for event in events:
