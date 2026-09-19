@@ -63,6 +63,23 @@ directly: identical title/address, found separately by `other_web_events`
 on each domain) - `dedupe_events` collapses these before ranking, so the
 Future tab doesn't show the same event twice under two different sources.
 
+A plain-text date guess (`_fallback_datetime_from_text`) handles both
+"Monday, September 14, 2026 at 7:00PM" (full month/day, year optional)
+and the far more common "Sat 9/5 at 3pm" / "Thu, May 7 at 9:00 PM" shape
+(weekday + numeric-or-month date + time, no year) - the original pattern
+only matched the first shape, so most real event snippets came through
+as "date/time unknown" even with a perfectly readable date sitting right
+in the text. `other_web_events` only trusts this guess when it also comes
+with `date_confirmed` (a real schema.org date, not just a text guess) -
+an arbitrary, untrusted domain is far more likely to have some unrelated
+date-shaped text on the page than an event platform is.
+
+`suggested_people`/`_matched_frequent_location` try your last
+`_RECENT_HISTORY_DAYS` days of history before falling back to all-time -
+a person or place you saw constantly a while back but haven't since
+shouldn't keep outranking who/where you're actually spending time with
+now.
+
 `ollama_event_ideas` is a small, fully optional bonus: if a local Ollama
 server (https://ollama.com) happens to be running, it's asked for a few
 freeform "you might enjoy..." ideas based on your calendar's own top
@@ -70,8 +87,7 @@ categories. These are clearly NOT real scraped listings (no URL, no
 confirmed date/venue - tagged `is_ai_suggestion`) - they're a brainstormed
 nudge, not a claim that this specific event exists. If Ollama isn't
 running (the common case - nothing else here needs it), this silently
-returns [], the same graceful-degradation pattern as an offline DuckDuckGo
-search.
+returns [], the same graceful-degradation pattern as an offline search.
 """
 from __future__ import annotations
 
@@ -159,6 +175,11 @@ _EVENT_URL_PATTERNS = {
     "eventbrite": re.compile(r"eventbrite\.[a-z.]+/e/", re.I),
     "meetup": re.compile(r"meetup\.com/[^/]+/events/\d+", re.I),
     "luma": re.compile(r"lu\.ma/(?!discover|explore|calendar|embed|signin|login|home|about|u/)[a-z0-9_-]+/?(?:$|\?)", re.I),
+    # Confirmed directly: Partiful's own account/group landing page ("Los
+    # Angeles Fun Events - Partiful", a description of the kind of events
+    # a host runs, not one) slipped through with no pattern registered
+    # here to catch it - real Partiful event pages are at partiful.com/e/.
+    "partiful": re.compile(r"partiful\.com/e/", re.I),
 }
 
 # Titles a search turns up for a platform's own "browse everything in this
@@ -173,13 +194,49 @@ _LISTING_TITLE_RE = re.compile(
     r"^(discover|explore|browse)\b.*\bevents\b"
     r"|things to do in|events (calendar|near me)\b"
     r"|\bevents?,?\s+(tickets|things to do)\b"
-    r"|\bupcoming events\b|\bevents? in\b|\bwhat'?s on\b|\bevents calendar\b",
+    r"|\bupcoming events\b|\bevents? in\b|\bwhat'?s on\b|\bevents calendar\b"
+    # A page whose own indexed title is generic social-profile boilerplate
+    # ("Luma (@luma_hq) - Instagram photos and videos") rather than
+    # anything about a specific event - confirmed directly: a lu.ma page
+    # with a slug that isn't in the excluded home/about/... list can still
+    # be an account or tag landing page rather than one event, and some
+    # sites fall back to their Instagram handle's own title metadata when
+    # the page itself never set a real one.
+    r"|instagram photos and videos|\(@[\w.]+\)",
     re.I,
 )
 
 
 def _strip_tags(fragment: str) -> str:
     return html.unescape(_TAG_RE.sub("", fragment)).strip()
+
+
+def _strip_platform_suffix(title: str, platform: str) -> str:
+    """Drops a trailing "- Partiful"/"- Posh" branding suffix a search
+    result's own page-title tag adds - the source is already shown
+    separately as its own badge next to the title, so keeping it in the
+    title too just doubles it up ("Los Angeles Fun Events - Partiful"
+    next to a "partiful" badge, observed directly)."""
+    domain = PLATFORM_DOMAINS.get(platform, "")
+    site_name = domain.split(".")[0] if domain else ""
+    names = {n for n in (platform, site_name) if n}
+    if not names:
+        return title
+    pattern = "|".join(re.escape(n) for n in names)
+    return re.sub(rf"\s*[-|•]\s*(?:{pattern})\s*$", "", title, flags=re.I).strip()
+
+
+def _clean_snippet(snippet: str) -> str:
+    """Light cleanup on a search result's own snippet - collapses
+    whitespace, tames repeated punctuation ("FOR FREE ENTRANCE!!!" ->
+    "FOR FREE ENTRANCE!"), and caps length. It's someone else's raw
+    scraped text, not something worth heavily rewriting, but this keeps
+    the worst of it from cluttering the card."""
+    cleaned = re.sub(r"\s+", " ", snippet or "").strip()
+    cleaned = re.sub(r"([!?])\1+", r"\1", cleaned)
+    if len(cleaned) > 220:
+        cleaned = cleaned[:220].rsplit(" ", 1)[0] + "…"
+    return cleaned
 
 
 def _is_event_url(platform: str, url: str) -> bool:
@@ -343,13 +400,31 @@ def _pick_occurrence(nodes: list[dict], now: pd.Timestamp) -> tuple[dict, pd.Tim
 
 
 # A plain-text date, as it might appear in a search result's own
-# title/snippet even when the linked page can't be fetched or parsed (blocked,
-# JS-rendered, restructured) - e.g. "...Monday, September 14, 2026 at City
-# Club LA...". No timezone information is available this way, so the result
-# is treated as a naive local time, same precision loss as reading it off a
+# title/snippet even when the linked page can't be fetched or parsed
+# (blocked, JS-rendered, restructured). Two shapes are handled, both
+# confirmed directly on real event snippets:
+# - "Monday, September 14, 2026 at 7:00PM" - a full month/day, with or
+#   without a year and a leading weekday, both optional.
+# - "Sat 9/5 at 3pm" / "Thu, May 7 at 9:00 PM" - the *far* more common
+#   shape in practice (ticketing sites default to "this weekend" phrasing
+#   without a year), which the original pattern didn't match at all -
+#   every event snippet in that shape came through as "date/time unknown"
+#   even though the date was right there in the text. When no year is
+#   present, pandas' underlying dateutil parser defaults the missing
+#   year to the current one; a date that's actually already passed this
+#   year (an annual event's next occurrence being next year, say) still
+#   gets dropped safely by `within_search_window` rather than shown with
+#   a wrong date.
+# No timezone information is available this way either, so the result is
+# treated as a naive local time, same precision loss as reading it off a
 # page by eye.
+_FALLBACK_WEEKDAY_PREFIX = r"(?:Mon|Tue(?:s)?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)[a-z]*\.?,?\s+"
+_FALLBACK_MONTH_DAY = r"[A-Z][a-z]{2,8}\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?"
+_FALLBACK_NUMERIC_DATE = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
+_FALLBACK_TIME = r"\d{1,2}(?::\d{2})?\s*[APap]\.?[Mm]\.?"
 _FALLBACK_DATE_RE = re.compile(
-    r"([A-Z][a-z]+ \d{1,2},?\s*\d{4})(?:\s+at\s+(\d{1,2}:\d{2}\s*[APap]\.?[Mm]\.?))?"
+    rf"(?:{_FALLBACK_WEEKDAY_PREFIX})?(?P<date>{_FALLBACK_MONTH_DAY}|{_FALLBACK_NUMERIC_DATE})"
+    rf"(?:\s+at\s+(?P<time>{_FALLBACK_TIME}))?"
 )
 
 
@@ -357,18 +432,38 @@ def _fallback_datetime_from_text(text: str) -> pd.Timestamp | None:
     match = _FALLBACK_DATE_RE.search(text or "")
     if not match:
         return None
-    date_part, time_part = match.groups()
+    date_part, time_part = match.group("date"), match.group("time")
     combined = f"{date_part} {time_part}" if time_part else date_part
-    parsed = pd.to_datetime(combined, errors="coerce")
-    return None if pd.isna(parsed) else parsed
+    # `pd.to_datetime` defaults a missing year to 0001, not the current
+    # year, for a string like "9/5 3pm" - `dateutil.parser.parse`'s own
+    # `default=` is what actually fills in "this year" for whichever
+    # component (just the year, here - month/day/time are always present
+    # in what `_FALLBACK_DATE_RE` matched) is missing from the text.
+    import dateutil.parser
+
+    # Normalized (midnight) so a date with no time in the text still
+    # defaults to midnight, same as before - not whatever moment this
+    # happens to run.
+    default = pd.Timestamp.now().normalize().to_pydatetime()
+    try:
+        parsed = dateutil.parser.parse(combined, default=default)
+    except (ValueError, OverflowError):
+        return None
+    return pd.Timestamp(parsed)
 
 
 def enrich_with_event_page(event: dict, timeout: float = 10.0) -> dict:
     """Fetches `event["url"]` and fills in start/end/duration_hours/location
     from the page's schema.org Event JSON-LD, if it has one; if not (fetch
     failure, no structured data, blocked), falls back to a plain-text date
-    parsed from the search result's own title/snippet. Returns a copy;
-    never raises."""
+    parsed from the search result's own title/snippet. Also sets
+    `date_confirmed`: True only when the date came from real structured
+    data, not a plain-text guess - `other_web_events` uses this to require
+    the stronger signal for an arbitrary, untrusted domain, where a
+    plain-text date guess is far more likely to be a false positive (a
+    random date elsewhere on an unrelated page) than it is on a page
+    that's already confirmed to be one of the known event platforms.
+    Returns a copy; never raises."""
     enriched = dict(event)
     if event.get("url"):
         try:
@@ -394,6 +489,7 @@ def enrich_with_event_page(event: dict, timeout: float = 10.0) -> dict:
     enriched["duration_hours"] = (
         round((end - start).total_seconds() / 3600.0, 2) if start is not None and end is not None else enriched.get("duration_hours")
     )
+    enriched["date_confirmed"] = node is not None
     if node:
         location = _location_from_jsonld(node.get("location"))
         if location:
@@ -407,6 +503,7 @@ def _event_stub(title: str, url: str, source: str, region: str, snippet: str) ->
     return {
         "title": title, "url": url, "start": None, "end": None,
         "duration_hours": None, "location": region, "source": source, "snippet": snippet,
+        "date_confirmed": False,
     }
 
 
@@ -475,7 +572,8 @@ def platform_events(
         ):
             skipped += 1
             continue
-        stub = _event_stub(result["title"], result["url"], platform, region, result["snippet"])
+        title = _strip_platform_suffix(result["title"], platform)
+        stub = _event_stub(title, result["url"], platform, region, _clean_snippet(result["snippet"]))
         events.append(enrich_with_event_page(stub))
         if len(events) >= max_results:
             break
@@ -495,9 +593,15 @@ def other_web_events(
     could be a venue's own site, a local listings site, a ticketing
     platform, ... With no domain allowlist to lean on, a result is only
     kept once it's actually confirmed to be one real, single event - i.e.
-    `enrich_with_event_page` found a usable date for it (structured or
-    plain-text) - which is what keeps this from filling up with random
-    blog posts and listicles that just happen to mention `region`. See
+    `enrich_with_event_page` found a real schema.org Event date for it,
+    not just a plain-text guess (`date_confirmed`) - which is what keeps
+    this from filling up with random blog posts, listicles, and social
+    media cross-posts (a "Luma (@luma_hq) - Instagram photos and videos"
+    result, observed directly, had a plain-text date-shaped substring
+    somewhere on the page that had nothing to do with any real event) that
+    just happen to mention `region`. `platform_events` accepts either kind
+    of date - a plain-text guess is far more trustworthy there, on a page
+    already confirmed to be one of the known event platforms. See
     `platform_events` for what `debug` (keyed "web" here) records."""
     query = f"{region} events {_time_window_phrase(days_ahead)}"
     try:
@@ -519,9 +623,9 @@ def other_web_events(
             continue  # already covered by platform_events - avoid duplicates
         if _is_bare_domain_root(result["url"]) or _looks_like_listing(result["title"]):
             continue
-        stub = _event_stub(result["title"], result["url"], domain, region, result["snippet"])
+        stub = _event_stub(result["title"], result["url"], domain, region, _clean_snippet(result["snippet"]))
         enriched = enrich_with_event_page(stub)
-        if not enriched.get("start"):
+        if not enriched.get("start") or not enriched.get("date_confirmed"):
             no_date += 1
             continue  # no confirmed real event date - too likely a listing/blog page to trust
         events.append(enriched)
@@ -695,27 +799,55 @@ def _infer_category(event: dict, categories: list[str]) -> str | None:
     return None
 
 
+# How far back "recent" reaches when picking people/places to suggest for
+# a Future tab event - long enough to have real signal, short enough that
+# someone/somewhere you saw constantly a couple years ago but haven't
+# since doesn't keep outranking who/where you're actually spending time
+# with now. Tried before falling back to the same pool's all-time history.
+_RECENT_HISTORY_DAYS = 180
+
+
+def _recent(df: pd.DataFrame) -> pd.DataFrame:
+    """`df` narrowed to the last `_RECENT_HISTORY_DAYS` days - empty (not
+    a silent fallback to the full frame) when nothing falls in that
+    window, so callers control their own fallback ordering explicitly."""
+    if df.empty:
+        return df
+    cutoff = pd.Timestamp.now() - pd.Timedelta(days=_RECENT_HISTORY_DAYS)
+    return df[df["start"] >= cutoff]
+
+
 def _matched_frequent_location(df: pd.DataFrame, location: str | None, top_n: int = 15) -> str | None:
     """One of your own most-visited location strings that overlaps
     `location` (either contains the other, case-insensitively) - the same
-    place, not just the same city/region."""
+    place, not just the same city/region. Tries your recently-visited
+    places first, falling back to all-time if nothing recent matches -
+    a place you went to constantly two years ago but haven't been back to
+    since shouldn't outrank one you're actually still going to."""
     if not location or df.empty:
         return None
     location_cf = location.casefold()
-    frequented = df["location"].dropna().value_counts().head(top_n).index
-    for place in frequented:
-        if place.casefold() in location_cf or location_cf in place.casefold():
-            return place
+    for pool in (_recent(df), df):
+        if pool.empty:
+            continue
+        frequented = pool["location"].dropna().value_counts().head(top_n).index
+        for place in frequented:
+            if place.casefold() in location_cf or location_cf in place.casefold():
+                return place
     return None
 
 
 def suggested_people(df: pd.DataFrame, category: str | None = None, location: str | None = None, limit: int = 3) -> tuple[list[str], str]:
     """People you'd plausibly want to invite, with a reason: your most
-    frequent companions for `category` if it matched one of your own;
-    failing that, whoever you usually go to a matching `location` with;
-    failing that, your most frequent companions overall. Returns
-    ([], "...") rather than a name list you have no real reason to trust
-    when there's no history to go on at all."""
+    frequent *recent* companions for `category` if it matched one of your
+    own, falling back to all-time if you haven't done that category
+    recently; then the same recent-first/all-time-fallback pattern for
+    whoever you usually go to a matching `location` with; then your most
+    frequent companions overall, recent-first too - someone you saw
+    constantly a while back but haven't since shouldn't keep outranking
+    who you're actually spending time with now. Returns ([], "...")
+    rather than a name list you have no real reason to trust when there's
+    no history to go on at all."""
     from felinni import social
 
     if df.empty:
@@ -723,13 +855,15 @@ def suggested_people(df: pd.DataFrame, category: str | None = None, location: st
 
     candidates: list[tuple[pd.DataFrame, str]] = []
     if category:
-        candidates.append((
-            df[df["category"].str.casefold() == category.casefold()],
-            f'your usual company for "{category}"',
-        ))
+        cat_pool = df[df["category"].str.casefold() == category.casefold()]
+        candidates.append((_recent(cat_pool), f'your usual company for "{category}" recently'))
+        candidates.append((cat_pool, f'your usual company for "{category}"'))
     matched_place = _matched_frequent_location(df, location)
     if matched_place:
-        candidates.append((df[df["location"] == matched_place], f"who you usually go to {matched_place} with"))
+        place_pool = df[df["location"] == matched_place]
+        candidates.append((_recent(place_pool), f"who you've recently gone to {matched_place} with"))
+        candidates.append((place_pool, f"who you usually go to {matched_place} with"))
+    candidates.append((_recent(df), "your most frequent people recently"))
     candidates.append((df, "your most frequent people overall"))
 
     for pool, reason in candidates:

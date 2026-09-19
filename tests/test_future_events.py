@@ -248,10 +248,7 @@ def test_partiful_and_posh_query_their_own_domain(platform, domain):
     assert f"site:{domain}" in query
 
 
-def test_partiful_result_is_kept_without_a_registered_url_pattern():
-    """Partiful/Posh have no _EVENT_URL_PATTERNS entry (their exact
-    event-URL shape isn't confirmed), so _is_event_url should default to
-    allowing any result on the domain rather than filtering everything out."""
+def test_partiful_result_at_a_real_event_url_is_kept():
     results = [{"title": "Someone's Birthday Party", "href": "https://partiful.com/e/abc123", "body": "You're invited!"}]
     patcher, _ = _mock_ddgs(results)
     with patcher, patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
@@ -259,6 +256,35 @@ def test_partiful_result_is_kept_without_a_registered_url_pattern():
 
     assert len(events) == 1
     assert events[0]["source"] == "partiful"
+
+
+def test_partiful_account_landing_page_is_filtered_out():
+    """Confirmed directly: a Partiful account/group's own landing page
+    ("Los Angeles Fun Events - Partiful", describing the kind of events a
+    host runs rather than one specific happening) is not at partiful.com/e/
+    and should be filtered, not returned as if it were a real event."""
+    results = [{
+        "title": "Los Angeles Fun Events - Partiful",
+        "href": "https://partiful.com/l/los-angeles-fun-events",
+        "body": "We host variety of Speed dating, Mixers, Picnics and Social gathering events.",
+    }]
+    patcher, _ = _mock_ddgs(results)
+    with patcher:
+        events = future_events.platform_events("partiful", region="Los Angeles, CA")
+    assert events == []
+
+
+def test_posh_result_is_kept_without_a_registered_url_pattern():
+    """Posh has no _EVENT_URL_PATTERNS entry (its exact event-URL shape
+    isn't confirmed), so _is_event_url should default to allowing any
+    result on the domain rather than filtering everything out."""
+    results = [{"title": "KELELA NIGHT @ YOU Los Angeles - Posh", "href": "https://posh.vip/e/kelela-night", "body": "RSVP to KELELA NIGHT."}]
+    patcher, _ = _mock_ddgs(results)
+    with patcher, patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        events = future_events.platform_events("posh", region="Los Angeles, CA")
+
+    assert len(events) == 1
+    assert events[0]["source"] == "posh"
 
 
 def test_camber_query_scopes_to_the_la_happenings_section():
@@ -276,8 +302,8 @@ def test_camber_result_is_kept_even_without_a_confirmed_date():
     domain-agnostic results) it shouldn't be dropped just for lacking a
     parsed date."""
     results = [{
-        "title": "LA Happenings, Nov 3",
-        "href": "https://camberplaces.substack.com/p/la-happenings-nov-3",
+        "title": "LA Happenings Roundup",
+        "href": "https://camberplaces.substack.com/p/la-happenings-roundup",
         "body": "This week's roundup of things to do.",
     }]
     patcher, _ = _mock_ddgs(results)
@@ -287,7 +313,7 @@ def test_camber_result_is_kept_even_without_a_confirmed_date():
     assert len(events) == 1
     assert events[0]["source"] == "camber"
     assert events[0]["start"] is None
-    assert events[0]["url"] == "https://camberplaces.substack.com/p/la-happenings-nov-3"
+    assert events[0]["url"] == "https://camberplaces.substack.com/p/la-happenings-roundup"
 
 
 def test_platform_events_respects_max_results():
@@ -366,7 +392,7 @@ def test_enrich_with_event_page_leaves_event_unchanged_when_no_date_anywhere():
             "duration_hours": None, "location": "Los Angeles, CA", "source": "meetup", "snippet": "no date here"}
     with patch("requests.get", side_effect=OSError("network unreachable")):
         enriched = future_events.enrich_with_event_page(stub)
-    assert enriched == stub
+    assert enriched == {**stub, "date_confirmed": False}
 
 
 def test_multi_date_listing_picks_the_soonest_future_occurrence_not_a_blended_span():
@@ -558,12 +584,48 @@ def test_suggested_people_falls_back_to_location_when_no_category(df):
 def test_suggested_people_falls_back_to_overall_frequency_when_nothing_matches(df):
     people, reason = future_events.suggested_people(df, category=None, location=None)
     assert "Alice" in people
-    assert "overall" in reason
+    assert "recently" in reason  # the fixture's history is all within the last 180 days
+
+
+def test_suggested_people_prefers_recent_company_over_old_history():
+    """Someone you saw constantly two years ago but haven't since
+    shouldn't keep outranking who you're actually spending time with now."""
+    events = [
+        _event(1, "Old friend hangout", "2023-01-05T17:00:00Z", "2023-01-05T19:00:00Z", people=["OldFriend"]),
+        _event(2, "Old friend hangout", "2023-01-12T17:00:00Z", "2023-01-12T19:00:00Z", people=["OldFriend"]),
+        _event(3, "Old friend hangout", "2023-01-19T17:00:00Z", "2023-01-19T19:00:00Z", people=["OldFriend"]),
+        _event(4, "Recent hangout", "2026-09-01T17:00:00Z", "2026-09-01T19:00:00Z", people=["NewFriend"]),
+    ]
+    recent_df = ingest.load_events_from_records(events)
+    people, reason = future_events.suggested_people(recent_df, category=None, location=None)
+    assert people == ["NewFriend"]
+    assert "recently" in reason
+
+
+def test_suggested_people_falls_back_to_all_time_when_nothing_recent(df):
+    """When there's no history at all in the recent window, falls back to
+    all-time frequency rather than returning nothing."""
+    old_events = [
+        _event(1, "Old hangout", "2020-01-05T17:00:00Z", "2020-01-05T19:00:00Z", people=["OldFriend"]),
+    ]
+    old_df = ingest.load_events_from_records(old_events)
+    people, reason = future_events.suggested_people(old_df, category=None, location=None)
+    assert people == ["OldFriend"]
+    assert reason == "your most frequent people overall"
 
 
 def test_suggested_people_empty_for_empty_calendar():
     people, reason = future_events.suggested_people(pd.DataFrame(), category="Outdoors")
     assert people == []
+
+
+def test_matched_frequent_location_prefers_a_recently_visited_place():
+    events = [
+        _event(1, "Old visit", "2020-01-05T17:00:00Z", "2020-01-05T19:00:00Z", location="Griffith Park Old Spot"),
+        _event(2, "Recent visit", "2026-09-01T17:00:00Z", "2026-09-01T19:00:00Z", location="Griffith Park New Spot"),
+    ]
+    df = ingest.load_events_from_records(events)
+    assert future_events._matched_frequent_location(df, "Griffith Park") == "Griffith Park New Spot"
 
 
 def test_dedupe_events_collapses_the_same_event_from_two_domains():
@@ -653,5 +715,99 @@ def test_other_web_events_skips_a_bare_domain_root():
     results = [{"title": "Some Ticketing Site", "href": "https://www.someticketsite.com/", "body": "..."}]
     patcher, _ = _mock_ddgs(results)
     with patcher:
+        events = future_events.other_web_events(region="Los Angeles, CA")
+    assert events == []
+
+
+def test_strip_platform_suffix_drops_trailing_branding():
+    assert future_events._strip_platform_suffix("Los Angeles Fun Events - Partiful", "partiful") == "Los Angeles Fun Events"
+    assert future_events._strip_platform_suffix("KELELA NIGHT @ YOU Los Angeles - Posh", "posh") == "KELELA NIGHT @ YOU Los Angeles"
+    assert future_events._strip_platform_suffix("LA Hikers & Outdoors Meetup", "meetup") == "LA Hikers & Outdoors Meetup"
+
+
+def test_clean_snippet_collapses_whitespace_and_repeated_punctuation():
+    raw = "FOR FREE ENTRANCE!!!   Location   4574 Beverly Blvd???"
+    cleaned = future_events._clean_snippet(raw)
+    assert "!!!" not in cleaned
+    assert "???" not in cleaned
+    assert "  " not in cleaned
+
+
+def test_clean_snippet_caps_length():
+    long_snippet = "word " * 100
+    cleaned = future_events._clean_snippet(long_snippet)
+    assert len(cleaned) <= 221
+    assert cleaned.endswith("…")
+
+
+def test_platform_events_strips_branding_suffix_from_title():
+    results = [{"title": "Los Angeles Fun Events - Partiful", "href": "https://partiful.com/e/la-fun-events", "body": "..."}]
+    patcher, _ = _mock_ddgs(results)
+    with patcher, patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        events = future_events.platform_events("partiful", region="Los Angeles, CA")
+    assert events[0]["title"] == "Los Angeles Fun Events"
+
+
+def test_fallback_datetime_parses_weekday_numeric_date_and_time():
+    parsed = future_events._fallback_datetime_from_text("Rooftop Pool Party Labor Day WeekendSat 9/5 at 3pm.")
+    assert parsed is not None
+    assert parsed.month == 9 and parsed.day == 5 and parsed.hour == 15
+
+
+def test_fallback_datetime_parses_weekday_month_day_no_year():
+    parsed = future_events._fallback_datetime_from_text("VP to KELELA NIGHT. Thu, May 7 at 9:00 PM - 2:00 AM YOU.")
+    assert parsed is not None
+    assert parsed.month == 5 and parsed.day == 7 and parsed.hour == 21
+
+
+def test_fallback_datetime_still_parses_full_month_day_year():
+    parsed = future_events._fallback_datetime_from_text("Monday, September 14, 2026 at 7:00PM for something fun.")
+    assert parsed == pd.Timestamp("2026-09-14T19:00:00")
+
+
+def test_fallback_datetime_date_only_defaults_to_midnight():
+    parsed = future_events._fallback_datetime_from_text(
+        "American International Short Film Festival Tickets, Monday, September 14, 2026"
+    )
+    assert parsed == pd.Timestamp("2026-09-14T00:00:00")
+
+
+def test_fallback_datetime_none_when_no_date_present():
+    assert future_events._fallback_datetime_from_text("no date here at all") is None
+
+
+def test_enrich_with_event_page_sets_date_confirmed_true_for_jsonld():
+    stub = {"title": "X", "url": "https://www.eventbrite.com/e/x", "start": None, "end": None,
+            "duration_hours": None, "location": "LA", "source": "eventbrite", "snippet": ""}
+    with patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+        enriched = future_events.enrich_with_event_page(stub)
+    assert enriched["date_confirmed"] is True
+
+
+def test_enrich_with_event_page_sets_date_confirmed_false_for_text_fallback():
+    stub = {
+        "title": "X", "url": "https://www.eventbrite.com/e/x", "start": None, "end": None,
+        "duration_hours": None, "location": "LA", "source": "eventbrite",
+        "snippet": "Join us Monday, September 14, 2026 at 7:00PM.",
+    }
+    with patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
+        enriched = future_events.enrich_with_event_page(stub)
+    assert enriched["date_confirmed"] is False
+    assert enriched["start"] is not None
+
+
+def test_other_web_events_drops_a_plain_text_only_date_on_an_unknown_domain():
+    """A plain-text date guess is far more likely to be a false positive
+    on an arbitrary, untrusted domain (a random date elsewhere on the
+    page) than on a page already confirmed to be a known event platform -
+    other_web_events should require the stronger schema.org-confirmed
+    signal, not just any parseable date-shaped text."""
+    results = [{
+        "title": "Luma (@luma_hq) • Instagram photos and videos",
+        "href": "https://www.instagram.com/luma_hq/",
+        "body": "Your curated guide to the best events in Los Angeles this weekend.",
+    }]
+    patcher, _ = _mock_ddgs(results)
+    with patcher, patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_NO_JSONLD)):
         events = future_events.other_web_events(region="Los Angeles, CA")
     assert events == []

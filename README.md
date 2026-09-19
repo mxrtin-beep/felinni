@@ -109,15 +109,20 @@ tab's own filters stack on top.
   event's own page — no API key/OAuth needed. (Camber's a Substack roundup
   rather than a per-event platform, so its results usually keep their date
   unknown — there's no event page to enrich them from.)
-  Skips browse/listing pages ("Discover LA Events") in favor of actual
-  single events, picks the soonest occurrence for a "multiple dates"
-  listing rather than blending across them, and flags anything that
+  Skips browse/listing pages ("Discover LA Events", a platform's own
+  homepage or account page) in favor of actual single events, picks the
+  soonest occurrence for a "multiple dates" listing rather than blending
+  across them, dedupes the same real event when it's independently
+  listed on more than one aggregator site, and flags anything that
   overlaps your calendar or another suggestion. Ranks by fit with your
-  habits (category, usual day/time, familiar venues) and suggests people to
-  invite with a reason (who you usually do that category/venue with, or
-  your most frequent people overall as a last resort). If a local Ollama
-  server is running, a few clearly-labeled AI-brainstormed event ideas are
-  folded in too — never presented as a real listing.
+  habits (category, usual day/time, familiar venues) and suggests people
+  to invite with a reason, weighted toward your *recent* history first —
+  who you usually do that category/venue with lately, or your most
+  frequent people recently as a last resort, so someone you saw
+  constantly a while back but haven't since doesn't keep outranking who
+  you're actually spending time with now. If a local Ollama server is
+  running, a few clearly-labeled AI-brainstormed event ideas are folded
+  in too — never presented as a real listing.
 
 ### Or skip the browser
 
