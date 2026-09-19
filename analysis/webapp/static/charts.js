@@ -523,8 +523,19 @@ function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) 
     x: simW / 2 + (Math.random() - 0.5) * simW * 0.6,
     y: simH / 2 + (Math.random() - 0.5) * simH * 0.6,
     vx: 0, vy: 0,
-    r: 6 + 10 * Math.sqrt(n.events / maxEvents),
+    r: 9 + 13 * Math.sqrt(n.events / maxEvents),
   }));
+  // The force layout's spring/repulsion equilibrium (K_TARGET) is a
+  // target, not a guarantee - two nodes pulled toward the same wall or
+  // corner by the boundary clamp below can still end up closer than
+  // that, circle-to-circle. minSeparation() is a hard floor enforced by
+  // the collision-resolution pass after the force layout settles, sized
+  // to clear both node radii and a rough label footprint (~6.2px/char at
+  // this font size) so two adjacent names don't overlap either.
+  function minSeparation(a, b) {
+    const labelHalf = n => (n.person.length * 6.2) / 2 + 6;
+    return Math.max(a.r + b.r + 16, labelHalf(a) + labelHalf(b));
+  }
   const indexByPerson = new Map(sim.map((n, i) => [n.person, i]));
   const edgeList = edges
     .map(e => ({ a: indexByPerson.get(e.person_a), b: indexByPerson.get(e.person_b), w: e.shared_events }))
@@ -579,6 +590,36 @@ function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) 
       n.x = Math.max(marginX, Math.min(simW - marginX, n.x));
       n.y = Math.max(marginTop, Math.min(simH - marginBottom, n.y));
     });
+  }
+
+  // The force layout above settles toward K_TARGET spacing on average,
+  // but that's an equilibrium, not a guarantee - a cluster of nodes all
+  // pulled toward the same wall or corner by the boundary clamp can still
+  // land closer together than that, circle-to-circle. Directly push apart
+  // any pair still under minSeparation() until none are, same idea as the
+  // "resolve collisions" pass in a physics engine.
+  for (let pass = 0; pass < 60; pass++) {
+    let moved = false;
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        const a = sim[i], b = sim[j];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const minDist = minSeparation(a, b);
+        if (dist < minDist) {
+          moved = true;
+          const push = (minDist - dist) / 2;
+          const ux = dx / dist, uy = dy / dist;
+          a.x += ux * push; a.y += uy * push;
+          b.x -= ux * push; b.y -= uy * push;
+        }
+      }
+    }
+    sim.forEach(n => {
+      n.x = Math.max(marginX, Math.min(simW - marginX, n.x));
+      n.y = Math.max(marginTop, Math.min(simH - marginBottom, n.y));
+    });
+    if (!moved) break;
   }
 
   // The visible <svg> is pinned to the container's own pixel size; a <g>
