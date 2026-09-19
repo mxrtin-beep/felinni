@@ -158,14 +158,14 @@ def test_platform_events_query_includes_domain_and_region():
 
 def test_platform_events_returns_empty_list_on_network_error():
     patcher, _ = _mock_ddgs(side_effect=OSError("network unreachable"))
-    with patcher:
+    with patcher, patch("time.sleep"):
         assert future_events.platform_events("luma") == []
 
 
 def test_platform_events_debug_records_search_failure():
     debug = {}
     patcher, _ = _mock_ddgs(side_effect=OSError("network unreachable"))
-    with patcher:
+    with patcher, patch("time.sleep"):
         future_events.platform_events("luma", debug=debug)
     assert "search failed" in debug["luma"]
     assert "network unreachable" in debug["luma"]
@@ -191,7 +191,7 @@ def test_platform_events_debug_records_counts_when_results_are_filtered():
 def test_other_web_events_debug_uses_web_key():
     debug = {}
     patcher, _ = _mock_ddgs(side_effect=OSError("network unreachable"))
-    with patcher:
+    with patcher, patch("time.sleep"):
         future_events.other_web_events(debug=debug)
     assert "web" in debug
     assert "search failed" in debug["web"]
@@ -934,7 +934,7 @@ def test_ddg_text_search_prints_on_failure_not_just_success(capsys):
     entirely, leaving no visible trace in the terminal of why a
     particular search failed."""
     patcher, _ = _mock_ddgs(side_effect=RuntimeError("all backends rate-limited"))
-    with patcher:
+    with patcher, patch("time.sleep"):
         with pytest.raises(RuntimeError):
             future_events._ddg_text_search("some query", max_results=5)
     out = capsys.readouterr().out
@@ -961,3 +961,35 @@ def test_ddg_text_search_restricts_to_a_fixed_backend_list():
 def test_looks_like_listing_catches_a_popular_events_roundup_title():
     assert future_events._looks_like_listing("Popular events in Los Angeles")
     assert not future_events._looks_like_listing("KELELA NIGHT @ YOU Los Angeles")
+
+
+def test_ddg_text_search_retries_once_after_a_failure(capsys):
+    """The exact same query that raised ddgs's own "No results found."
+    one run returned real results a moment later in the same session
+    (observed directly) - a passing rate-limit/timeout hiccup, not a
+    stable "nothing exists for this query". One retry after a short
+    pause is what actually recovers from that."""
+    call_count = {"n": 0}
+
+    def flaky_text(query, max_results=None, backend=None):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("No results found.")
+        return SAMPLE_SEARCH_RESULTS
+
+    patcher, mock_instance = _mock_ddgs()
+    mock_instance.text.side_effect = flaky_text
+    with patcher:
+        with patch("time.sleep"):
+            results = future_events._ddg_text_search("some query", max_results=5)
+
+    assert call_count["n"] == 2
+    assert len(results) == 3
+
+
+def test_ddg_text_search_raises_after_two_failed_attempts():
+    patcher, _ = _mock_ddgs(side_effect=RuntimeError("still failing"))
+    with patcher:
+        with patch("time.sleep"):
+            with pytest.raises(RuntimeError, match="still failing"):
+                future_events._ddg_text_search("some query", max_results=5)

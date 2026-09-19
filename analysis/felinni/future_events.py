@@ -129,6 +129,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import time
 import urllib.parse
 
 import pandas as pd
@@ -332,22 +333,35 @@ def _ddg_text_search(query: str, max_results: int, timeout: float = _DDG_SEARCH_
     backend engine blocked/unreachable) - callers decide how to degrade,
     same as the previous direct-HTTP approach. Prints the query and
     result count either way, so search activity is visible in the
-    terminal this runs from rather than silent regardless of outcome."""
+    terminal this runs from rather than silent regardless of outcome.
+
+    Retries once after a short pause on any failure, including ddgs's own
+    "No results found." (raised when every one of `_SEARCH_BACKENDS`
+    failed or genuinely returned nothing for that batch) - observed
+    directly to be transient: the exact same query that raised it one run
+    returned real results (and had, minutes earlier in the same session)
+    on the next, which points at a passing rate-limit/timeout hiccup
+    across the backends tried that round rather than a real, stable "no
+    results exist" - the kind of thing a second attempt a moment later
+    routinely clears."""
     from ddgs import DDGS
 
     print(f"[future_events] search: {query!r}", flush=True)
-    try:
-        results = DDGS(timeout=timeout).text(query, max_results=max_results, backend=_SEARCH_BACKENDS)
-    except Exception as e:
-        # The docstring's "prints either way" was previously false on
-        # this path - a raised exception skipped straight past the
-        # success print below, so a search that failed for one platform
-        # (observed directly: luma/camber both failed silently mid-run,
-        # with only their initial "search: ..." line ever appearing) left
-        # no visible trace of why in the terminal at all.
-        print(f"[future_events] search failed: {e}", flush=True)
-        raise
-    print(f"[future_events] search returned {len(results)} result(s)", flush=True)
+    last_error: Exception | None = None
+    for attempt in range(2):
+        if attempt > 0:
+            time.sleep(1.0)
+            print(f"[future_events] search: {query!r} (retry)", flush=True)
+        try:
+            results = DDGS(timeout=timeout).text(query, max_results=max_results, backend=_SEARCH_BACKENDS)
+        except Exception as e:
+            last_error = e
+            print(f"[future_events] search failed: {e}", flush=True)
+            continue
+        print(f"[future_events] search returned {len(results)} result(s)", flush=True)
+        break
+    else:
+        raise last_error
     return [
         {"title": r.get("title") or "", "url": r.get("href") or "", "snippet": r.get("body") or ""}
         for r in results
@@ -646,18 +660,25 @@ def platform_events(
 
     events = []
     reasons = {"wrong_domain": 0, "bare_root": 0, "wrong_url_shape": 0, "listing_title": 0}
+    sample_urls: dict[str, list[str]] = {"wrong_url_shape": [], "bare_root": [], "listing_title": []}
     for result in parsed:
         if domain not in result["url"]:
             reasons["wrong_domain"] += 1
             continue  # the search sometimes surfaces an unrelated result despite the site: filter
         if _is_bare_domain_root(result["url"]):
             reasons["bare_root"] += 1
+            if len(sample_urls["bare_root"]) < 3:
+                sample_urls["bare_root"].append(result["url"])
             continue
         if not _is_event_url(platform, result["url"]):
             reasons["wrong_url_shape"] += 1
+            if len(sample_urls["wrong_url_shape"]) < 3:
+                sample_urls["wrong_url_shape"].append(result["url"])
             continue
         if _looks_like_listing(result["title"]):
             reasons["listing_title"] += 1
+            if len(sample_urls["listing_title"]) < 3:
+                sample_urls["listing_title"].append(result["title"])
             continue
         title = _strip_platform_suffix(result["title"], platform)
         stub = _event_stub(title, result["url"], platform, region, _clean_snippet(result["snippet"]))
@@ -669,8 +690,14 @@ def platform_events(
     # breakdown is what actually answers "why did N results become 0
     # events", since a bare skipped-count alone can't distinguish a real
     # filtering bug from the search genuinely surfacing nothing but
-    # listing pages/homepages for this query.
+    # listing pages/homepages for this query. A few sample URLs/titles
+    # for each non-zero reason turn "wrong_url_shape is removing a lot of
+    # results" from a guess into something checkable directly against
+    # _EVENT_URL_PATTERNS[platform].
+    samples = {k: v for k, v in sample_urls.items() if v}
     print(f"[future_events] {platform}: {len(parsed)} result(s) -> {skipped} skipped {reasons}, {len(events)} kept", flush=True)
+    if samples:
+        print(f"[future_events] {platform}: skip samples {samples}", flush=True)
     if debug is not None and parsed:
         debug[platform] = f"{len(parsed)} result(s), {skipped} filtered as unrelated/listing pages, {len(events)} kept"
     return events

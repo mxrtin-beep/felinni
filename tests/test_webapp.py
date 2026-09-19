@@ -47,7 +47,13 @@ def client():
     "/api/future",
 ])
 def test_endpoint_returns_200_json(client, path):
-    resp = client.get(path)
+    # /api/future hits the real (sandboxed, network-blocked) search path
+    # here - felinni.future_events._ddg_text_search retries once with a
+    # real 1s sleep between attempts per source, which is real behavior
+    # worth keeping, but not something this smoke test needs to actually
+    # wait through for every one of ~7 sources.
+    with patch("felinni.future_events.time.sleep"):
+        resp = client.get(path)
     assert resp.status_code == 200
     assert resp.is_json
 
@@ -124,7 +130,8 @@ def test_exclude_categories_filter_applies_globally(client):
 
 
 def test_future_returns_empty_skeleton(client):
-    resp = client.get("/api/future")
+    with patch("felinni.future_events.time.sleep"):
+        resp = client.get("/api/future")
     body = resp.get_json()
     assert body["events"] == []
     assert body["message"]
