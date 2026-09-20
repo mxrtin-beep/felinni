@@ -562,6 +562,18 @@ def _default_future_search_args():
     return region, days
 
 
+# ddgs restricts to a fixed set of backends (see _SEARCH_BACKENDS in
+# felinni.future_events), but which subset of even that fixed list
+# actually gets consulted for a given call is still shuffled under ddgs'
+# own per-call worker budget - so the exact same query can be answered by
+# a different backend (or, transiently, none at all) from one run to the
+# next. Repeating each source's search and merging the raw results before
+# dedupe_events collapses whatever the two runs found in common surfaces
+# meaningfully more of what's actually out there in one Future tab
+# search, at the cost of roughly doubling how long the search takes.
+_FUTURE_SEARCH_REPEATS = 2
+
+
 def _search_future_events(region: str, days: int, on_progress=None) -> dict:
     """Runs the actual multi-source search+enrich+rank pipeline - shared
     by the synchronous `/api/future` (no progress reporting, used by
@@ -570,7 +582,9 @@ def _search_future_events(region: str, days: int, on_progress=None) -> dict:
     `on_progress(current_source, done, total)` so the frontend can show a
     real status bar instead of one long unexplained wait - this search
     hits ~7 sources sequentially with a politeness pause between each,
-    which easily takes 10-20+ real seconds).
+    each searched _FUTURE_SEARCH_REPEATS times to work around search
+    backend randomness (see the comment above that constant), which
+    easily takes 20-40+ real seconds).
 
     Uses the full, unfiltered dataset (not `_get_df()`) for ranking/
     conflict-checking - your habits and existing calendar are what matter
@@ -602,10 +616,14 @@ def _search_future_events(region: str, days: int, on_progress=None) -> dict:
         report(i, platform)
         if i > 0:
             time.sleep(0.5)  # a small gap between platforms
-        raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
+        for attempt in range(_FUTURE_SEARCH_REPEATS):
+            if attempt > 0:
+                time.sleep(0.5)  # same politeness gap between repeats of one source
+            raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
     report(len(future_events.PLATFORMS), "web")
-    time.sleep(0.5)
-    raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
+    for attempt in range(_FUTURE_SEARCH_REPEATS):
+        time.sleep(0.5)
+        raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
     report(total, None)
 

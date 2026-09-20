@@ -122,7 +122,12 @@ tab's own filters stack on top.
   far-future festivals over what's actually happening soon. Searches ~7
   sources one at a time (with a brief pause between each, to stay
   polite), so a status bar shows which source it's on and how far along
-  it is rather than one long unexplained wait.
+  it is rather than one long unexplained wait. Each source is searched
+  twice and the results merged - the underlying search library shuffles
+  which of its backend engines actually get consulted per call, so the
+  same query can turn up a different (or empty) set of results from one
+  run to the next; repeating it evens that out at the cost of the search
+  taking a bit longer.
   Enriched with start/end time, duration, and location straight from each
   event's own page — no API key/OAuth needed. (Camber's a Substack roundup
   rather than a per-event platform, so its results usually keep their date
