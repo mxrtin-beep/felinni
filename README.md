@@ -114,7 +114,11 @@ tab's own filters stack on top.
   runs. Duplicate events across sources are matched and only counted once.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
-- **Future** — one ranked list of upcoming events from Eventbrite, Luma,
+- **Future** — doesn't search automatically on load or on a global
+  filter change; it's a live external web search (~7 sources, easily
+  20-40+ seconds), not a query over your own already-loaded calendar
+  data, so it only runs once you click **Search** (or change the region/
+  window) on that tab. One ranked list of upcoming events from Eventbrite, Luma,
   Meetup, Camber (the "LA Happenings" newsletter), Partiful, Posh, and
   anywhere else a web search turns up for your home region (or any region
   you type in) within the next 7 days by default (7/14/30/90 selectable) —

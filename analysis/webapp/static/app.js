@@ -594,7 +594,15 @@ async function reloadAll() {
     loadTime(),
     refreshSeasonality(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
-    loadFuture(futureRegionInput?.value.trim() || undefined, futureDaysSelect?.value || undefined),
+    // Only re-runs the Future search if one has actually happened this
+    // session - it isn't loaded at boot (see init()), and re-triggering
+    // this expensive external search from an unrelated global-filter
+    // change (which it doesn't even use - see loadFuture()'s own note)
+    // before the user ever visited that tab would be the same unwanted
+    // automatic search this guard exists to avoid.
+    futureHasSearched
+      ? loadFuture(futureRegionInput?.value.trim() || undefined, futureDaysSelect?.value || undefined)
+      : Promise.resolve(),
   ]);
 }
 
@@ -1130,7 +1138,14 @@ function _renderFutureEvents(container, events) {
   ].join("");
 }
 
+// Tracks whether the Future tab's expensive external search has actually
+// been run yet this session - see reloadAll() below, which only re-runs
+// it on a global filter change if this is already true, and the boot
+// sequence, which never sets it on its own.
+let futureHasSearched = false;
+
 async function loadFuture(region, days) {
+  futureHasSearched = true;
   // A forward-looking event search has nothing to do with the Overview
   // tab's global date-range filter (that filters your past calendar
   // history) - sending it here was just confusing noise in the request.
@@ -1563,7 +1578,14 @@ async function refreshMap() {
     loadTravel(),
     loadTime(),
     loadSeasonality(meta),
-    loadFuture(),
+    // Future is deliberately NOT loaded here, unlike every other tab -
+    // it's a live search against several external sites (10-40+ real
+    // seconds, see loadFuture()) rather than a query over your own
+    // already-loaded calendar data, so running it on every single app
+    // start regardless of whether you ever open that tab wastes a real
+    // search for most sessions. wireFutureRegionSearch() below wires up
+    // the Search button/Enter key/days dropdown; it only runs once you
+    // actually ask it to.
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();
