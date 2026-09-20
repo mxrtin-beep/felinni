@@ -610,20 +610,27 @@ def _search_future_events(region: str, days: int, on_progress=None) -> dict:
         if on_progress:
             on_progress(source, i, total)
 
+    def search_with_repeats(search_fn):
+        """Runs `search_fn()` (a no-arg call into one source's search)
+        `_FUTURE_SEARCH_REPEATS` times with the same politeness pause
+        between each attempt as between sources, merging the raw results."""
+        events = []
+        for attempt in range(_FUTURE_SEARCH_REPEATS):
+            time.sleep(0.5)
+            events.extend(search_fn())
+        return events
+
     source_status: dict[str, str] = {}
     raw_events = []
     for i, platform in enumerate(future_events.PLATFORMS):
         report(i, platform)
-        if i > 0:
-            time.sleep(0.5)  # a small gap between platforms
-        for attempt in range(_FUTURE_SEARCH_REPEATS):
-            if attempt > 0:
-                time.sleep(0.5)  # same politeness gap between repeats of one source
-            raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
+        raw_events.extend(search_with_repeats(
+            lambda platform=platform: future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status)
+        ))
     report(len(future_events.PLATFORMS), "web")
-    for attempt in range(_FUTURE_SEARCH_REPEATS):
-        time.sleep(0.5)
-        raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
+    raw_events.extend(search_with_repeats(
+        lambda: future_events.other_web_events(region=region, days_ahead=days, debug=source_status)
+    ))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
     report(total, None)
 

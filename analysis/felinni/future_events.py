@@ -631,6 +631,23 @@ def _time_window_phrase(days_ahead: int) -> str:
     return "upcoming"
 
 
+def _search_or_record_failure(query: str, max_results: int, debug: dict[str, str] | None, debug_key: str) -> list[dict] | None:
+    """Shared opening step of platform_events/other_web_events (see
+    platform_events' docstring for what `debug[debug_key]` diagnoses).
+    Returns `None` on a search failure - the caller should bail out
+    immediately - or the results list otherwise, possibly empty (the
+    caller still prints its own per-source line in that case)."""
+    try:
+        parsed = _ddg_text_search(query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
+    except Exception as e:
+        if debug is not None:
+            debug[debug_key] = f"search failed: {e}"
+        return None
+    if debug is not None and not parsed:
+        debug[debug_key] = "search returned 0 results"
+    return parsed
+
+
 def platform_events(
     platform: str,
     region: str = DEFAULT_REGION,
@@ -664,15 +681,9 @@ def platform_events(
     domain = PLATFORM_DOMAINS[platform]
     site_query = PLATFORM_QUERY_SITE.get(platform, domain)
     query = f"site:{site_query} {region} events {_time_window_phrase(days_ahead)}"
-    try:
-        parsed = _ddg_text_search(query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
-    except Exception as e:
-        if debug is not None:
-            debug[platform] = f"search failed: {e}"
+    parsed = _search_or_record_failure(query, max_results, debug, platform)
+    if parsed is None:
         return []
-
-    if debug is not None and not parsed:
-        debug[platform] = "search returned 0 results"
 
     events = []
     reasons = {"wrong_domain": 0, "bare_root": 0, "wrong_url_shape": 0, "listing_title": 0}
@@ -741,15 +752,9 @@ def other_web_events(
     already confirmed to be one of the known event platforms. See
     `platform_events` for what `debug` (keyed "web" here) records."""
     query = f"{region} events {_time_window_phrase(days_ahead)}"
-    try:
-        parsed = _ddg_text_search(query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
-    except Exception as e:
-        if debug is not None:
-            debug["web"] = f"search failed: {e}"
+    parsed = _search_or_record_failure(query, max_results, debug, "web")
+    if parsed is None:
         return []
-
-    if debug is not None and not parsed:
-        debug["web"] = "search returned 0 results"
 
     known_domains = tuple(PLATFORM_DOMAINS.values())
     events = []
