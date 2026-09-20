@@ -28,9 +28,10 @@ none of those change the one thing that actually gave it away, a
 `requests`/urllib3 TLS handshake looks nothing like a real browser's at
 the network level, independent of any header content. `ddgs` uses
 `primp`, an HTTP client built specifically to reproduce a real browser's
-TLS/HTTP2 fingerprint, and - as of this writing - queries several backend
-search engines (DuckDuckGo via Bing, Brave, Mojeek, Startpage, ...) with
-automatic fallback if one is unreachable or rate-limits it. Both of those
+TLS/HTTP2 fingerprint, and queries a fixed set of backend search engines
+(_SEARCH_BACKENDS below - Google, Bing, Brave, Mojeek; see the comment
+there for why it's exactly those four and not more) with automatic
+fallback if one is unreachable or rate-limits it. Both of those
 are exactly what a hand-rolled `requests` scraper of one single endpoint
 can't do without reimplementing a maintained project's worth of
 cat-and-mouse upkeep.
@@ -311,17 +312,32 @@ def _looks_like_listing(title: str) -> bool:
 # at all - they're an encyclopedia and an AI-knowledge search - so "auto"
 # mode wastes a chunk of its limited per-call worker budget on engines
 # that can never satisfy this module's queries, then only tries a random
-# handful of the general web engines after that. That's the real cause
-# of two things observed directly: the *same* query returning a
-# completely different set of results (and a different "no results
-# found" outright failure) from one run to the next - not a caching or
-# code-determinism issue, a randomly different subset of search engines
-# being consulted each time. Restricting to a fixed set of general web
-# engines that reliably support `site:` avoids both the wasted workers
-# and (mostly) the run-to-run randomness - "mostly" since a shared,
-# still-shuffled subset of even this fixed list is what actually gets
-# queried per call when there are more listed than fit the worker budget.
-_SEARCH_BACKENDS = "google,bing,brave,mojeek,yahoo"
+# handful of the general web engines after that. Passing an explicit
+# backend list (as opposed to "auto"/"all") skips that shuffle entirely -
+# `ddgs.DDGS._get_engines` uses the list as given, in `engine.priority`
+# order (every general web engine here defaults to the same priority, so
+# in practice that's just this list's own order).
+#
+# What an explicit list doesn't skip: `ddgs` also de-dupes by each
+# engine's `provider` before ever issuing a request, and several of its
+# text engines share one - reading ddgs 9.16.0's own source
+# (site-packages/ddgs/engines/*.py), "yahoo" and "duckduckgo" both set
+# `provider = "bing"` (both are Bing-backed under the hood) and
+# "startpage" sets `provider = "google"`. Listing "yahoo" alongside
+# "bing" bought nothing: whichever of the two came first in this list
+# always won, and the other was silently skipped every single call
+# (confirmed directly by tracing `DDGS._search_sync`) - it was never
+# actually adding a real fifth backend. "yandex", the one other
+# distinct-provider general web engine ddgs registers, ships with
+# `disabled = True` in this version and is dropped at registration time
+# regardless of what's requested. google/bing/brave/mojeek are the only
+# four genuinely independent general-web backends this ddgs version has
+# to offer - a `site:`-scoped run-to-run difference in results is far
+# more likely to be one of those four transiently rate-limiting or
+# blocking a scrape (an ongoing arms race on their end, not something
+# this module's own backend selection controls) than any client-side
+# randomization once "auto" mode is off.
+_SEARCH_BACKENDS = "google,bing,brave,mojeek"
 
 
 def _ddg_text_search(query: str, max_results: int, timeout: float = _DDG_SEARCH_TIMEOUT_SECONDS) -> list[dict]:
@@ -631,21 +647,49 @@ def _time_window_phrase(days_ahead: int) -> str:
     return "upcoming"
 
 
-def _search_or_record_failure(query: str, max_results: int, debug: dict[str, str] | None, debug_key: str) -> list[dict] | None:
+def _search_or_record_failure(
+    query: str,
+    max_results: int,
+    debug: dict[str, str] | None,
+    debug_key: str,
+    fallback_query: str | None = None,
+) -> list[dict] | None:
     """Shared opening step of platform_events/other_web_events (see
     platform_events' docstring for what `debug[debug_key]` diagnoses).
     Returns `None` on a search failure - the caller should bail out
     immediately - or the results list otherwise, possibly empty (the
-    caller still prints its own per-source line in that case)."""
-    try:
-        parsed = _ddg_text_search(query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
-    except Exception as e:
+    caller still prints its own per-source line in that case).
+
+    If `fallback_query` is given and `query` comes back empty (not
+    erroring - a real "nothing indexed for this" isn't a failure to
+    retry) or fails outright, retries once with the broader query before
+    giving up. `platform_events`/`other_web_events` pass their own query
+    with `_time_window_phrase` appended as `query`, and the same query
+    without it as `fallback_query`: that phrase is only a soft bias
+    toward near-term results (the real window is enforced downstream by
+    `within_search_window`, not by this phrase), and for a smaller or
+    less-active region, the exact wording a search engine indexed a page
+    under may just not include it - "Thousand Oaks, CA events this week"
+    matching nothing is a narrower question than whether eventbrite.com
+    has anything at all indexed for Thousand Oaks."""
+    attempts = [query] + ([fallback_query] if fallback_query and fallback_query != query else [])
+    last_error: Exception | None = None
+    for attempt_query in attempts:
+        try:
+            parsed = _ddg_text_search(attempt_query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
+        except Exception as e:
+            last_error = e
+            continue
+        if parsed:
+            return parsed
+        last_error = None  # a clean empty result, not an error - keep trying the next attempt, if any
+    if last_error is not None:
         if debug is not None:
-            debug[debug_key] = f"search failed: {e}"
+            debug[debug_key] = f"search failed: {last_error}"
         return None
-    if debug is not None and not parsed:
+    if debug is not None:
         debug[debug_key] = "search returned 0 results"
-    return parsed
+    return []
 
 
 def platform_events(
@@ -681,7 +725,8 @@ def platform_events(
     domain = PLATFORM_DOMAINS[platform]
     site_query = PLATFORM_QUERY_SITE.get(platform, domain)
     query = f"site:{site_query} {region} events {_time_window_phrase(days_ahead)}"
-    parsed = _search_or_record_failure(query, max_results, debug, platform)
+    fallback_query = f"site:{site_query} {region} events"
+    parsed = _search_or_record_failure(query, max_results, debug, platform, fallback_query=fallback_query)
     if parsed is None:
         return []
 
@@ -752,7 +797,8 @@ def other_web_events(
     already confirmed to be one of the known event platforms. See
     `platform_events` for what `debug` (keyed "web" here) records."""
     query = f"{region} events {_time_window_phrase(days_ahead)}"
-    parsed = _search_or_record_failure(query, max_results, debug, "web")
+    fallback_query = f"{region} events"
+    parsed = _search_or_record_failure(query, max_results, debug, "web", fallback_query=fallback_query)
     if parsed is None:
         return []
 

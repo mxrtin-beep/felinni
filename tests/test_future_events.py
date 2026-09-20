@@ -150,7 +150,11 @@ def test_platform_events_query_includes_domain_and_region():
     with patcher:
         future_events.platform_events("eventbrite", region="Austin, TX")
 
-    query = mock_instance.text.call_args.args[0]
+    # The first call is the primary, time-biased query - a fallback (see
+    # test_platform_events_falls_back_to_a_bare_query_when_the_time_biased_one_finds_nothing)
+    # only fires if that one comes back empty, which it does here (the mock
+    # returns []), so both calls happen; this checks the first one.
+    query = mock_instance.text.call_args_list[0].args[0]
     assert "site:eventbrite.com" in query
     assert "Austin, TX" in query
     assert "this week" in query  # default days_ahead=7 -> "this week" phrase
@@ -188,6 +192,36 @@ def test_platform_events_debug_records_counts_when_results_are_filtered():
     assert "kept" in debug["meetup"]
 
 
+def test_platform_events_falls_back_to_a_bare_query_when_the_time_biased_one_finds_nothing():
+    """_time_window_phrase's "this week"/"this month" wording is only a
+    soft bias (the real window is enforced later by
+    within_search_window) - for a smaller/less-active region, the exact
+    phrase a search engine indexed a page under may not include it, so an
+    empty result for the time-biased query retries once with the same
+    query minus that phrase before concluding there's really nothing."""
+    mock_instance = MagicMock()
+    mock_instance.text.side_effect = [[], SAMPLE_SEARCH_RESULTS]
+    with patch("ddgs.DDGS", MagicMock(return_value=mock_instance)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+        events = future_events.platform_events("meetup", max_results=6)
+
+    assert mock_instance.text.call_count == 2
+    first_query, second_query = (c.args[0] for c in mock_instance.text.call_args_list)
+    assert "this week" in first_query
+    assert "this week" not in second_query
+    assert len(events) >= 1  # the fallback's results made it through
+
+
+def test_platform_events_does_not_fall_back_when_the_time_biased_query_already_has_results():
+    mock_instance = MagicMock()
+    mock_instance.text.return_value = SAMPLE_SEARCH_RESULTS
+    with patch("ddgs.DDGS", MagicMock(return_value=mock_instance)), \
+         patch("requests.get", return_value=_mock_response(SAMPLE_EVENT_PAGE_HTML)):
+        future_events.platform_events("meetup", max_results=6)
+
+    assert mock_instance.text.call_count == 1
+
+
 def test_other_web_events_debug_uses_web_key():
     debug = {}
     patcher, _ = _mock_ddgs(side_effect=OSError("network unreachable"))
@@ -207,7 +241,7 @@ def test_platform_events_query_reflects_a_custom_days_ahead():
     with patcher:
         future_events.platform_events("eventbrite", days_ahead=30)
 
-    query = mock_instance.text.call_args.args[0]
+    query = mock_instance.text.call_args_list[0].args[0]
     assert "this month" in query
 
 
