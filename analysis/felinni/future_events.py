@@ -647,49 +647,33 @@ def _time_window_phrase(days_ahead: int) -> str:
     return "upcoming"
 
 
-def _search_or_record_failure(
-    query: str,
-    max_results: int,
-    debug: dict[str, str] | None,
-    debug_key: str,
-    fallback_query: str | None = None,
-) -> list[dict] | None:
+def _search_or_record_failure(query: str, max_results: int, debug: dict[str, str] | None, debug_key: str) -> list[dict] | None:
     """Shared opening step of platform_events/other_web_events (see
     platform_events' docstring for what `debug[debug_key]` diagnoses).
     Returns `None` on a search failure - the caller should bail out
     immediately - or the results list otherwise, possibly empty (the
     caller still prints its own per-source line in that case).
 
-    If `fallback_query` is given and `query` comes back empty (not
-    erroring - a real "nothing indexed for this" isn't a failure to
-    retry) or fails outright, retries once with the broader query before
-    giving up. `platform_events`/`other_web_events` pass their own query
-    with `_time_window_phrase` appended as `query`, and the same query
-    without it as `fallback_query`: that phrase is only a soft bias
-    toward near-term results (the real window is enforced downstream by
-    `within_search_window`, not by this phrase), and for a smaller or
-    less-active region, the exact wording a search engine indexed a page
-    under may just not include it - "Thousand Oaks, CA events this week"
-    matching nothing is a narrower question than whether eventbrite.com
-    has anything at all indexed for Thousand Oaks."""
-    attempts = [query] + ([fallback_query] if fallback_query and fallback_query != query else [])
-    last_error: Exception | None = None
-    for attempt_query in attempts:
-        try:
-            parsed = _ddg_text_search(attempt_query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
-        except Exception as e:
-            last_error = e
-            continue
-        if parsed:
-            return parsed
-        last_error = None  # a clean empty result, not an error - keep trying the next attempt, if any
-    if last_error is not None:
+    Exactly one search call, no fallback/retry query of its own beyond
+    `_ddg_text_search`'s own single internal retry - an earlier version
+    tried a second, broader query here whenever the first came back
+    empty, on top of `_search_future_events` already searching every
+    source twice. A real run's log showed exactly why that was a
+    mistake: quadrupling the request volume across ~7 sources in under
+    two minutes reads to the underlying search engines as scraping
+    abuse, not politeness - the first query in that run succeeded
+    normally, and every single one after it failed outright with "No
+    results found", including a fresh run started several minutes
+    later. One query per source, once, is the whole budget."""
+    try:
+        parsed = _ddg_text_search(query, max_results=max_results * _SEARCH_OVERFETCH_FACTOR)
+    except Exception as e:
         if debug is not None:
-            debug[debug_key] = f"search failed: {last_error}"
+            debug[debug_key] = f"search failed: {e}"
         return None
-    if debug is not None:
+    if debug is not None and not parsed:
         debug[debug_key] = "search returned 0 results"
-    return []
+    return parsed
 
 
 def platform_events(
@@ -725,8 +709,7 @@ def platform_events(
     domain = PLATFORM_DOMAINS[platform]
     site_query = PLATFORM_QUERY_SITE.get(platform, domain)
     query = f"site:{site_query} {region} events {_time_window_phrase(days_ahead)}"
-    fallback_query = f"site:{site_query} {region} events"
-    parsed = _search_or_record_failure(query, max_results, debug, platform, fallback_query=fallback_query)
+    parsed = _search_or_record_failure(query, max_results, debug, platform)
     if parsed is None:
         return []
 
@@ -797,8 +780,7 @@ def other_web_events(
     already confirmed to be one of the known event platforms. See
     `platform_events` for what `debug` (keyed "web" here) records."""
     query = f"{region} events {_time_window_phrase(days_ahead)}"
-    fallback_query = f"{region} events"
-    parsed = _search_or_record_failure(query, max_results, debug, "web", fallback_query=fallback_query)
+    parsed = _search_or_record_failure(query, max_results, debug, "web")
     if parsed is None:
         return []
 

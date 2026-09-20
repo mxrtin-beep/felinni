@@ -132,11 +132,14 @@ tab's own filters stack on top.
   sources one at a time (with a brief pause between each, to stay
   polite), so a status bar shows which source it's on and how far along
   it is rather than one long unexplained wait. Each source is searched
-  twice and the results merged - the underlying search library shuffles
-  which of its backend engines actually get consulted per call, so the
-  same query can turn up a different (or empty) set of results from one
-  run to the next; repeating it evens that out at the cost of the search
-  taking a bit longer.
+  exactly once - an earlier version searched twice to work around a
+  theory about the search library randomizing which backend answers a
+  given call, but that doesn't hold for the fixed (non-"auto") backend
+  list this uses, and doubling (then, briefly, quadrupling) the request
+  volume across ~7 sources in a couple of minutes reads to the
+  underlying search engines as scraping abuse rather than politeness -
+  confirmed directly by a run where the first query worked normally and
+  every one after it came back blocked.
   Enriched with start/end time, duration, and location straight from each
   event's own page — no API key/OAuth needed. (Camber's a Substack roundup
   rather than a per-event platform, so its results usually keep their date

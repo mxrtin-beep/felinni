@@ -569,18 +569,20 @@ def _default_future_search_args():
     return region, days
 
 
-# ddgs restricts to a fixed set of backends (see _SEARCH_BACKENDS in
-# felinni.future_events), but which subset of even that fixed list
-# actually gets consulted for a given call is still shuffled under ddgs'
-# own per-call worker budget - so the exact same query can be answered by
-# a different backend (or, transiently, none at all) from one run to the
-# next. Repeating each source's search and merging the raw results before
-# dedupe_events collapses whatever the two runs found in common surfaces
-# meaningfully more of what's actually out there in one Future tab
-# search, at the cost of roughly doubling how long the search takes.
-_FUTURE_SEARCH_REPEATS = 2
-
-
+# A previous version of this function searched each source twice (and,
+# separately, future_events._search_or_record_failure retried a failed
+# query with a second, broader one) on the theory that ddgs' backend
+# selection was randomized per call. That theory didn't hold up (an
+# explicit, non-"auto" backend list isn't shuffled - see the comment on
+# _SEARCH_BACKENDS in felinni/future_events.py) and the actual, observed
+# effect of quadrupling the request volume across ~7 sources in a couple
+# of minutes was far worse: a real run's own log showed the first query
+# succeeding normally, then every subsequent query - across every
+# remaining platform, including retries - failing with "No results
+# found", and a second run several minutes later starting out already
+# broken. That's the signature of tripping a rate limit/temporary block
+# on the underlying search engines, not bad luck. Both changes are
+# reverted: one query per source, once, full stop.
 def _search_future_events(region: str, days: int, on_progress=None) -> dict:
     """Runs the actual multi-source search+enrich+rank pipeline - shared
     by the synchronous `/api/future` (no progress reporting, used by
@@ -589,9 +591,7 @@ def _search_future_events(region: str, days: int, on_progress=None) -> dict:
     `on_progress(current_source, done, total)` so the frontend can show a
     real status bar instead of one long unexplained wait - this search
     hits ~7 sources sequentially with a politeness pause between each,
-    each searched _FUTURE_SEARCH_REPEATS times to work around search
-    backend randomness (see the comment above that constant), which
-    easily takes 20-40+ real seconds).
+    which easily takes 10-20+ real seconds).
 
     Uses the full, unfiltered dataset (not `_get_df()`) for ranking/
     conflict-checking - your habits and existing calendar are what matter
@@ -617,27 +617,16 @@ def _search_future_events(region: str, days: int, on_progress=None) -> dict:
         if on_progress:
             on_progress(source, i, total)
 
-    def search_with_repeats(search_fn):
-        """Runs `search_fn()` (a no-arg call into one source's search)
-        `_FUTURE_SEARCH_REPEATS` times with the same politeness pause
-        between each attempt as between sources, merging the raw results."""
-        events = []
-        for attempt in range(_FUTURE_SEARCH_REPEATS):
-            time.sleep(0.5)
-            events.extend(search_fn())
-        return events
-
     source_status: dict[str, str] = {}
     raw_events = []
     for i, platform in enumerate(future_events.PLATFORMS):
         report(i, platform)
-        raw_events.extend(search_with_repeats(
-            lambda platform=platform: future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status)
-        ))
+        if i > 0:
+            time.sleep(0.5)  # a small gap between platforms
+        raw_events.extend(future_events.platform_events(platform, region=region, days_ahead=days, debug=source_status))
     report(len(future_events.PLATFORMS), "web")
-    raw_events.extend(search_with_repeats(
-        lambda: future_events.other_web_events(region=region, days_ahead=days, debug=source_status)
-    ))
+    time.sleep(0.5)
+    raw_events.extend(future_events.other_web_events(region=region, days_ahead=days, debug=source_status))
     raw_events.extend(future_events.ollama_event_ideas(df, region=region))
     report(total, None)
 

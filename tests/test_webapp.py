@@ -268,12 +268,14 @@ def test_future_job_runs_and_reports_progress(client, monkeypatch):
     assert status["total"] == len(server.future_events.PLATFORMS) + 1
 
 
-def test_future_search_repeats_each_source_to_offset_backend_randomness(client, monkeypatch):
-    """ddgs shuffles which of its backends actually get consulted per
-    call, so the same query can turn up different results (or none) from
-    one run to the next - _search_future_events repeats each source's
-    search and merges the raw results to compensate, rather than trusting
-    a single pass."""
+def test_future_search_calls_each_source_exactly_once(client, monkeypatch):
+    """A prior version searched each source twice to work around a
+    theory about ddgs backend randomization that didn't hold up, and the
+    actual effect of that (on top of a since-reverted per-query retry
+    fallback) was quadrupling request volume across ~7 sources in a
+    couple of minutes - which a real run showed tripping what looked
+    like a rate limit/temporary block on the search backends, not fixing
+    anything. One call per source, once."""
     platform_calls = []
     web_calls = []
     monkeypatch.setattr(server.future_events, "platform_events", lambda platform, region=None, days_ahead=None, debug=None: platform_calls.append(platform) or [])
@@ -284,8 +286,8 @@ def test_future_search_repeats_each_source_to_offset_backend_randomness(client, 
     client.get("/api/future")
 
     for platform in server.future_events.PLATFORMS:
-        assert platform_calls.count(platform) == server._FUTURE_SEARCH_REPEATS
-    assert len(web_calls) == server._FUTURE_SEARCH_REPEATS
+        assert platform_calls.count(platform) == 1
+    assert len(web_calls) == 1
 
 
 def test_future_status_before_any_start_is_not_running(client):
