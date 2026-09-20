@@ -136,6 +136,75 @@ DEFAULT_LOCATION_ANCHORS = {
     "amgen": {"query": "Amgen, Thousand Oaks, CA", "lat": 34.2064, "lon": -118.8253, "radius_km": 2.0},
 }
 
+# Nominatim's own OSM `class`/`type` tags for the matched place - already
+# present in the same search response `geocode_locations` fetches for
+# `address` (no extra request), just discarded until now. Coarsens them
+# into a handful of land-use buckets for the Map tab's "color by" dropdown.
+# This is only as good as OSM's own tagging at that exact point: a
+# business with no mapped POI of its own resolves via plain address
+# interpolation and comes back "unknown", and coverage varies a lot by how
+# densely an area's been mapped - a best-effort label, not a verified fact
+# about the property.
+_PLACE_TYPE_BY_CLASS_TYPE = {
+    ("place", "house"): "residential",
+    ("place", "residential"): "residential",
+    ("building", "residential"): "residential",
+    ("building", "apartments"): "residential",
+    ("building", "house"): "residential",
+    ("building", "houses"): "residential",
+    ("building", "detached"): "residential",
+    ("building", "dormitory"): "residential",
+    ("building", "commercial"): "commercial",
+    ("building", "retail"): "commercial",
+    ("building", "office"): "commercial",
+    ("building", "industrial"): "commercial",
+    ("building", "warehouse"): "commercial",
+    ("building", "civic"): "public",
+    ("building", "public"): "public",
+    ("building", "school"): "public",
+    ("building", "hospital"): "public",
+    ("building", "church"): "public",
+}
+_PLACE_TYPE_BY_CLASS = {
+    "shop": "commercial",
+    "office": "commercial",
+    "craft": "commercial",
+    "leisure": "recreational",
+    "tourism": "recreational",
+    "natural": "recreational",
+}
+_AMENITY_PUBLIC_TYPES = {
+    "school", "university", "college", "kindergarten", "hospital", "clinic", "doctors",
+    "dentist", "library", "townhall", "courthouse", "post_office", "police", "fire_station",
+    "place_of_worship", "community_centre", "social_facility", "embassy", "public_building",
+}
+_AMENITY_COMMERCIAL_TYPES = {
+    "restaurant", "cafe", "bar", "pub", "fast_food", "bank", "pharmacy", "cinema",
+    "nightclub", "fuel", "car_wash", "car_rental", "marketplace", "food_court", "ice_cream",
+    "casino", "coworking_space",
+}
+_AMENITY_RECREATIONAL_TYPES = {"theatre", "arts_centre"}
+
+
+def _classify_place(osm_class: str | None, osm_type: str | None) -> str:
+    """Coarsens Nominatim's `class`/`type` into residential/commercial/
+    public/recreational/unknown - see the comment above
+    DEFAULT_LOCATION_ANCHORS for what this is and isn't."""
+    if not osm_class:
+        return "unknown"
+    exact = _PLACE_TYPE_BY_CLASS_TYPE.get((osm_class, osm_type))
+    if exact:
+        return exact
+    if osm_class == "amenity":
+        if osm_type in _AMENITY_PUBLIC_TYPES:
+            return "public"
+        if osm_type in _AMENITY_COMMERCIAL_TYPES:
+            return "commercial"
+        if osm_type in _AMENITY_RECREATIONAL_TYPES:
+            return "recreational"
+        return "public"  # most amenity types not listed above are still civic/public-serving
+    return _PLACE_TYPE_BY_CLASS.get(osm_class, "unknown")
+
 
 def _load_json(path: Path) -> dict:
     if path.exists():
@@ -227,13 +296,15 @@ def geocode_one(query: str, user_agent: str = "felinni-calendar-analysis", timeo
     if not result:
         return None
 
-    address = (result.raw or {}).get("address", {}) if hasattr(result, "raw") else {}
+    raw = result.raw or {} if hasattr(result, "raw") else {}
+    address = raw.get("address", {})
     city = address.get("city") or address.get("town") or address.get("village") or address.get("municipality") or address.get("county")
     neighbourhood = address.get("suburb") or address.get("neighbourhood") or address.get("quarter") or address.get("city_district") or address.get("borough")
     return {
         "lat": result.latitude, "lon": result.longitude, "display_name": result.address,
         "city": city, "country": address.get("country"), "neighbourhood": neighbourhood,
         "state": address.get("state"),
+        "place_type": _classify_place(raw.get("class"), raw.get("type")),
     }
 
 
@@ -816,13 +887,15 @@ def geocode_locations(
             # Structured address fields (felinni.regions' city/country
             # grouping) rather than parsing the free-text display_name,
             # which reads inconsistently depending on what's near the venue.
-            address = (result.raw or {}).get("address", {}) if hasattr(result, "raw") else {}
+            raw = result.raw or {} if hasattr(result, "raw") else {}
+            address = raw.get("address", {})
             city = address.get("city") or address.get("town") or address.get("village") or address.get("municipality") or address.get("county")
             neighbourhood = address.get("suburb") or address.get("neighbourhood") or address.get("quarter") or address.get("city_district") or address.get("borough")
             cache[loc] = {
                 "lat": result.latitude, "lon": result.longitude, "display_name": result.address,
                 "city": city, "country": address.get("country"), "neighbourhood": neighbourhood,
                 "state": address.get("state"),
+                "place_type": _classify_place(raw.get("class"), raw.get("type")),
             }
             resolved_points.append((result.latitude, result.longitude))
             diagnostics.pop(loc, None)
@@ -838,7 +911,7 @@ def geocode_locations(
             cache[loc] = {
                 "lat": anchor_lat, "lon": anchor_lon,
                 "display_name": f"{anchor_label} (approximate - couldn't resolve the exact address)",
-                "city": None, "country": None, "neighbourhood": None,
+                "city": None, "country": None, "neighbourhood": None, "place_type": "unknown",
             }
             resolved_points.append((anchor_lat, anchor_lon))
             diagnostics.pop(loc, None)

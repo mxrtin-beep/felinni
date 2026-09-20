@@ -79,7 +79,12 @@ tab's own filters stack on top.
 
   ![Habits tab](docs/images/habits.png)
 - **Map & Travel** — click **Geocode locations** to plot everything
-  (OpenStreetMap Nominatim, cached to disk, ~1/sec). Nearby cities group
+  (OpenStreetMap Nominatim, cached to disk, ~1/sec). Pins color by
+  category by default, switchable via a dropdown to place type
+  (residential/commercial/public/recreational - a best-effort read of
+  Nominatim's own OSM tags for that spot, already returned in the same
+  geocoding response, so no extra requests), country, or state/region.
+  Nearby cities group
   into one metro area for trip-counting, with a neighborhood drill-down for
   your home area. Wrong pin? Fix it inline from the **Fix a location** card
   — no re-geocoding needed. A location that can't be resolved on its own

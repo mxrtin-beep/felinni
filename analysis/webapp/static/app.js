@@ -1281,14 +1281,68 @@ function densestClusterPoints(locations, binSizeDegrees = 5) {
 let geocodePollTimer = null;
 let lastLocationsData = null;
 
-function renderMapLegend(categories) {
+// `entries` is [{label, color}, ...] - generalized from category-only so
+// the same legend renders whatever the map's "color by" dropdown is
+// currently keyed on (category, place type, country, or state).
+function renderMapLegend(entries) {
   const legend = document.getElementById("map-legend");
   legend.innerHTML = "";
-  categories.forEach(cat => {
+  entries.forEach(({ label, color }) => {
     const item = document.createElement("span");
-    item.innerHTML = `<span class="swatch" style="background:${categoryColors[cat]}"></span>${escapeHtml(cat)}`;
+    item.innerHTML = `<span class="swatch" style="background:${color}"></span>${escapeHtml(label)}`;
     legend.appendChild(item);
   });
+}
+
+// Place type is a small, fixed set (see felinni.geocode._classify_place) -
+// stable colors across renders/filters, unlike country/state below.
+const MAP_PLACE_TYPE_COLORS = {
+  residential: "--series-2", commercial: "--series-1",
+  public: "--series-3", recreational: "--series-4", unknown: "--text-muted",
+};
+const MAP_PLACE_TYPE_LABELS = {
+  residential: "Residential", commercial: "Commercial",
+  public: "Public", recreational: "Recreational", unknown: "Unknown",
+};
+
+// Country/state are open-ended - assigns each distinct value seen in the
+// currently-filtered locations one of a fixed palette of series colors
+// (stable within one legend, cycling if there happen to be more distinct
+// values than colors - unusual for a personal calendar's travel history,
+// but not impossible).
+const MAP_DYNAMIC_SERIES_VARS = Array.from({ length: 12 }, (_, i) => `--series-${i + 1}`);
+function buildDynamicColorMap(values) {
+  const distinct = [...new Set(values.filter(v => v))].sort();
+  const map = {};
+  distinct.forEach((v, i) => { map[v] = MAP_DYNAMIC_SERIES_VARS[i % MAP_DYNAMIC_SERIES_VARS.length]; });
+  return map;
+}
+
+// Returns { getColor(loc), legend: [{label, color}, ...] } for whichever
+// "color by" mode is selected - color() below always looks up a live CSS
+// var so it tracks light/dark theme changes.
+function buildMapColorScheme(mode, locations) {
+  const color = cssVar => cssVarSafe(cssVar) || cssVarSafe("--text-muted");
+  if (mode === "place_type") {
+    return {
+      getColor: loc => color(MAP_PLACE_TYPE_COLORS[loc.place_type] || MAP_PLACE_TYPE_COLORS.unknown),
+      legend: Object.keys(MAP_PLACE_TYPE_COLORS).map(key => ({ label: MAP_PLACE_TYPE_LABELS[key], color: color(MAP_PLACE_TYPE_COLORS[key]) })),
+    };
+  }
+  if (mode === "country" || mode === "state") {
+    const colorMap = buildDynamicColorMap(locations.map(l => l[mode]));
+    return {
+      getColor: loc => loc[mode] && colorMap[loc[mode]] ? color(colorMap[loc[mode]]) : color("--text-muted"),
+      legend: Object.entries(colorMap).map(([label, cssVarName]) => ({ label, color: color(cssVarName) })),
+    };
+  }
+  // Default: category (unchanged from before this was generalized) -
+  // categoryColors is shared with every other tab's category coloring.
+  const categories = [...new Set(locations.flatMap(l => l.categories || []))].sort();
+  return {
+    getColor: loc => categoryColors[(loc.categories && loc.categories[0]) || "Other"] || color("--text-muted"),
+    legend: categories.map(cat => ({ label: cat, color: categoryColors[cat] || color("--text-muted") })),
+  };
 }
 
 function populateYearSelects(minYear, maxYear) {
@@ -1314,9 +1368,8 @@ async function loadMap(meta) {
     document.getElementById("map-category").innerHTML += meta.categories.map(c => `<option value="${c}">${c}</option>`).join("");
     document.getElementById("map-person").innerHTML += meta.people.map(p => `<option value="${p}">${p}</option>`).join("");
     populateYearSelects(meta.min_year, meta.max_year);
-    renderMapLegend(meta.categories);
 
-    ["map-category", "map-person", "map-start-year", "map-end-year"].forEach(id =>
+    ["map-category", "map-person", "map-start-year", "map-end-year", "map-color-by"].forEach(id =>
       document.getElementById(id).addEventListener("change", refreshMap));
 
     document.getElementById("map-geocode-btn").addEventListener("click", async () => {
@@ -1526,6 +1579,7 @@ async function refreshMap() {
     note.innerHTML = data.total_places === 0
       ? "No locations match this filter."
       : `None of your ${data.total_places} matching locations are geocoded yet. Click "Geocode locations" below (needs network - it calls OpenStreetMap).`;
+    renderMapLegend([]);
     return;
   }
   note.textContent = data.total_places > data.geocoded_places
@@ -1533,10 +1587,13 @@ async function refreshMap() {
     : `Showing all ${data.geocoded_places} matching locations. Circle size = visit count.`;
 
   const maxVisits = Math.max(...data.locations.map(l => l.visits), 1);
+  const colorBy = document.getElementById("map-color-by").value;
+  const scheme = buildMapColorScheme(colorBy, data.locations);
+  renderMapLegend(scheme.legend);
+
   const bounds = [];
   data.locations.forEach(loc => {
-    const primaryCategory = (loc.categories && loc.categories[0]) || "Other";
-    const color = categoryColors[primaryCategory] || cssVarSafe("--text-muted");
+    const color = scheme.getColor(loc);
     const radius = 5 + 15 * Math.sqrt(loc.visits / maxVisits);
     const marker = L.circleMarker([loc.lat, loc.lon], {
       radius, color, fillColor: color, fillOpacity: 0.6, weight: 1,

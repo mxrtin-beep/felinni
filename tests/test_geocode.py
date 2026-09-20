@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis"))
 from felinni import geocode
 
 
-def _fake_result(lat=34.07, lon=-118.44, city=None, country=None, state=None):
+def _fake_result(lat=34.07, lon=-118.44, city=None, country=None, state=None, osm_class=None, osm_type=None):
     result = MagicMock()
     result.latitude = lat
     result.longitude = lon
@@ -26,7 +26,7 @@ def _fake_result(lat=34.07, lon=-118.44, city=None, country=None, state=None):
         address["country"] = country
     if state:
         address["state"] = state
-    result.raw = {"address": address}
+    result.raw = {"address": address, "class": osm_class, "type": osm_type}
     return result
 
 
@@ -1112,3 +1112,55 @@ def test_geocode_locations_resolves_after_dropping_directional_suffix(tmp_path):
     loc = "1234 4th St NW Washington DC 20001"
     assert result[loc]["lat"] == 34.07
     assert loc not in geocode.load_diagnostics(diagnostics_path)
+
+
+@pytest.mark.parametrize("osm_class,osm_type,expected", [
+    ("place", "house", "residential"),
+    ("building", "apartments", "residential"),
+    ("shop", "supermarket", "commercial"),
+    ("office", "company", "commercial"),
+    ("amenity", "restaurant", "commercial"),
+    ("amenity", "school", "public"),
+    ("amenity", "some_new_amenity_type_not_in_either_list", "public"),
+    ("leisure", "park", "recreational"),
+    ("tourism", "museum", "recreational"),
+    (None, None, "unknown"),
+    ("highway", "residential", "unknown"),  # a road's own OSM type, not a building's - not actually residential
+])
+def test_classify_place(osm_class, osm_type, expected):
+    assert geocode._classify_place(osm_class, osm_type) == expected
+
+
+def test_geocode_locations_records_place_type_from_osm_class_and_type(tmp_path):
+    cache_path = tmp_path / "cache.json"
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.return_value = _fake_result(osm_class="amenity", osm_type="restaurant")
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["Some Restaurant, Los Angeles, CA"],
+            cache_path=cache_path,
+            diagnostics_path=tmp_path / "diagnostics.json",
+            approximations_path=tmp_path / "approximations.json",
+            rate_limit_seconds=0,
+        )
+
+    assert result["Some Restaurant, Los Angeles, CA"]["place_type"] == "commercial"
+
+
+def test_geocode_locations_approximate_anchor_placement_has_unknown_place_type(tmp_path):
+    fake_geolocator = MagicMock()
+    fake_geolocator.geocode.return_value = None  # never resolves, even with the anchor appended
+
+    with patch("geopy.geocoders.Nominatim", return_value=fake_geolocator):
+        result = geocode.geocode_locations(
+            ["Boelter 5800"],
+            cache_path=tmp_path / "cache.json",
+            diagnostics_path=tmp_path / "diagnostics.json",
+            approximations_path=tmp_path / "approximations.json",
+            rate_limit_seconds=0,
+            location_categories={"Boelter 5800": "UCLA Clubs"},
+            anchors={"ucla": {"query": "UCLA, Los Angeles, CA", "lat": 34.0689, "lon": -118.4452, "radius_km": 3.0}},
+        )
+
+    assert result["Boelter 5800"]["place_type"] == "unknown"

@@ -117,6 +117,35 @@ def test_locations_without_geocode_cache_reports_zero_geocoded(client):
     assert body["locations"] == []
 
 
+def test_locations_includes_place_type_country_state_for_the_map_color_by_dropdown(client, monkeypatch):
+    most_common_location = server.DF["location"].dropna().value_counts().index[0]
+    fake_cache = {
+        most_common_location: {
+            "lat": 34.07, "lon": -118.44, "display_name": "fake address",
+            "city": "Los Angeles", "state": "California", "country": "United States",
+            "place_type": "commercial",
+        },
+    }
+    monkeypatch.setattr(server, "_load_geocode_cache", lambda: fake_cache)
+
+    resp = client.get("/api/locations")
+    body = resp.get_json()
+    row = next(loc for loc in body["locations"] if loc["location"] == most_common_location)
+    assert row["place_type"] == "commercial"
+    assert row["state"] == "California"
+    assert row["country"] == "United States"
+
+
+def test_locations_place_type_defaults_to_unknown_when_missing_from_cache(client, monkeypatch):
+    most_common_location = server.DF["location"].dropna().value_counts().index[0]
+    fake_cache = {most_common_location: {"lat": 34.07, "lon": -118.44}}  # no place_type recorded (pre-existing cache entry)
+    monkeypatch.setattr(server, "_load_geocode_cache", lambda: fake_cache)
+
+    resp = client.get("/api/locations")
+    row = next(loc for loc in resp.get_json()["locations"] if loc["location"] == most_common_location)
+    assert row["place_type"] == "unknown"
+
+
 def test_habit_requires_category(client):
     resp = client.get("/api/habit")
     assert resp.status_code == 400

@@ -183,6 +183,13 @@ def locations_view():
     freq["lat"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lat"))
     freq["lon"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lon"))
     freq["display_name"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("display_name"))
+    # place_type/country/state come straight from the geocode cache (see
+    # felinni.geocode._classify_place / geocode_locations) - alternate
+    # axes the Map tab's "color by" dropdown can use besides your own
+    # calendar category.
+    freq["place_type"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("place_type") or "unknown")
+    freq["country"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("country"))
+    freq["state"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("state"))
     titles_by_location = _location_titles(events)
     freq["titles"] = freq["location"].map(lambda loc: titles_by_location.get(loc, []))
     geocoded = freq.dropna(subset=["lat", "lon"])
