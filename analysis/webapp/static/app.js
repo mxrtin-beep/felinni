@@ -1022,18 +1022,23 @@ function _futureConflictNote(e) {
   return `<p class="future-conflict">&#9888; Conflicts with ${shown}${more}</p>`;
 }
 
-function _futureEventCard(e) {
-  if (e.is_ai_suggestion) {
-    return `
-      <div class="future-event future-ai-idea">
-        <p><span class="badge planned">AI idea, not a live listing</span></p>
-        <p>${escapeHtml(e.title)}</p>
-      </div>`;
+// A leading time column ("7:00 PM–9:00 PM", or "7:00 PM (2h)" when there's
+// a duration but no confirmed end) rather than repeating the full date on
+// every single row - the day header (see _futureDayLabel) already carries
+// the date once for everything under it.
+function _futureTimeLabel(e) {
+  if (!e.start) return null;
+  const dt = new Date(e.start);
+  if (isNaN(dt)) return null;
+  const start = dt.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (e.end) {
+    const end = new Date(e.end);
+    if (!isNaN(end)) return `${start}–${end.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" })}`;
   }
+  return e.duration_hours ? `${start} (${fmtDuration(e.duration_hours)})` : start;
+}
 
-  const when = e.start
-    ? `${fmtDateTime(e.start)}${e.end ? ` – ${fmtDateTime(e.end)}` : ""}${e.duration_hours ? ` (${fmtDuration(e.duration_hours)})` : ""}`
-    : "Date/time unknown";
+function _futureAgendaRow(e, timeLabel) {
   const people = e.suggested_people && e.suggested_people.length
     ? `<p class="card-note">Consider inviting: ${e.suggested_people.map(escapeHtml).join(", ")} (${escapeHtml(e.people_reason || "")})</p>`
     : "";
@@ -1041,17 +1046,88 @@ function _futureEventCard(e) {
     ? `<p class="card-note">${e.fit_reasons.map(escapeHtml).join(" · ")}</p>`
     : "";
   return `
-    <div class="future-event${e.has_conflict ? " has-conflict" : ""}">
-      <p>
-        <a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a>
-        <span class="source-meta">${escapeHtml(e.source || "")}</span>
-      </p>
-      <p class="card-note">${escapeHtml(when)}${e.location ? ` &middot; ${escapeHtml(e.location)}` : ""}</p>
-      ${e.snippet ? `<p class="card-note">${escapeHtml(e.snippet)}</p>` : ""}
-      ${fit}
-      ${people}
-      ${_futureConflictNote(e)}
+    <div class="future-row${e.has_conflict ? " has-conflict" : ""}">
+      <div class="future-time">${timeLabel ? escapeHtml(timeLabel) : ""}</div>
+      <div class="future-body">
+        <p>
+          <a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a>
+          <span class="source-meta">${escapeHtml(e.source || "")}</span>
+        </p>
+        ${e.location ? `<p class="card-note">${escapeHtml(e.location)}</p>` : ""}
+        ${e.snippet ? `<p class="card-note">${escapeHtml(e.snippet)}</p>` : ""}
+        ${fit}
+        ${people}
+        ${_futureConflictNote(e)}
+      </div>
     </div>`;
+}
+
+function _futureIdeaRow(e) {
+  return `
+    <div class="future-row future-ai-idea">
+      <div class="future-time"></div>
+      <div class="future-body">
+        <p><span class="badge planned">AI idea, not a live listing</span></p>
+        <p>${escapeHtml(e.title)}</p>
+      </div>
+    </div>`;
+}
+
+// "Today · Saturday, Sep 20" / "Tomorrow · ..." for the next two days,
+// otherwise just the weekday and date - so each event's own row doesn't
+// have to repeat a full date to say when it is.
+function _futureDayLabel(dateStr) {
+  const dt = new Date(dateStr);
+  if (isNaN(dt)) return "";
+  const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((startOfDay(dt) - startOfDay(new Date())) / 86400000);
+  const weekdayDate = dt.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  if (diffDays === 0) return `Today · ${weekdayDate}`;
+  if (diffDays === 1) return `Tomorrow · ${weekdayDate}`;
+  return weekdayDate;
+}
+
+// Splits the ranked event list (as returned by the API - already sorted
+// by fit, not by date) into calendar-day buckets in chronological order,
+// plus two trailing buckets for what can't go on a timeline at all: a
+// real listing with no confirmed date, and AI-brainstormed ideas (which
+// were never dated to begin with). Rank order is kept *within* a day -
+// only the day grouping itself is chronological.
+function _groupFutureEvents(events) {
+  const real = events.filter(e => !e.is_ai_suggestion);
+  const ideas = events.filter(e => e.is_ai_suggestion);
+  const dated = real.filter(e => e.start).sort((a, b) => new Date(a.start) - new Date(b.start));
+  const undated = real.filter(e => !e.start);
+
+  const days = [];
+  const dayByKey = new Map();
+  dated.forEach(e => {
+    const dt = new Date(e.start);
+    const key = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+    if (!dayByKey.has(key)) {
+      const day = { label: _futureDayLabel(e.start), events: [] };
+      dayByKey.set(key, day);
+      days.push(day);
+    }
+    dayByKey.get(key).events.push(e);
+  });
+  return { days, undated, ideas };
+}
+
+function _renderFutureEvents(container, events) {
+  if (!events.length) {
+    container.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
+    return;
+  }
+  const { days, undated, ideas } = _groupFutureEvents(events);
+  const section = (label, rows) => rows.length
+    ? `<div class="future-day"><h3 class="future-day-header">${escapeHtml(label)}</h3>${rows.join("")}</div>`
+    : "";
+  container.innerHTML = [
+    ...days.map(day => section(day.label, day.events.map(e => _futureAgendaRow(e, _futureTimeLabel(e))))),
+    section("Date unknown", undated.map(e => _futureAgendaRow(e, null))),
+    section("AI-brainstormed ideas", ideas.map(_futureIdeaRow)),
+  ].join("");
 }
 
 async function loadFuture(region, days) {
@@ -1098,10 +1174,10 @@ async function loadFuture(region, days) {
   }
   if (progressEl) progressEl.style.display = "none";
 
-  const events = document.getElementById("future-events");
+  const eventsEl = document.getElementById("future-events");
   if (status.error) {
     noteEl.textContent = `Search failed: ${status.error}`;
-    events.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
+    eventsEl.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
     return;
   }
   const data = status.result;
@@ -1113,9 +1189,7 @@ async function loadFuture(region, days) {
   const daysSelect = document.getElementById("future-days-select");
   if (daysSelect && data.days) daysSelect.value = String(data.days);
 
-  events.innerHTML = data.events.length
-    ? data.events.map(_futureEventCard).join("")
-    : '<p class="empty-note">Nothing here yet.</p>';
+  _renderFutureEvents(eventsEl, data.events);
 }
 
 function wireFutureRegionSearch() {
