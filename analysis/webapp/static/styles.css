@@ -424,63 +424,6 @@ th.sortable:hover {
   padding: 8px 0;
 }
 
-.future-day {
-  margin-bottom: 4px;
-}
-
-.future-day-header {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 18px 0 4px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
-
-.future-day:first-child .future-day-header {
-  margin-top: 0;
-}
-
-.future-row {
-  display: flex;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--grid);
-}
-
-.future-day .future-row:last-child {
-  border-bottom: none;
-}
-
-.future-row.has-conflict {
-  border-left: 3px solid var(--status-critical);
-  padding-left: 10px;
-}
-
-.future-time {
-  flex: none;
-  width: 92px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  padding-top: 2px;
-}
-
-.future-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.future-conflict {
-  font-size: 12px;
-  color: var(--status-critical);
-  margin: 4px 0 0;
-}
-
-.future-ai-idea .future-body {
-  font-style: italic;
-  color: var(--text-secondary);
-}
-
 .scroll-list {
   max-height: 240px;
   overflow-y: auto;
@@ -566,36 +509,6 @@ th.sortable:hover {
 }
 .mini-trend-fill.mini-trend-right { left: 50%; }
 .mini-trend-fill.mini-trend-left { right: 50%; }
-
-/* Future tab's event-search status bar - the search hits ~7 sources
-   sequentially with a politeness pause between each, easily 10-20+
-   seconds, so this is what stands in for "it's working, here's how far
-   along it is" instead of one long unexplained wait. */
-.progress-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 10px 0;
-}
-.progress-bar-track {
-  flex: 1;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--grid);
-  overflow: hidden;
-}
-.progress-bar-fill {
-  height: 100%;
-  width: 0%;
-  border-radius: 4px;
-  background: var(--series-1);
-  transition: width 0.3s ease;
-}
-.progress-bar-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
 
 button {
   font: inherit;

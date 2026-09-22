@@ -572,18 +572,6 @@ function wireCategoryFilter() {
 }
 
 async function reloadAll() {
-  // loadFuture()'s own comment already says the global date filter has
-  // nothing to do with a forward-looking event search - but calling it
-  // with no arguments here undid that in practice: any global-filter
-  // change (the date range, its reset button, a category checkbox)
-  // triggers reloadAll(), which silently reset the Future tab back to
-  // its default region/window, discarding whatever the user had actually
-  // searched (confirmed directly: a search for "Los Angeles, CA" got
-  // wiped back to the default "Thousand Oaks, CA" this way). Re-reads
-  // the Future tab's own inputs so a global-filter change refreshes it
-  // for the same region/window already showing, not a different one.
-  const futureRegionInput = document.getElementById("future-region-input");
-  const futureDaysSelect = document.getElementById("future-days-select");
   await Promise.all([
     refreshOverviewStats(),
     loadPlaces(),
@@ -594,15 +582,6 @@ async function reloadAll() {
     loadTime(),
     refreshSeasonality(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
-    // Only re-runs the Future search if one has actually happened this
-    // session - it isn't loaded at boot (see init()), and re-triggering
-    // this expensive external search from an unrelated global-filter
-    // change (which it doesn't even use - see loadFuture()'s own note)
-    // before the user ever visited that tab would be the same unwanted
-    // automatic search this guard exists to avoid.
-    futureHasSearched
-      ? loadFuture(futureRegionInput?.value.trim() || undefined, futureDaysSelect?.value || undefined)
-      : Promise.resolve(),
   ]);
 }
 
@@ -1015,207 +994,6 @@ async function loadAnomalies() {
       { key: "label", label: "Type", format: v => `<span class="badge ${v}">${v}</span>` },
       { key: "z_score", label: "Z-score", num: true, format: v => v?.toFixed(2) },
     ], data.by_category.slice(0, 30));
-}
-
-// --- Future (Eventbrite/Luma/Meetup/other-site events found via a DuckDuckGo search) ---
-const FUTURE_CONFLICTS_SHOWN = 4;
-
-function _futureConflictNote(e) {
-  if (!e.conflicts || !e.conflicts.length) return "";
-  const shown = e.conflicts.slice(0, FUTURE_CONFLICTS_SHOWN).map(c => {
-    const label = c.type === "calendar" ? "your calendar" : `another suggestion (${escapeHtml(c.source || "")})`;
-    return `${escapeHtml(c.title)} on ${label}`;
-  }).join("; ");
-  const more = e.conflicts.length > FUTURE_CONFLICTS_SHOWN ? ` (+${e.conflicts.length - FUTURE_CONFLICTS_SHOWN} more)` : "";
-  return `<p class="future-conflict">&#9888; Conflicts with ${shown}${more}</p>`;
-}
-
-// A leading time column ("7:00 PM–9:00 PM", or "7:00 PM (2h)" when there's
-// a duration but no confirmed end) rather than repeating the full date on
-// every single row - the day header (see _futureDayLabel) already carries
-// the date once for everything under it.
-function _futureTimeLabel(e) {
-  if (!e.start) return null;
-  const dt = new Date(e.start);
-  if (isNaN(dt)) return null;
-  const start = dt.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (e.end) {
-    const end = new Date(e.end);
-    if (!isNaN(end)) return `${start}–${end.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-  }
-  return e.duration_hours ? `${start} (${fmtDuration(e.duration_hours)})` : start;
-}
-
-function _futureAgendaRow(e, timeLabel) {
-  const people = e.suggested_people && e.suggested_people.length
-    ? `<p class="card-note">Consider inviting: ${e.suggested_people.map(escapeHtml).join(", ")} (${escapeHtml(e.people_reason || "")})</p>`
-    : "";
-  const fit = e.fit_reasons && e.fit_reasons.length
-    ? `<p class="card-note">${e.fit_reasons.map(escapeHtml).join(" · ")}</p>`
-    : "";
-  return `
-    <div class="future-row${e.has_conflict ? " has-conflict" : ""}">
-      <div class="future-time">${timeLabel ? escapeHtml(timeLabel) : ""}</div>
-      <div class="future-body">
-        <p>
-          <a href="${escapeHtml(e.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title)}</a>
-          <span class="source-meta">${escapeHtml(e.source || "")}</span>
-        </p>
-        ${e.location ? `<p class="card-note">${escapeHtml(e.location)}</p>` : ""}
-        ${e.snippet ? `<p class="card-note">${escapeHtml(e.snippet)}</p>` : ""}
-        ${fit}
-        ${people}
-        ${_futureConflictNote(e)}
-      </div>
-    </div>`;
-}
-
-function _futureIdeaRow(e) {
-  return `
-    <div class="future-row future-ai-idea">
-      <div class="future-time"></div>
-      <div class="future-body">
-        <p><span class="badge planned">AI idea, not a live listing</span></p>
-        <p>${escapeHtml(e.title)}</p>
-      </div>
-    </div>`;
-}
-
-// "Today · Saturday, Sep 20" / "Tomorrow · ..." for the next two days,
-// otherwise just the weekday and date - so each event's own row doesn't
-// have to repeat a full date to say when it is.
-function _futureDayLabel(dateStr) {
-  const dt = new Date(dateStr);
-  if (isNaN(dt)) return "";
-  const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diffDays = Math.round((startOfDay(dt) - startOfDay(new Date())) / 86400000);
-  const weekdayDate = dt.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
-  if (diffDays === 0) return `Today · ${weekdayDate}`;
-  if (diffDays === 1) return `Tomorrow · ${weekdayDate}`;
-  return weekdayDate;
-}
-
-// Splits the ranked event list (as returned by the API - already sorted
-// by fit, not by date) into calendar-day buckets in chronological order,
-// plus two trailing buckets for what can't go on a timeline at all: a
-// real listing with no confirmed date, and AI-brainstormed ideas (which
-// were never dated to begin with). Rank order is kept *within* a day -
-// only the day grouping itself is chronological.
-function _groupFutureEvents(events) {
-  const real = events.filter(e => !e.is_ai_suggestion);
-  const ideas = events.filter(e => e.is_ai_suggestion);
-  const dated = real.filter(e => e.start).sort((a, b) => new Date(a.start) - new Date(b.start));
-  const undated = real.filter(e => !e.start);
-
-  const days = [];
-  const dayByKey = new Map();
-  dated.forEach(e => {
-    const dt = new Date(e.start);
-    const key = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
-    if (!dayByKey.has(key)) {
-      const day = { label: _futureDayLabel(e.start), events: [] };
-      dayByKey.set(key, day);
-      days.push(day);
-    }
-    dayByKey.get(key).events.push(e);
-  });
-  return { days, undated, ideas };
-}
-
-function _renderFutureEvents(container, events) {
-  if (!events.length) {
-    container.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
-    return;
-  }
-  const { days, undated, ideas } = _groupFutureEvents(events);
-  const section = (label, rows) => rows.length
-    ? `<div class="future-day"><h3 class="future-day-header">${escapeHtml(label)}</h3>${rows.join("")}</div>`
-    : "";
-  container.innerHTML = [
-    ...days.map(day => section(day.label, day.events.map(e => _futureAgendaRow(e, _futureTimeLabel(e))))),
-    section("Date unknown", undated.map(e => _futureAgendaRow(e, null))),
-    section("AI-brainstormed ideas", ideas.map(_futureIdeaRow)),
-  ].join("");
-}
-
-// Tracks whether the Future tab's expensive external search has actually
-// been run yet this session - see reloadAll() below, which only re-runs
-// it on a global filter change if this is already true, and the boot
-// sequence, which never sets it on its own.
-let futureHasSearched = false;
-
-async function loadFuture(region, days) {
-  futureHasSearched = true;
-  // A forward-looking event search has nothing to do with the Overview
-  // tab's global date-range filter (that filters your past calendar
-  // history) - sending it here was just confusing noise in the request.
-  const params = new URLSearchParams();
-  if (region) params.set("region", region);
-  if (days) params.set("days", days);
-  const qs = params.toString();
-
-  const progressEl = document.getElementById("future-progress");
-  const progressFillEl = document.getElementById("future-progress-fill");
-  const progressLabelEl = document.getElementById("future-progress-label");
-  const noteEl = document.getElementById("future-note");
-
-  noteEl.textContent = "";
-  if (progressEl) progressEl.style.display = "flex";
-  if (progressFillEl) progressFillEl.style.width = "0%";
-  if (progressLabelEl) progressLabelEl.textContent = "Starting search…";
-
-  // A 409 here just means a search is already running (e.g. a fast
-  // double-click of the Search button) - that's fine, the polling loop
-  // below picks up whichever job is actually in flight either way.
-  await fetch(`/api/future/start${qs ? `?${qs}` : ""}`, { method: "POST" });
-
-  // Polls rather than awaiting one long response: the search hits ~7
-  // sources one at a time with a politeness pause between each (easily
-  // 10-20+ real seconds), and this is what turns that wait into "here's
-  // which source it's on and how far along it is" instead of a page that
-  // looks stuck.
-  let status;
-  while (true) {
-    status = await fetch("/api/future/status").then(r => r.json());
-    const pct = status.total ? Math.round((status.done / status.total) * 100) : 0;
-    if (progressFillEl) progressFillEl.style.width = `${pct}%`;
-    if (progressLabelEl) {
-      progressLabelEl.textContent = status.running
-        ? `Searching ${status.current_source || "..."}… (${status.done}/${status.total})`
-        : "Finishing up…";
-    }
-    if (!status.running) break;
-    await new Promise(resolve => setTimeout(resolve, 400));
-  }
-  if (progressEl) progressEl.style.display = "none";
-
-  const eventsEl = document.getElementById("future-events");
-  if (status.error) {
-    noteEl.textContent = `Search failed: ${status.error}`;
-    eventsEl.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
-    return;
-  }
-  const data = status.result;
-  if (!data) return; // shouldn't happen (no error, not running, no result), but don't render garbage if it does
-
-  noteEl.textContent = data.message || "";
-  const regionInput = document.getElementById("future-region-input");
-  if (regionInput && !regionInput.value) regionInput.value = data.region || "";
-  const daysSelect = document.getElementById("future-days-select");
-  if (daysSelect && data.days) daysSelect.value = String(data.days);
-
-  _renderFutureEvents(eventsEl, data.events);
-}
-
-function wireFutureRegionSearch() {
-  const btn = document.getElementById("future-region-btn");
-  const input = document.getElementById("future-region-input");
-  const daysSelect = document.getElementById("future-days-select");
-  if (!btn || !input) return;
-  const run = () => loadFuture(input.value.trim() || undefined, daysSelect ? daysSelect.value : undefined);
-  btn.addEventListener("click", run);
-  input.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
-  if (daysSelect) daysSelect.addEventListener("change", run);
 }
 
 // --- Category colors (shared across Map, Habits, Time & Spend) ---
@@ -1635,16 +1413,7 @@ async function refreshMap() {
     loadTravel(),
     loadTime(),
     loadSeasonality(meta),
-    // Future is deliberately NOT loaded here, unlike every other tab -
-    // it's a live search against several external sites (10-40+ real
-    // seconds, see loadFuture()) rather than a query over your own
-    // already-loaded calendar data, so running it on every single app
-    // start regardless of whether you ever open that tab wastes a real
-    // search for most sessions. wireFutureRegionSearch() below wires up
-    // the Search button/Enter key/days dropdown; it only runs once you
-    // actually ask it to.
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();
-  wireFutureRegionSearch();
 })();

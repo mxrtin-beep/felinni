@@ -48,7 +48,7 @@ don't contribute to analyses that need that field.
 ## What's in the dashboard
 
 Tabs: **Overview · Places · Map · People · Habits · Travel · Time & Spend ·
-Seasonality · Anomalies · Future**. Every table is sortable (click a header).
+Seasonality · Anomalies**. Every table is sortable (click a header).
 The Overview tab's date range and category checkboxes apply globally; each
 tab's own filters stack on top.
 
@@ -119,49 +119,6 @@ tab's own filters stack on top.
   runs. Duplicate events across sources are matched and only counted once.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
-- **Future** — doesn't search automatically on load or on a global
-  filter change; it's a live external web search (~7 sources, easily
-  20-40+ seconds), not a query over your own already-loaded calendar
-  data, so it only runs once you click **Search** (or change the region/
-  window) on that tab. One ranked list of upcoming events from Eventbrite, Luma,
-  Meetup, Camber (the "LA Happenings" newsletter), Partiful, Posh, and
-  anywhere else a web search turns up for your home region (or any region
-  you type in) within the next 7 days by default (7/14/30/90 selectable) —
-  narrower than "everything upcoming forever," which tends to surface
-  far-future festivals over what's actually happening soon. Searches ~7
-  sources one at a time (with a brief pause between each, to stay
-  polite), so a status bar shows which source it's on and how far along
-  it is rather than one long unexplained wait. Each source is searched
-  exactly once - an earlier version searched twice to work around a
-  theory about the search library randomizing which backend answers a
-  given call, but that doesn't hold for the fixed (non-"auto") backend
-  list this uses, and doubling (then, briefly, quadrupling) the request
-  volume across ~7 sources in a couple of minutes reads to the
-  underlying search engines as scraping abuse rather than politeness -
-  confirmed directly by a run where the first query worked normally and
-  every one after it came back blocked.
-  Enriched with start/end time, duration, and location straight from each
-  event's own page — no API key/OAuth needed. (Camber's a Substack roundup
-  rather than a per-event platform, so its results usually keep their date
-  unknown — there's no event page to enrich them from.)
-  Skips browse/listing pages ("Discover LA Events", a platform's own
-  homepage or account page) in favor of actual single events, picks the
-  soonest occurrence for a "multiple dates" listing rather than blending
-  across them, dedupes the same real event when it's independently
-  listed on more than one aggregator site, and flags anything that
-  overlaps your calendar or another suggestion. Ranks by fit with your
-  habits (category, usual day/time, familiar venues) and suggests people
-  to invite with a reason, weighted toward your *recent* history first —
-  who you usually do that category/venue with lately, or your most
-  frequent people recently as a last resort, so someone you saw
-  constantly a while back but haven't since doesn't keep outranking who
-  you're actually spending time with now. The last suggested person is
-  reserved as a reconnection nudge — whoever you have a real history with
-  but haven't seen in the longest time — blended in alongside your usual
-  company rather than instead of it. If a local Ollama server is
-  running, a few clearly-labeled AI-brainstormed event ideas are folded
-  in too — never presented as a real listing.
-
 ### Or skip the browser
 
 ```bash
