@@ -499,11 +499,6 @@ async function refreshOverviewStats() {
   statGrid.appendChild(statTile("Top category", summary.top_category || "-"));
   statGrid.appendChild(statTile("People tagged", summary.n_people));
 
-  const places = await api("places?limit=10");
-  horizontalBarChart(document.getElementById("overview-places-chart"),
-    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
-
-  await loadPhasesOfLife();
 }
 
 async function loadPhasesOfLife() {
@@ -574,22 +569,12 @@ function wireCategoryFilter() {
 async function reloadAll() {
   await Promise.all([
     refreshOverviewStats(),
-    loadPlaces(),
     refreshMap(),
     loadPeople(),
     refreshHabit(),
     loadTravel(),
-    loadTime(),
-    refreshSeasonality(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
   ]);
-}
-
-// --- Places ---
-async function loadPlaces() {
-  const places = await api("places?limit=20");
-  horizontalBarChart(document.getElementById("places-chart"),
-    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
 }
 
 // --- People ---
@@ -847,9 +832,10 @@ async function refreshHabit() {
       { key: "weeks", label: "Weeks", num: true },
     ], data.streaks.slice(0, 12));
 
-  // Independent of the category picker above - runs alongside it, but a
-  // failure here shouldn't take the rest of the tab down with it.
+  // Both independent of the category picker above - run alongside it, but
+  // a failure in either shouldn't take the rest of the tab down with it.
   loadRecurringEvents().catch(err => console.error("Recurring events section failed:", err));
+  loadPhasesOfLife().catch(err => console.error("Phases of Life section failed:", err));
 }
 
 async function loadRecurringEvents() {
@@ -925,43 +911,6 @@ async function loadTravel() {
 
   populateTravelMetroSelect(data.region_visits, data.home_region);
   await refreshTravelNeighborhoods();
-}
-
-// --- Time & Spend ---
-async function loadTime() {
-  const rows = await api("time-by-category");
-  columnChart(document.getElementById("time-chart"),
-    rows.map(r => ({ label: r.category, value: r.total_hours })),
-    { valueLabel: "hours", highlight: d => categoryColors[d.label] || null });
-  table(document.getElementById("time-table"),
-    [
-      { key: "category", label: "Category" },
-      { key: "events", label: "Events", num: true },
-      { key: "total_hours", label: "Hours", num: true, format: v => Math.round(v) },
-      { key: "share_of_hours", label: "Share", num: true, format: fmtPct },
-      { key: "estimated_spend", label: "Est. spend", num: true, format: v => v == null ? "-" : `$${Math.round(v).toLocaleString()}` },
-    ], rows);
-}
-
-// --- Seasonality ---
-async function loadSeasonality(meta) {
-  const select = document.getElementById("season-category");
-  if (!select.dataset.populated) {
-    select.innerHTML += meta.categories.map(c => `<option value="${c}">${c}</option>`).join("");
-    select.dataset.populated = "1";
-    select.addEventListener("change", refreshSeasonality);
-  }
-  await refreshSeasonality();
-}
-
-async function refreshSeasonality() {
-  const category = document.getElementById("season-category").value;
-  const data = await api(`seasonality${category ? `?category=${encodeURIComponent(category)}` : ""}`);
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  columnChart(document.getElementById("season-month-chart"),
-    data.monthly.map(m => ({ label: monthNames[m.month - 1], value: m.avg_events_per_month })), { valueLabel: "avg events" });
-  columnChart(document.getElementById("season-season-chart"),
-    data.seasonal.map(s => ({ label: s.season, value: s.avg_events_per_season })), { valueLabel: "avg events" });
 }
 
 // --- Anomalies ---
@@ -1406,13 +1355,10 @@ async function refreshMap() {
   await loadCalendarSources();
   await refreshOverviewStats();
   await Promise.all([
-    loadPlaces(),
     loadMap(meta),
     loadPeople(),
     loadHabits(meta),
     loadTravel(),
-    loadTime(),
-    loadSeasonality(meta),
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();
