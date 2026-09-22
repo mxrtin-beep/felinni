@@ -3,12 +3,14 @@
 // everywhere else too.
 const GLOBAL_FILTERS = { startDate: "", endDate: "", excludeCategories: [] };
 
-function api(path) {
+function api(path, { skipGlobalFilters = false } = {}) {
   const [base, query] = path.split("?");
   const params = new URLSearchParams(query || "");
-  if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
-  if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
-  if (GLOBAL_FILTERS.excludeCategories.length) params.set("exclude_categories", GLOBAL_FILTERS.excludeCategories.join(","));
+  if (!skipGlobalFilters) {
+    if (GLOBAL_FILTERS.startDate) params.set("start_date", GLOBAL_FILTERS.startDate);
+    if (GLOBAL_FILTERS.endDate) params.set("end_date", GLOBAL_FILTERS.endDate);
+    if (GLOBAL_FILTERS.excludeCategories.length) params.set("exclude_categories", GLOBAL_FILTERS.excludeCategories.join(","));
+  }
   const qs = params.toString();
   return fetch(`/api/${base}${qs ? `?${qs}` : ""}`).then(r => r.json());
 }
@@ -78,8 +80,220 @@ function table(container, columns, rows) {
 
 function fmtHours(h) { return h == null ? "-" : `${Math.round(h)}h`; }
 function fmtDate(d) { return d ? d.slice(0, 10) : "-"; }
+function fmtDateTime(d) {
+  if (!d) return "-";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+function fmtDuration(hours) {
+  if (hours == null) return null;
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
 function fmtPct(p) { return p == null ? "-" : `${(p * 100).toFixed(0)}%`; }
 function cssVarSafe(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+// --- "Time since you last saw them" ring tracker (People tab) ---
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const ms = Date.now() - new Date(dateStr).getTime();
+  return Math.max(0, Math.floor(ms / 86400000));
+}
+
+// Ring is fully filled (and fully "critical") by this many days out -
+// beyond this, longer just means longer, the visual has already made
+// its point.
+const LAST_SEEN_RING_CAP_DAYS = 60;
+const LAST_SEEN_GOOD_DAYS = 14;
+const LAST_SEEN_WARNING_DAYS = 45;
+
+function lastSeenColor(days) {
+  if (days <= LAST_SEEN_GOOD_DAYS) return cssVarSafe("--status-good") || "#0ca30c";
+  if (days <= LAST_SEEN_WARNING_DAYS) return cssVarSafe("--status-warning") || "#fab219";
+  return cssVarSafe("--status-critical") || "#d03b3b";
+}
+
+function lastSeenRingSvg(days, size = 40) {
+  const fraction = Math.min(days / LAST_SEEN_RING_CAP_DAYS, 1);
+  const color = lastSeenColor(days);
+  const r = size * 0.4, c = 2 * Math.PI * r, mid = size / 2, sw = Math.max(size * 0.1, 3);
+  const offset = (c * (1 - fraction)).toFixed(2);
+  return `
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="last-seen-ring" aria-hidden="true">
+      <circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="var(--grid)" stroke-width="${sw}"></circle>
+      <circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="${color}" stroke-width="${sw}"
+        stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset}"
+        stroke-linecap="round" transform="rotate(-90 ${mid} ${mid})"></circle>
+    </svg>`;
+}
+
+function lastSeenLabel(days) {
+  if (days === 0) return "Today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+// --- Consolidated People table: time spent, time since last seen, and
+// growing/fading trend as three small inline visualizations per row,
+// rather than three separate charts/tables repeating the same person
+// list three times. ---
+function miniBarCellHtml(value, max, formatFn = fmtHours, colorVar = "--series-1") {
+  if (value == null) return "-";
+  const pct = max > 0 ? Math.max(value / max, 0) * 100 : 0;
+  return `
+    <div class="mini-viz-cell">
+      <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${pct.toFixed(1)}%;background:var(${colorVar})"></div></div>
+      <span class="mini-viz-label">${formatFn(value)}</span>
+    </div>`;
+}
+
+// "45d" / "6mo" / "2.3yr" - a duration, not a calendar date, so it reads
+// at a glance next to the bar rather than needing a tooltip.
+function fmtTenure(days) {
+  if (days == null) return "-";
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${Math.round(days / 30)}mo`;
+  return `${(days / 365).toFixed(1)}yr`;
+}
+
+function miniLastSeenCellHtml(days) {
+  if (days == null) return "-";
+  return `
+    <div class="mini-viz-cell">
+      ${lastSeenRingSvg(days, 22)}
+      <span class="mini-viz-label">${lastSeenLabel(days)}</span>
+    </div>`;
+}
+
+// Diverges from a center line: right/green for growing, left/red for
+// fading, capped at TREND_CAP events/year since beyond that the bar's
+// already made its point.
+const TREND_CAP_EVENTS_PER_YEAR = 5;
+function miniTrendCellHtml(slope) {
+  if (slope == null || Number.isNaN(slope)) return "-";
+  const pct = Math.min(Math.abs(slope) / TREND_CAP_EVENTS_PER_YEAR, 1) * 50;
+  const flat = Math.abs(slope) < 0.05;
+  const color = flat ? cssVarSafe("--text-muted") : slope > 0 ? cssVarSafe("--status-good") : cssVarSafe("--status-critical");
+  const side = slope >= 0 ? "right" : "left";
+  return `
+    <div class="mini-viz-cell">
+      <div class="mini-trend-track">
+        <div class="mini-trend-center"></div>
+        <div class="mini-trend-fill mini-trend-${side}" style="width:${pct.toFixed(1)}%;background:${color}"></div>
+      </div>
+      <span class="mini-viz-label">${slope > 0 ? "+" : ""}${slope.toFixed(2)}/yr</span>
+    </div>`;
+}
+
+// --- Friend network graph: color-by dropdown + legend ---
+function lerpColor(hexA, hexB, t) {
+  const a = parseInt(hexA.slice(1), 16), b = parseInt(hexB.slice(1), 16);
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+// One entry per "color by" dropdown option: getColor(node, ctx) computes
+// a node's fill, and legend describes the same scale for display. ctx
+// carries whatever per-render context a mode needs (a trend lookup, or
+// the max value in view to normalize against) - built fresh each render
+// in renderFriendNetwork() below, since it depends on the current node set.
+const NETWORK_COLOR_MODES = {
+  recency: {
+    legend: { gradient: "linear-gradient(to right, var(--status-good), var(--status-warning), var(--status-critical))", low: "Seen recently", high: "Not seen in a while" },
+    getColor: n => lastSeenColor(daysSince(n.last_seen) ?? 0),
+  },
+  tenure: {
+    legend: { gradient: "linear-gradient(to right, #dbeafe, #4338ca)", low: "Recently met", high: "Known longest" },
+    getColor: (n, ctx) => lerpColor("#dbeafe", "#4338ca", ctx.maxKnownDays > 0 ? Math.min((daysSince(n.first_seen) ?? 0) / ctx.maxKnownDays, 1) : 0),
+  },
+  trend: {
+    legend: { gradient: "linear-gradient(to right, var(--status-critical), var(--grid), var(--status-good))", low: "Fading", high: "Growing" },
+    getColor: (n, ctx) => {
+      const slope = ctx.trendByPerson.get(n.person)?.slope_events_per_year;
+      if (slope == null) return cssVarSafe("--text-muted") || "#999";
+      const t = Math.max(-1, Math.min(1, slope / TREND_CAP_EVENTS_PER_YEAR));
+      return t >= 0 ? lerpColor("#d9d9d9", "#0ca30c", t) : lerpColor("#d9d9d9", "#d03b3b", -t);
+    },
+  },
+  hours: {
+    legend: { gradient: "linear-gradient(to right, #dbeafe, #1d4ed8)", low: "Least time together", high: "Most time together" },
+    getColor: (n, ctx) => lerpColor("#dbeafe", "#1d4ed8", ctx.maxHours > 0 ? Math.min((n.total_hours || 0) / ctx.maxHours, 1) : 0),
+  },
+};
+
+// Holds the color-scale context (trend lookup, max values to normalize
+// against) from the most recent full layout render, so switching the
+// color-by dropdown can recolor in place - via networkGraph's
+// _networkSetColor - without rerunning the force layout or resetting the
+// current pan/zoom, which a full re-render would otherwise do every time.
+let currentNetworkColorCtx = null;
+
+function renderNetworkLegend(mode) {
+  const el = document.getElementById("network-legend");
+  if (!el) return;
+  const { gradient, low, high } = NETWORK_COLOR_MODES[mode].legend;
+  el.innerHTML = `<span>${low}</span><div class="network-legend-bar" style="background:${gradient}"></div><span>${high}</span>`;
+}
+
+function networkModeSpec(mode) {
+  return NETWORK_COLOR_MODES[mode] || NETWORK_COLOR_MODES.recency;
+}
+
+// Full render: (re)runs the force layout from scratch. Only needed when
+// the underlying node/edge set actually changes (tab load, filter change).
+function renderFriendNetwork(nodes, edges, trends, mode) {
+  currentNetworkColorCtx = {
+    trendByPerson: new Map(trends.map(t => [t.person, t])),
+    maxHours: Math.max(...nodes.map(n => n.total_hours || 0), 1),
+    maxKnownDays: Math.max(...nodes.map(n => daysSince(n.first_seen) ?? 0), 1),
+  };
+  const modeSpec = networkModeSpec(mode);
+  renderNetworkLegend(mode in NETWORK_COLOR_MODES ? mode : "recency");
+  networkGraph(document.getElementById("friend-network-graph"), nodes, edges, {
+    getColor: n => modeSpec.getColor(n, currentNetworkColorCtx),
+  });
+}
+
+// Color-only update for the dropdown: reuses the already-laid-out graph
+// and cached color context, so the view doesn't jump/reset on every change.
+function recolorFriendNetwork(mode) {
+  const container = document.getElementById("friend-network-graph");
+  if (!container || !currentNetworkColorCtx || typeof container._networkSetColor !== "function") return false;
+  const modeSpec = networkModeSpec(mode);
+  renderNetworkLegend(mode in NETWORK_COLOR_MODES ? mode : "recency");
+  container._networkSetColor(n => modeSpec.getColor(n, currentNetworkColorCtx));
+  return true;
+}
+
+function renderPeopleSummaryTable(people, trends) {
+  const container = document.getElementById("people-summary-table");
+  if (!container) return;
+  const trendByPerson = new Map(trends.map(t => [t.person, t]));
+  const maxHours = Math.max(...people.map(p => p.total_hours || 0), 1);
+  const rows = people.map(p => ({
+    person: p.person,
+    total_hours: p.total_hours,
+    days_since: daysSince(p.last_seen),
+    known_days: daysSince(p.first_seen),
+    trend: trendByPerson.get(p.person)?.slope_events_per_year ?? null,
+  }));
+  const maxKnownDays = Math.max(...rows.map(r => r.known_days || 0), 1);
+  table(container, [
+    // Unlike a plain right-aligned number column, these cells are
+    // left-anchored bar/ring visualizations - so skip `num` (which would
+    // right-align the header and stretch a bare "-" away from the bar
+    // start) and let both header and cell fall back to left alignment.
+    { key: "person", label: "Person" },
+    { key: "total_hours", label: "Time spent together", format: v => miniBarCellHtml(v, maxHours) },
+    { key: "days_since", label: "Last seen", format: v => miniLastSeenCellHtml(v) },
+    { key: "known_days", label: "Known since", format: v => miniBarCellHtml(v, maxKnownDays, fmtTenure, "--series-3") },
+    { key: "trend", label: "Recent trend", format: v => miniTrendCellHtml(v) },
+  ], rows);
+}
 
 // --- Tabs ---
 document.getElementById("tabs").addEventListener("click", (e) => {
@@ -368,7 +582,6 @@ async function reloadAll() {
     loadTime(),
     refreshSeasonality(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
-    loadFuture(),
   ]);
 }
 
@@ -449,12 +662,11 @@ async function loadPeople() {
   const results = await Promise.allSettled([
     (async () => {
       // Everyone, not just a top slice - the dropdown should let you pick
-      // any person, and the bar chart above still only shows the top 15.
-      const people = await api("people?limit=1000");
+      // any person, and the summary table below can hold everyone anyway.
+      const [people, trends] = await Promise.all([api("people?limit=1000"), api("trends")]);
       const sorted = [...people].sort((a, b) => b.total_hours - a.total_hours);
-      horizontalBarChart(document.getElementById("people-chart"),
-        sorted.slice(0, 15).map(p => ({ label: p.person, value: p.total_hours })), { valueLabel: "hours" });
       populatePeoplePickerList(sorted);
+      renderPeopleSummaryTable(sorted, trends);
       // The slider spans your full calendar history (not just what's
       // currently in view), so it always has room to zoom into any part
       // of it - fetched fresh in case a calendar source added new history.
@@ -463,13 +675,23 @@ async function loadPeople() {
       await refreshPeopleTrend();
     })(),
     (async () => {
-      const trends = await api("trends");
-      table(document.getElementById("trends-table"),
-        [
-          { key: "person", label: "Person" },
-          { key: "total_events", label: "Total events", num: true },
-          { key: "slope_events_per_year", label: "Trend (events/yr)", num: true, format: v => v?.toFixed(2) },
-        ], trends);
+      const [network, trends] = await Promise.all([api("social/network"), api("trends")]);
+      const colorSelect = document.getElementById("network-color-by");
+      renderFriendNetwork(network.nodes, network.edges, trends, colorSelect ? colorSelect.value : "recency");
+      if (colorSelect && !colorSelect._networkListenerBound) {
+        colorSelect._networkListenerBound = true;
+        // A color-only change - recolorFriendNetwork() fades the existing
+        // nodes in place rather than rerunning the whole layout, so this
+        // doesn't reset the current pan/zoom or restart the simulation.
+        colorSelect.addEventListener("change", () => recolorFriendNetwork(colorSelect.value));
+      }
+      const resetBtn = document.getElementById("network-reset-view");
+      if (resetBtn && !resetBtn._networkListenerBound) {
+        resetBtn._networkListenerBound = true;
+        resetBtn.addEventListener("click", () => {
+          document.getElementById("friend-network-graph")._networkResetView?.();
+        });
+      }
     })(),
   ]);
   results.forEach(r => { if (r.status === "rejected") console.error("People tab section failed:", r.reason); });
@@ -774,22 +996,6 @@ async function loadAnomalies() {
     ], data.by_category.slice(0, 30));
 }
 
-// --- Future (skeleton - Eventbrite/Luma/Meetup, nothing wired up yet) ---
-async function loadFuture() {
-  const data = await api("future");
-  document.getElementById("future-note").textContent = data.message || "";
-
-  const suggestions = document.getElementById("future-suggestions");
-  suggestions.innerHTML = data.suggestions.length
-    ? data.suggestions.map(s => `<p>${escapeHtml(s.title)}</p>`).join("")
-    : '<p class="empty-note">Nothing here yet - no platforms connected.</p>';
-
-  const events = document.getElementById("future-events");
-  events.innerHTML = data.events.length
-    ? data.events.map(e => `<p>${escapeHtml(e.title)} <span class="source-meta">${escapeHtml(e.source || "")}</span></p>`).join("")
-    : '<p class="empty-note">Nothing here yet.</p>';
-}
-
 // --- Category colors (shared across Map, Habits, Time & Spend) ---
 let categoryColors = {};
 
@@ -853,14 +1059,68 @@ function densestClusterPoints(locations, binSizeDegrees = 5) {
 let geocodePollTimer = null;
 let lastLocationsData = null;
 
-function renderMapLegend(categories) {
+// `entries` is [{label, color}, ...] - generalized from category-only so
+// the same legend renders whatever the map's "color by" dropdown is
+// currently keyed on (category, place type, country, or state).
+function renderMapLegend(entries) {
   const legend = document.getElementById("map-legend");
   legend.innerHTML = "";
-  categories.forEach(cat => {
+  entries.forEach(({ label, color }) => {
     const item = document.createElement("span");
-    item.innerHTML = `<span class="swatch" style="background:${categoryColors[cat]}"></span>${escapeHtml(cat)}`;
+    item.innerHTML = `<span class="swatch" style="background:${color}"></span>${escapeHtml(label)}`;
     legend.appendChild(item);
   });
+}
+
+// Place type is a small, fixed set (see felinni.geocode._classify_place) -
+// stable colors across renders/filters, unlike country/state below.
+const MAP_PLACE_TYPE_COLORS = {
+  residential: "--series-2", commercial: "--series-1",
+  public: "--series-3", recreational: "--series-4", unknown: "--text-muted",
+};
+const MAP_PLACE_TYPE_LABELS = {
+  residential: "Residential", commercial: "Commercial",
+  public: "Public", recreational: "Recreational", unknown: "Unknown",
+};
+
+// Country/state are open-ended - assigns each distinct value seen in the
+// currently-filtered locations one of a fixed palette of series colors
+// (stable within one legend, cycling if there happen to be more distinct
+// values than colors - unusual for a personal calendar's travel history,
+// but not impossible).
+const MAP_DYNAMIC_SERIES_VARS = Array.from({ length: 12 }, (_, i) => `--series-${i + 1}`);
+function buildDynamicColorMap(values) {
+  const distinct = [...new Set(values.filter(v => v))].sort();
+  const map = {};
+  distinct.forEach((v, i) => { map[v] = MAP_DYNAMIC_SERIES_VARS[i % MAP_DYNAMIC_SERIES_VARS.length]; });
+  return map;
+}
+
+// Returns { getColor(loc), legend: [{label, color}, ...] } for whichever
+// "color by" mode is selected - color() below always looks up a live CSS
+// var so it tracks light/dark theme changes.
+function buildMapColorScheme(mode, locations) {
+  const color = cssVar => cssVarSafe(cssVar) || cssVarSafe("--text-muted");
+  if (mode === "place_type") {
+    return {
+      getColor: loc => color(MAP_PLACE_TYPE_COLORS[loc.place_type] || MAP_PLACE_TYPE_COLORS.unknown),
+      legend: Object.keys(MAP_PLACE_TYPE_COLORS).map(key => ({ label: MAP_PLACE_TYPE_LABELS[key], color: color(MAP_PLACE_TYPE_COLORS[key]) })),
+    };
+  }
+  if (mode === "country" || mode === "state") {
+    const colorMap = buildDynamicColorMap(locations.map(l => l[mode]));
+    return {
+      getColor: loc => loc[mode] && colorMap[loc[mode]] ? color(colorMap[loc[mode]]) : color("--text-muted"),
+      legend: Object.entries(colorMap).map(([label, cssVarName]) => ({ label, color: color(cssVarName) })),
+    };
+  }
+  // Default: category (unchanged from before this was generalized) -
+  // categoryColors is shared with every other tab's category coloring.
+  const categories = [...new Set(locations.flatMap(l => l.categories || []))].sort();
+  return {
+    getColor: loc => categoryColors[(loc.categories && loc.categories[0]) || "Other"] || color("--text-muted"),
+    legend: categories.map(cat => ({ label: cat, color: categoryColors[cat] || color("--text-muted") })),
+  };
 }
 
 function populateYearSelects(minYear, maxYear) {
@@ -886,9 +1146,8 @@ async function loadMap(meta) {
     document.getElementById("map-category").innerHTML += meta.categories.map(c => `<option value="${c}">${c}</option>`).join("");
     document.getElementById("map-person").innerHTML += meta.people.map(p => `<option value="${p}">${p}</option>`).join("");
     populateYearSelects(meta.min_year, meta.max_year);
-    renderMapLegend(meta.categories);
 
-    ["map-category", "map-person", "map-start-year", "map-end-year"].forEach(id =>
+    ["map-category", "map-person", "map-start-year", "map-end-year", "map-color-by"].forEach(id =>
       document.getElementById(id).addEventListener("change", refreshMap));
 
     document.getElementById("map-geocode-btn").addEventListener("click", async () => {
@@ -921,7 +1180,51 @@ async function loadMap(meta) {
     });
   }
   await refreshMap();
+  await loadGeocodeFailures();
   await pollGeocodeStatus(); // resumes the progress bar if a job was already running
+}
+
+async function loadGeocodeFailures() {
+  const data = await fetch("/api/geocode/failures").then(r => r.json());
+  const card = document.getElementById("geocode-failures-card");
+  const hasApproximate = data.approximate && data.approximate.length;
+  if (!data.total_failed && !hasApproximate) {
+    card.style.display = "none";
+    return;
+  }
+  card.style.display = "block";
+
+  const failuresSummary = document.getElementById("geocode-failures-summary");
+  const failuresList = document.getElementById("geocode-failures-list");
+  if (data.total_failed) {
+    failuresSummary.style.display = "block";
+    failuresList.style.display = "block";
+    failuresSummary.textContent =
+      `${data.total_failed} location${data.total_failed === 1 ? "" : "s"} failed on ` +
+      `their last geocode attempt: ${data.by_reason.map(([reason, count]) => `${count} ${reason}`).join("; ")}.`;
+    failuresList.innerHTML = data.failures
+      .map(f => `<p><strong>${escapeHtml(f.location)}</strong> — ${escapeHtml(f.reason)}</p>`)
+      .join("");
+  } else {
+    failuresSummary.style.display = "none";
+    failuresList.style.display = "none";
+  }
+
+  const approxSummary = document.getElementById("geocode-approximate-summary");
+  const approxList = document.getElementById("geocode-approximate-list");
+  if (hasApproximate) {
+    approxSummary.style.display = "block";
+    approxList.style.display = "block";
+    approxSummary.textContent =
+      `${data.approximate.length} location${data.approximate.length === 1 ? "" : "s"} couldn't be pinned exactly, ` +
+      `so ${data.approximate.length === 1 ? "it's" : "they're"} placed at the nearest known campus/workplace instead:`;
+    approxList.innerHTML = data.approximate
+      .map(a => `<p><strong>${escapeHtml(a.location)}</strong> — placed at ${escapeHtml(a.placed_at)}</p>`)
+      .join("");
+  } else {
+    approxSummary.style.display = "none";
+    approxList.style.display = "none";
+  }
 }
 
 function updateGeocodeButton(locationsData) {
@@ -938,6 +1241,9 @@ function updateGeocodeButton(locationsData) {
   }
 }
 
+let geocodePollTicks = 0;
+const GEOCODE_FAILURES_REFRESH_EVERY_N_TICKS = 5; // ~5s at the 1s poll interval - live, but not refetching every single tick
+
 async function pollGeocodeStatus() {
   const status = await fetch("/api/geocode/status").then(r => r.json());
   const btn = document.getElementById("map-geocode-btn");
@@ -948,7 +1254,9 @@ async function pollGeocodeStatus() {
     if (geocodePollTimer) {
       clearInterval(geocodePollTimer);
       geocodePollTimer = null;
+      geocodePollTicks = 0;
       await refreshMap(); // job just finished - show the newly-geocoded points
+      await loadGeocodeFailures(); // ...and why anything left over still isn't
     }
     progressWrap.style.display = "none";
     // A run that stopped early (rather than working through every
@@ -970,6 +1278,14 @@ async function pollGeocodeStatus() {
   const pct = status.total ? Math.round((status.done / status.total) * 100) : 0;
   document.getElementById("map-geocode-fill").style.width = pct + "%";
   document.getElementById("map-geocode-label").textContent = status.total ? `${status.done} / ${status.total}` : "Starting…";
+
+  // A run already in progress (e.g. this tab was reloaded mid-run) still
+  // has a live diagnostics file worth showing, not just once the whole
+  // batch finishes - refreshed periodically rather than every single tick.
+  geocodePollTicks += 1;
+  if (geocodePollTicks % GEOCODE_FAILURES_REFRESH_EVERY_N_TICKS === 0) {
+    await loadGeocodeFailures();
+  }
 
   if (!geocodePollTimer) {
     geocodePollTimer = setInterval(pollGeocodeStatus, 1000);
@@ -1041,6 +1357,7 @@ async function refreshMap() {
     note.innerHTML = data.total_places === 0
       ? "No locations match this filter."
       : `None of your ${data.total_places} matching locations are geocoded yet. Click "Geocode locations" below (needs network - it calls OpenStreetMap).`;
+    renderMapLegend([]);
     return;
   }
   note.textContent = data.total_places > data.geocoded_places
@@ -1048,10 +1365,13 @@ async function refreshMap() {
     : `Showing all ${data.geocoded_places} matching locations. Circle size = visit count.`;
 
   const maxVisits = Math.max(...data.locations.map(l => l.visits), 1);
+  const colorBy = document.getElementById("map-color-by").value;
+  const scheme = buildMapColorScheme(colorBy, data.locations);
+  renderMapLegend(scheme.legend);
+
   const bounds = [];
   data.locations.forEach(loc => {
-    const primaryCategory = (loc.categories && loc.categories[0]) || "Other";
-    const color = categoryColors[primaryCategory] || cssVarSafe("--text-muted");
+    const color = scheme.getColor(loc);
     const radius = 5 + 15 * Math.sqrt(loc.visits / maxVisits);
     const marker = L.circleMarker([loc.lat, loc.lon], {
       radius, color, fillColor: color, fillOpacity: 0.6, weight: 1,
@@ -1093,7 +1413,6 @@ async function refreshMap() {
     loadTravel(),
     loadTime(),
     loadSeasonality(meta),
-    loadFuture(),
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();

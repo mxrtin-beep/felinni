@@ -25,7 +25,6 @@
   <!-- Anomalies tab hidden for now - the flagging wasn't reading as useful
        signal in practice; felinni.anomalies/api/anomalies are still there,
        revisit before re-enabling this nav button + panel-anomalies below. -->
-  <button data-panel="future">Future</button>
 </nav>
 <main>
 
@@ -118,6 +117,12 @@
         <label>Person <select id="map-person"><option value="">All</option></select></label>
         <label>From <select id="map-start-year"></select></label>
         <label>To <select id="map-end-year"></select></label>
+        <label>Color by <select id="map-color-by">
+          <option value="category">Category</option>
+          <option value="place_type">Place type</option>
+          <option value="country">Country</option>
+          <option value="state">State/region</option>
+        </select></label>
         <button id="map-geocode-btn" type="button">Geocode locations</button>
         <label><input type="checkbox" id="map-geocode-force"> Redo already-geocoded locations</label>
       </div>
@@ -131,20 +136,32 @@
     </div>
     <div class="card">
       <h2>Fix a location</h2>
-      <p class="card-note">Wrong pin, or missing entirely? Pick the location and give a corrected address (or exact coordinates) - it always wins over the cache and the map updates right away.</p>
-      <div class="controls">
-        <label>Location <select id="fix-location-select"></select></label>
-        <label>Corrected address <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA" style="min-width:280px"></label>
+      <div class="controls fix-location-controls">
+        <label class="field">
+          <span>Location</span>
+          <select id="fix-location-select"></select>
+        </label>
+        <label class="field">
+          <span>Corrected address</span>
+          <input type="text" id="fix-location-query" placeholder="e.g. Santa Monica Pier, Santa Monica, CA">
+        </label>
         <button id="fix-location-btn" type="button">Fix</button>
       </div>
       <p class="card-note" id="fix-location-status"></p>
+    </div>
+    <div class="card" id="geocode-failures-card" style="display:none">
+      <h2>Geocoding notes</h2>
+      <p class="card-note" id="geocode-failures-summary"></p>
+      <div class="scroll-list" id="geocode-failures-list"></div>
+      <p class="card-note" id="geocode-approximate-summary" style="display:none"></p>
+      <div class="scroll-list" id="geocode-approximate-list" style="display:none"></div>
     </div>
   </section>
 
   <section class="panel" id="panel-people">
     <div class="card">
-      <h2>Time spent with each person</h2>
-      <div id="people-chart"></div>
+      <h2>People</h2>
+      <div id="people-summary-table"></div>
     </div>
     <div class="card">
       <div class="controls">
@@ -178,9 +195,19 @@
       </div>
     </div>
     <div class="card">
-      <h2>Growing vs. fading</h2>
-      <p class="card-note">Linear trend in events/year. Negative = seeing them less over time.</p>
-      <div id="trends-table"></div>
+      <div class="controls">
+        <h2 style="margin:0">Friend network</h2>
+        <label>Color by <select id="network-color-by">
+          <option value="recency">Time since last seen</option>
+          <option value="tenure">Known since</option>
+          <option value="trend">Recent trend</option>
+          <option value="hours">Time spent together</option>
+        </select></label>
+        <button type="button" id="network-reset-view">Reset view</button>
+      </div>
+      <p class="card-note">Scroll/pinch to zoom, drag the background to pan, drag a node to rearrange it.</p>
+      <div class="network-legend" id="network-legend"></div>
+      <div id="friend-network-graph"></div>
     </div>
   </section>
 
@@ -274,33 +301,6 @@
     </div>
   </section>
   -->
-
-  <section class="panel" id="panel-future">
-    <div class="card">
-      <h2>Future <span class="badge planned">Coming soon</span></h2>
-      <p class="card-note">
-        The idea: use your own history - the categories, people, places, and
-        times you already gravitate toward - to surface upcoming events
-        worth going to, pulled from Eventbrite, Luma, and Meetup. Nothing
-        below is wired up yet (each needs its own API access, which isn't
-        configured), but here's the shape of it.
-      </p>
-      <p class="card-note" id="future-note"></p>
-    </div>
-    <div class="card">
-      <h2>Suggested for you</h2>
-      <p class="card-note">Would rank upcoming events by fit with your habits - category overlap, your usual day/time, places you already frequent, people you tend to see.</p>
-      <div id="future-suggestions"><p class="empty-note">Nothing here yet - no platforms connected.</p></div>
-    </div>
-    <div class="card">
-      <div class="controls" style="justify-content:space-between">
-        <h2 style="margin:0">Upcoming events</h2>
-        <button type="button" id="future-connect-btn" disabled>Connect a platform</button>
-      </div>
-      <p class="card-note">Pulled from Eventbrite, Luma, and Meetup once connected - needs each platform's own API access (Eventbrite/Luma: an API key, Meetup: OAuth), none of which is configured yet.</p>
-      <div id="future-events"><p class="empty-note">Nothing here yet.</p></div>
-    </div>
-  </section>
 
 </main>
 <script src="vendor/leaflet/leaflet.js"></script>

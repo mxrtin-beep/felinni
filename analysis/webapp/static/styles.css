@@ -199,7 +199,37 @@ main {
   font-size: 13px;
 }
 
-select, input[type="number"] {
+.fix-location-controls {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.fix-location-controls .field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.fix-location-controls .field select,
+.fix-location-controls .field input {
+  width: 100%;
+}
+
+.fix-location-controls #fix-location-select {
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.fix-location-controls button {
+  flex-shrink: 0;
+}
+
+select, input[type="number"], input[type="text"] {
   font: inherit;
   font-size: 13px;
   padding: 5px 8px;
@@ -351,6 +381,21 @@ th.sortable:hover {
   margin-bottom: 6px;
 }
 
+.network-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.network-legend .network-legend-bar {
+  width: 140px;
+  height: 8px;
+  border-radius: 4px;
+}
+
 .legend .swatch {
   display: inline-block;
   width: 10px;
@@ -379,6 +424,25 @@ th.sortable:hover {
   padding: 8px 0;
 }
 
+.scroll-list {
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 12px;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+.scroll-list p {
+  padding: 4px 0;
+  margin: 0;
+  border-bottom: 1px solid var(--grid);
+}
+
+.scroll-list p:last-child {
+  border-bottom: none;
+}
+
 .badge {
   display: inline-block;
   font-size: 11px;
@@ -392,6 +456,59 @@ th.sortable:hover {
 .badge.slowing-down { background: rgba(250, 178, 25, 0.20); color: #9a6b00; }
 .badge.stopped { background: rgba(208, 59, 59, 0.15); color: var(--status-critical); }
 .badge.planned { background: var(--grid); color: var(--text-secondary); font-weight: 500; margin-left: 8px; vertical-align: middle; }
+
+.last-seen-ring {
+  flex: none;
+}
+
+/* Consolidated People table's three inline visualization columns
+   (time spent, time since last seen, growing/fading trend). */
+.mini-viz-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.mini-viz-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.mini-bar-track {
+  width: 70px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--grid);
+  overflow: hidden;
+}
+.mini-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--series-1);
+}
+.mini-trend-track {
+  position: relative;
+  width: 60px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--grid);
+  overflow: hidden;
+}
+.mini-trend-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.mini-trend-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+}
+.mini-trend-fill.mini-trend-right { left: 50%; }
+.mini-trend-fill.mini-trend-left { right: 50%; }
 
 button {
   font: inherit;

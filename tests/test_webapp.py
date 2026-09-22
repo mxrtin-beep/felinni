@@ -44,7 +44,6 @@ def client():
     "/api/breaks",
     "/api/recurring",
     "/api/sources",
-    "/api/future",
 ])
 def test_endpoint_returns_200_json(client, path):
     resp = client.get(path)
@@ -58,6 +57,26 @@ def test_meta_lists_people(client):
     assert "Alice" in body["people"]
     assert body["n_geocoded"] == 0  # no geocode cache committed to the repo
     assert body["category_colors"]["Gym"] == "#8E24AA"
+
+
+def test_social_network_returns_nodes_and_edges(client):
+    resp = client.get("/api/social/network")
+    body = resp.get_json()
+    assert "nodes" in body and "edges" in body
+    assert body["nodes"]
+    people_in_nodes = {n["person"] for n in body["nodes"]}
+    for edge in body["edges"]:
+        # Every edge's endpoints must be in the returned node set - no
+        # dangling link to someone outside the (limit-capped) node list.
+        assert edge["person_a"] in people_in_nodes
+        assert edge["person_b"] in people_in_nodes
+        assert edge["shared_events"] >= 1
+
+
+def test_social_network_respects_limit(client):
+    resp = client.get("/api/social/network?limit=1")
+    body = resp.get_json()
+    assert len(body["nodes"]) <= 1
 
 
 def test_anomalies_includes_category_breakdown(client):
@@ -89,6 +108,35 @@ def test_locations_without_geocode_cache_reports_zero_geocoded(client):
     assert body["geocoded_places"] == 0
     assert body["total_places"] > 0
     assert body["locations"] == []
+
+
+def test_locations_includes_place_type_country_state_for_the_map_color_by_dropdown(client, monkeypatch):
+    most_common_location = server.DF["location"].dropna().value_counts().index[0]
+    fake_cache = {
+        most_common_location: {
+            "lat": 34.07, "lon": -118.44, "display_name": "fake address",
+            "city": "Los Angeles", "state": "California", "country": "United States",
+            "place_type": "commercial",
+        },
+    }
+    monkeypatch.setattr(server, "_load_geocode_cache", lambda: fake_cache)
+
+    resp = client.get("/api/locations")
+    body = resp.get_json()
+    row = next(loc for loc in body["locations"] if loc["location"] == most_common_location)
+    assert row["place_type"] == "commercial"
+    assert row["state"] == "California"
+    assert row["country"] == "United States"
+
+
+def test_locations_place_type_defaults_to_unknown_when_missing_from_cache(client, monkeypatch):
+    most_common_location = server.DF["location"].dropna().value_counts().index[0]
+    fake_cache = {most_common_location: {"lat": 34.07, "lon": -118.44}}  # no place_type recorded (pre-existing cache entry)
+    monkeypatch.setattr(server, "_load_geocode_cache", lambda: fake_cache)
+
+    resp = client.get("/api/locations")
+    row = next(loc for loc in resp.get_json()["locations"] if loc["location"] == most_common_location)
+    assert row["place_type"] == "unknown"
 
 
 def test_habit_requires_category(client):
@@ -123,14 +171,6 @@ def test_exclude_categories_filter_applies_globally(client):
     assert all("Gym" not in p.get("categories", []) for p in places)
 
 
-def test_future_returns_empty_skeleton(client):
-    resp = client.get("/api/future")
-    body = resp.get_json()
-    assert body["suggestions"] == []
-    assert body["events"] == []
-    assert body["message"]
-
-
 def test_travel_returns_region_based_shape(client):
     resp = client.get("/api/travel")
     body = resp.get_json()
@@ -156,6 +196,8 @@ def test_person_trend_empty_people_param_returns_no_rows(client):
 def test_geocode_override_saves_and_reflects_immediately(client, monkeypatch, tmp_path):
     overrides_path = tmp_path / "overrides.json"
     monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", tmp_path / "diagnostics.json")
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", tmp_path / "approximations.json")
 
     resp = client.post("/api/geocode/override", json={
         "location": "Royce 160", "lat": 34.0722, "lon": -118.4441, "display_name": "Royce Hall, UCLA",
@@ -171,6 +213,73 @@ def test_geocode_override_saves_and_reflects_immediately(client, monkeypatch, tm
 def test_geocode_override_requires_location(client):
     resp = client.post("/api/geocode/override", json={"lat": 1, "lon": 2})
     assert resp.status_code == 400
+
+
+def test_geocode_override_clears_any_prior_failure_diagnostics(client, monkeypatch, tmp_path):
+    overrides_path = tmp_path / "overrides.json"
+    diagnostics_path = tmp_path / "diagnostics.json"
+    diagnostics_path.write_text(json.dumps({"Royce 160": "Nominatim found no match for this query"}))
+    monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", diagnostics_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", tmp_path / "approximations.json")
+
+    resp = client.post("/api/geocode/override", json={
+        "location": "Royce 160", "lat": 34.0722, "lon": -118.4441,
+    })
+    assert resp.status_code == 200
+    assert "Royce 160" not in server.geocode.load_diagnostics(diagnostics_path)
+
+
+def test_geocode_override_clears_any_prior_approximation(client, monkeypatch, tmp_path):
+    overrides_path = tmp_path / "overrides.json"
+    approximations_path = tmp_path / "approximations.json"
+    approximations_path.write_text(json.dumps({"Boelter 5800": "UCLA, Los Angeles, CA"}))
+    monkeypatch.setattr(server.geocode, "DEFAULT_OVERRIDES_PATH", overrides_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", tmp_path / "diagnostics.json")
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", approximations_path)
+
+    resp = client.post("/api/geocode/override", json={
+        "location": "Boelter 5800", "lat": 34.0689, "lon": -118.4452,
+    })
+    assert resp.status_code == 200
+    assert "Boelter 5800" not in server.geocode.load_approximations(approximations_path)
+
+
+def test_geocode_failures_groups_by_reason_and_filters_to_current_locations(client, monkeypatch, tmp_path):
+    diagnostics_path = tmp_path / "diagnostics.json"
+    approximations_path = tmp_path / "approximations.json"
+    events = [{
+        "id": "evt-1", "title": "Something", "notes": None, "location": "Boelter 5800",
+        "startDate": "2024-01-01T09:00:00Z", "endDate": "2024-01-01T10:00:00Z",
+        "isAllDay": False, "calendarTitle": "School", "calendarColorHex": None,
+        "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+    }, {
+        "id": "evt-2", "title": "Something Else", "notes": None, "location": "Ackerman 2408",
+        "startDate": "2024-01-02T09:00:00Z", "endDate": "2024-01-02T10:00:00Z",
+        "isAllDay": False, "calendarTitle": "School", "calendarColorHex": None,
+        "attendees": [], "isRecurring": False, "url": None, "noteTags": {},
+    }]
+    diagnostics_path.write_text(json.dumps({
+        "Ackerman 2408": "Nominatim found no match for this query",
+        "A Stale Location Not In The Current Dataset": "timed out after 10s",
+    }))
+    approximations_path.write_text(json.dumps({
+        "Boelter 5800": "UCLA, Los Angeles, CA",
+        "A Stale Approximation Not In The Current Dataset": "UCLA, Los Angeles, CA",
+    }))
+    monkeypatch.setattr(server.geocode, "DEFAULT_DIAGNOSTICS_PATH", diagnostics_path)
+    monkeypatch.setattr(server.geocode, "DEFAULT_APPROXIMATIONS_PATH", approximations_path)
+    original_df = server.DF
+    try:
+        server.DF = ingest.load_events_from_records(events)
+        body = client.get("/api/geocode/failures").get_json()
+    finally:
+        server.DF = original_df
+
+    assert body["total_failed"] == 1  # the stale location isn't in the current dataset
+    assert body["failures"] == [{"location": "Ackerman 2408", "reason": "Nominatim found no match for this query"}]
+    assert body["by_reason"] == [["Nominatim found no match for this query", 1]]
+    assert body["approximate"] == [{"location": "Boelter 5800", "placed_at": "UCLA, Los Angeles, CA"}]
 
 
 def test_geocode_job_runs_and_reports_progress(client, monkeypatch):

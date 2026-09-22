@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, calendar_sources, future_events, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -183,6 +183,13 @@ def locations_view():
     freq["lat"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lat"))
     freq["lon"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("lon"))
     freq["display_name"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("display_name"))
+    # place_type/country/state come straight from the geocode cache (see
+    # felinni.geocode._classify_place / geocode_locations) - alternate
+    # axes the Map tab's "color by" dropdown can use besides your own
+    # calendar category.
+    freq["place_type"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("place_type") or "unknown")
+    freq["country"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("country"))
+    freq["state"] = freq["location"].map(lambda loc: (cache.get(loc) or {}).get("state"))
     titles_by_location = _location_titles(events)
     freq["titles"] = freq["location"].map(lambda loc: titles_by_location.get(loc, []))
     geocoded = freq.dropna(subset=["lat", "lon"])
@@ -234,6 +241,46 @@ def geocode_status():
         return jsonify(dict(GEOCODE_STATE))
 
 
+@app.get("/api/geocode/failures")
+def geocode_failures():
+    """Why each currently-unresolved location failed on its last attempt
+    (see felinni.geocode.geocode_locations) - a timeout, a Nominatim
+    service error (often a rate limit/temporary block), or a genuine "no
+    match" - grouped so a systemic problem (most failures share one reason)
+    is obvious at a glance instead of just a bare "N not geocoded" count.
+    `approximate` is a separate, less alarming list: locations that DO have
+    a pin (placed at a campus/workplace anchor's own coordinates, e.g.
+    "Boelter 5800" at "UCLA, Los Angeles, CA") because their own address
+    couldn't be resolved, not a failure to report on. Only locations still
+    in the current dataset are included in either list, in case the
+    underlying file has entries from a since-changed events export."""
+    current_locations = set(DF["location"].dropna().unique().tolist())
+
+    diagnostics = geocode.load_diagnostics(geocode.DEFAULT_DIAGNOSTICS_PATH)
+    relevant = {loc: reason for loc, reason in diagnostics.items() if loc in current_locations}
+
+    by_reason: dict[str, int] = {}
+    for reason in relevant.values():
+        key = reason.split(" (query:")[0]
+        by_reason[key] = by_reason.get(key, 0) + 1
+
+    failures = [{"location": loc, "reason": reason} for loc, reason in sorted(relevant.items())]
+
+    approximations = geocode.load_approximations(geocode.DEFAULT_APPROXIMATIONS_PATH)
+    approximate = [
+        {"location": loc, "placed_at": placed_at}
+        for loc, placed_at in sorted(approximations.items())
+        if loc in current_locations
+    ]
+
+    return jsonify({
+        "total_failed": len(failures),
+        "by_reason": sorted(by_reason.items(), key=lambda kv: kv[1], reverse=True),
+        "failures": failures,
+        "approximate": approximate,
+    })
+
+
 @app.post("/api/geocode/override")
 def geocode_override():
     """Recode a location from the Map tab: given the exact location string
@@ -260,6 +307,8 @@ def geocode_override():
             return jsonify({"error": f"couldn't find a match for {query!r}"}), 404
 
     geocode.save_override(location_str, entry, geocode.DEFAULT_OVERRIDES_PATH)
+    geocode.clear_diagnostics_entry(location_str, geocode.DEFAULT_DIAGNOSTICS_PATH)
+    geocode.clear_approximation_entry(location_str, geocode.DEFAULT_APPROXIMATIONS_PATH)
     return jsonify({"location": location_str, "entry": entry})
 
 
@@ -350,6 +399,24 @@ def people():
 @app.get("/api/trends")
 def trends():
     return jsonify(records(social.fading_or_growing(_get_df())))
+
+
+@app.get("/api/social/network")
+def social_network():
+    """Friend network: every person as a node (events, hours - same
+    numbers as /api/people), linked to everyone they've shared a real,
+    timed event with (felinni.social.friend_network_edges), weighted by
+    how many events they share. Capped to the `limit` most-frequent
+    people (default 40) so the graph stays readable - an edge is dropped
+    if either endpoint falls outside that set, rather than pulling in a
+    long tail of one-off acquaintances with no connections of their own."""
+    limit = request.args.get("limit", 40, type=int)
+    df = _get_df()
+    nodes = social.person_frequency(df).reset_index().head(limit)
+    included = set(nodes["person"])
+    edges = social.friend_network_edges(df)
+    edges = edges[edges["person_a"].isin(included) & edges["person_b"].isin(included)]
+    return jsonify({"nodes": records(nodes), "edges": records(edges)})
 
 
 @app.get("/api/person-trend")
@@ -468,22 +535,6 @@ def anomalies_view():
     flagged = anomalies.anomalous_weeks(df, z).reset_index().rename(columns={"index": "week"})
     by_category = records(anomalies.category_anomalies(df, z))
     return jsonify({"weekly": records(weekly), "anomalies": records(flagged), "by_category": by_category})
-
-
-@app.get("/api/future")
-def future_view():
-    """Skeleton for the Future tab - always empty for now (see
-    felinni.future_events). `events` merges every platform's results into
-    one list (each tagged with its "source") rather than a separate
-    section per platform, since none is connected yet anyway."""
-    events = []
-    for platform in future_events.PLATFORMS:
-        events.extend(future_events.platform_events(platform))
-    return jsonify({
-        "suggestions": future_events.suggestions_for(_get_df()),
-        "events": events,
-        "message": "Upcoming events aren't wired up yet - each platform needs its own API access, which isn't configured.",
-    })
 
 
 def _background_sync_loop(interval_seconds: float) -> None:

@@ -474,3 +474,296 @@ function statTile(label, value) {
   div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
   return div;
 }
+
+// --- Friend network graph ---
+// A simple force-directed layout (Fruchterman-Reingold-ish: every pair of
+// nodes repels, every edge pulls its two ends together, cooled over a
+// fixed number of iterations to a settled static layout) rendered once,
+// not animated continuously - consistent with every other chart here
+// being a one-shot render, not a live simulation. Dragging a node just
+// repositions it and its own edges; it doesn't restart the simulation.
+//
+// The simulation itself runs in a "world" coordinate space sized well
+// beyond the container's own pixel size (simW x simH below), Obsidian-
+// graph-style: the visible <svg> pans/zooms into it via an SVG transform
+// on a wrapping <g>, defaulting to a view that fits the whole world so
+// nothing starts clipped, with plenty of room to zoom into any cluster.
+function networkGraph(container, nodes, edges, { height = 480, getColor } = {}) {
+  container.innerHTML = "";
+  if (!nodes.length) {
+    container.innerHTML = '<p class="empty-note">No data yet.</p>';
+    return;
+  }
+  const w = container.clientWidth || 640;
+  const h = height;
+  const aspect = w / h;
+
+  // The repulsion/spring layout below settles every node pair this far
+  // apart (in world units) at equilibrium - it has to comfortably clear a
+  // long name's label width ("Leo Tavera-Montiel" at 11px font is ~120
+  // world-units wide) on both sides, or two barely/unconnected people
+  // will render with overlapping labels regardless of how much total
+  // canvas area surrounds them. Total world area is just this spacing
+  // squared per node (never smaller than the container itself, so a
+  // handful of people don't end up zoomed in oddly far), which is what
+  // actually gives real room to pan around rather than a "world" that
+  // silently matches the viewport 1:1 like it did before.
+  const K_TARGET = 170;
+  const worldArea = K_TARGET * K_TARGET * nodes.length;
+  const simH = Math.max(h, Math.sqrt(worldArea / aspect));
+  const simW = Math.max(w, simH * aspect);
+
+  const maxEvents = Math.max(...nodes.map(n => n.events), 1);
+  const sim = nodes.map(n => ({
+    person: n.person,
+    events: n.events,
+    total_hours: n.total_hours,
+    last_seen: n.last_seen,
+    first_seen: n.first_seen,
+    x: simW / 2 + (Math.random() - 0.5) * simW * 0.6,
+    y: simH / 2 + (Math.random() - 0.5) * simH * 0.6,
+    vx: 0, vy: 0,
+    r: 9 + 13 * Math.sqrt(n.events / maxEvents),
+  }));
+  // The force layout's spring/repulsion equilibrium (K_TARGET) is a
+  // target, not a guarantee - two nodes pulled toward the same wall or
+  // corner by the boundary clamp below can still end up closer than
+  // that, circle-to-circle. minSeparation() is a hard floor enforced by
+  // the collision-resolution pass after the force layout settles, sized
+  // to clear both node radii and a rough label footprint (~6.2px/char at
+  // this font size) so two adjacent names don't overlap either.
+  function minSeparation(a, b) {
+    const labelHalf = n => (n.person.length * 6.2) / 2 + 6;
+    return Math.max(a.r + b.r + 16, labelHalf(a) + labelHalf(b));
+  }
+  const indexByPerson = new Map(sim.map((n, i) => [n.person, i]));
+  const edgeList = edges
+    .map(e => ({ a: indexByPerson.get(e.person_a), b: indexByPerson.get(e.person_b), w: e.shared_events }))
+    .filter(e => e.a !== undefined && e.b !== undefined);
+  let draggingIndex = null; // declared up front - referenced by node listeners wired below, before the drag handlers further down
+
+  // Margins account for the name label (below each node, roughly
+  // 6-7px/char) overflowing past the node's own radius, not just the
+  // circle itself - without this, a node near the wall renders fine but
+  // its label clips off the edge of the box.
+  const marginX = 55, marginTop = 20, marginBottom = 36;
+  const cx = simW / 2, cy = simH / 2;
+  const k = Math.sqrt((simW * simH) / sim.length); // ideal inter-node spacing
+  const iterations = 250;
+  for (let iter = 0; iter < iterations; iter++) {
+    const temp = k * (1 - iter / iterations); // cooling: big jumps early, tiny by the end
+    sim.forEach(n => { n.vx = 0; n.vy = 0; });
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        let dx = sim[i].x - sim[j].x, dy = sim[i].y - sim[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const force = (k * k) / dist;
+        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+        sim[i].vx += fx; sim[i].vy += fy;
+        sim[j].vx -= fx; sim[j].vy -= fy;
+      }
+    }
+    edgeList.forEach(e => {
+      const a = sim[e.a], b = sim[e.b];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const force = ((dist * dist) / k) * Math.min(e.w, 5) * 0.3;
+      const fx = (dx / dist) * force, fy = (dy / dist) * force;
+      a.vx -= fx; a.vy -= fy;
+      b.vx += fx; b.vy += fy;
+    });
+    // A gentle pull toward the center for every node, not just connected
+    // ones - otherwise unbounded pairwise repulsion (above) just pushes
+    // everyone as far apart as the box allows, which in a finite box
+    // means piled up against the walls/corners rather than spread across
+    // the actual middle of the canvas, and an isolated node with no
+    // edges has nothing else pulling it inward at all.
+    sim.forEach(n => {
+      n.vx += (cx - n.x) * 0.02;
+      n.vy += (cy - n.y) * 0.02;
+    });
+    sim.forEach(n => {
+      const disp = Math.sqrt(n.vx * n.vx + n.vy * n.vy) || 0.01;
+      const capped = Math.min(disp, temp);
+      n.x += (n.vx / disp) * capped;
+      n.y += (n.vy / disp) * capped;
+      n.x = Math.max(marginX, Math.min(simW - marginX, n.x));
+      n.y = Math.max(marginTop, Math.min(simH - marginBottom, n.y));
+    });
+  }
+
+  // The force layout above settles toward K_TARGET spacing on average,
+  // but that's an equilibrium, not a guarantee - a cluster of nodes all
+  // pulled toward the same wall or corner by the boundary clamp can still
+  // land closer together than that, circle-to-circle. Directly push apart
+  // any pair still under minSeparation() until none are, same idea as the
+  // "resolve collisions" pass in a physics engine.
+  for (let pass = 0; pass < 60; pass++) {
+    let moved = false;
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        const a = sim[i], b = sim[j];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const minDist = minSeparation(a, b);
+        if (dist < minDist) {
+          moved = true;
+          const push = (minDist - dist) / 2;
+          const ux = dx / dist, uy = dy / dist;
+          a.x += ux * push; a.y += uy * push;
+          b.x -= ux * push; b.y -= uy * push;
+        }
+      }
+    }
+    sim.forEach(n => {
+      n.x = Math.max(marginX, Math.min(simW - marginX, n.x));
+      n.y = Math.max(marginTop, Math.min(simH - marginBottom, n.y));
+    });
+    if (!moved) break;
+  }
+
+  // The visible <svg> is pinned to the container's own pixel size; a <g>
+  // ("world") holding every edge/node/label is panned and zoomed via an
+  // SVG transform, so dragging/zooming never has to touch node positions
+  // themselves - just the transform.
+  const svg = el("svg", { width: w, height: h, viewBox: `0 0 ${w} ${h}`, style: "cursor:grab" });
+  const world = el("g", {});
+  svg.appendChild(world);
+
+  const fitScale = Math.min(w / simW, h / simH);
+  // maxScale is generous since the world is now sized well beyond the
+  // viewport - reading a label inside a dense, mutually-connected cluster
+  // (which the spring force pulls tighter than K_TARGET regardless of
+  // total world size) means zooming in well past the default fit.
+  const minScale = fitScale * 0.6, maxScale = 8;
+  const view = { x: (w - simW * fitScale) / 2, y: (h - simH * fitScale) / 2, k: fitScale };
+  function applyTransform() {
+    world.setAttribute("transform", `translate(${view.x.toFixed(1)},${view.y.toFixed(1)}) scale(${view.k.toFixed(4)})`);
+  }
+  applyTransform();
+
+  const edgeColor = cssVar("--grid");
+  const lineEls = edgeList.map(e => {
+    const a = sim[e.a], b = sim[e.b];
+    const line = el("line", {
+      x1: a.x.toFixed(1), y1: a.y.toFixed(1), x2: b.x.toFixed(1), y2: b.y.toFixed(1),
+      stroke: edgeColor, "stroke-width": Math.min(1 + e.w, 6), opacity: 0.6,
+    });
+    world.appendChild(line);
+    return line;
+  });
+
+  // Colored per the caller's getColor (defaults to the same green/orange/
+  // red "time since last seen" scale as the People table's ring, so it
+  // reads consistently across the tab even with no colorBy control).
+  const colorFn = getColor || (n => typeof lastSeenColor === "function" ? lastSeenColor(daysSince(n.last_seen) ?? 0) : cssVar("--series-1"));
+  const circleEls = [], labelEls = [];
+  sim.forEach((n, i) => {
+    const circle = el("circle", {
+      cx: n.x.toFixed(1), cy: n.y.toFixed(1), r: n.r.toFixed(1),
+      fill: colorFn(n), stroke: cssVar("--surface-1"), "stroke-width": 1.5,
+      style: "cursor:grab;transition:fill 0.3s ease",
+    });
+    const label = el("text", {
+      x: n.x.toFixed(1), y: (n.y + n.r + 12).toFixed(1), "text-anchor": "middle",
+      fill: cssVar("--text-secondary"), "font-size": 11,
+    });
+    label.textContent = n.person;
+    world.appendChild(label);
+    world.appendChild(circle);
+    circleEls.push(circle);
+    labelEls.push(label);
+
+    const tooltipHtml = () => `<strong>${n.person}</strong><br>${n.events} events &middot; ${Math.round(n.total_hours)}h`;
+    circle.addEventListener("mouseenter", evt => showTooltip(evt, tooltipHtml()));
+    circle.addEventListener("mousemove", evt => { if (draggingIndex === null) showTooltip(evt, tooltipHtml()); });
+    circle.addEventListener("mouseleave", () => { if (draggingIndex === null) hideTooltip(); });
+    circle.addEventListener("mousedown", evt => {
+      draggingIndex = i;
+      circle.style.cursor = "grabbing";
+      evt.preventDefault();
+      evt.stopPropagation(); // don't also start a background pan (see mousedown below)
+    });
+  });
+
+  function updateNode(i) {
+    const n = sim[i];
+    circleEls[i].setAttribute("cx", n.x.toFixed(1));
+    circleEls[i].setAttribute("cy", n.y.toFixed(1));
+    labelEls[i].setAttribute("x", n.x.toFixed(1));
+    labelEls[i].setAttribute("y", (n.y + n.r + 12).toFixed(1));
+    edgeList.forEach((e, idx) => {
+      if (e.a === i) { lineEls[idx].setAttribute("x1", n.x.toFixed(1)); lineEls[idx].setAttribute("y1", n.y.toFixed(1)); }
+      if (e.b === i) { lineEls[idx].setAttribute("x2", n.x.toFixed(1)); lineEls[idx].setAttribute("y2", n.y.toFixed(1)); }
+    });
+  }
+
+  // Screen pixels -> world coordinates, accounting for the current pan/zoom.
+  function toWorld(evt, rect) {
+    return {
+      x: (evt.clientX - rect.left - view.x) / view.k,
+      y: (evt.clientY - rect.top - view.y) / view.k,
+    };
+  }
+
+  let panStart = null; // {mouseX, mouseY, viewX, viewY} while dragging the background
+  svg.addEventListener("mousedown", evt => {
+    if (draggingIndex !== null) return;
+    panStart = { mouseX: evt.clientX, mouseY: evt.clientY, viewX: view.x, viewY: view.y };
+    svg.style.cursor = "grabbing";
+  });
+  svg.addEventListener("mousemove", evt => {
+    if (draggingIndex !== null) {
+      const rect = svg.getBoundingClientRect();
+      const n = sim[draggingIndex];
+      const world_pt = toWorld(evt, rect);
+      n.x = Math.max(marginX, Math.min(simW - marginX, world_pt.x));
+      n.y = Math.max(marginTop, Math.min(simH - marginBottom, world_pt.y));
+      updateNode(draggingIndex);
+      return;
+    }
+    if (panStart) {
+      view.x = panStart.viewX + (evt.clientX - panStart.mouseX);
+      view.y = panStart.viewY + (evt.clientY - panStart.mouseY);
+      applyTransform();
+    }
+  });
+  const endDrag = () => {
+    if (draggingIndex !== null) circleEls[draggingIndex].style.cursor = "grab";
+    draggingIndex = null;
+    panStart = null;
+    svg.style.cursor = "grab";
+  };
+  svg.addEventListener("mouseup", endDrag);
+  svg.addEventListener("mouseleave", endDrag);
+
+  // Zoom toward the cursor (or pinch-zoom, which browsers report as a
+  // ctrlKey wheel event) rather than always toward the canvas center, so
+  // the part of the graph the user's actually pointing at stays put.
+  svg.addEventListener("wheel", evt => {
+    evt.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const mx = evt.clientX - rect.left, my = evt.clientY - rect.top;
+    const wx = (mx - view.x) / view.k, wy = (my - view.y) / view.k;
+    const factor = evt.deltaY < 0 ? 1.12 : 1 / 1.12;
+    view.k = Math.max(minScale, Math.min(maxScale, view.k * factor));
+    view.x = mx - wx * view.k;
+    view.y = my - wy * view.k;
+    applyTransform();
+  }, { passive: false });
+
+  container.appendChild(svg);
+  container._networkResetView = () => {
+    view.x = (w - simW * fitScale) / 2;
+    view.y = (h - simH * fitScale) / 2;
+    view.k = fitScale;
+    applyTransform();
+  };
+  // Lets a caller (e.g. the People tab's "color by" dropdown) recolor
+  // nodes in place - a CSS transition on `fill` above makes it a smooth
+  // fade rather than a snap - without rerunning the layout or resetting
+  // the current pan/zoom, which a full re-render would otherwise do.
+  container._networkSetColor = newGetColor => {
+    sim.forEach((n, i) => circleEls[i].setAttribute("fill", newGetColor(n)));
+  };
+}

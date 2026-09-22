@@ -48,36 +48,77 @@ don't contribute to analyses that need that field.
 ## What's in the dashboard
 
 Tabs: **Overview · Places · Map · People · Habits · Travel · Time & Spend ·
-Seasonality · Anomalies · Future**. Every table is sortable (click a header).
+Seasonality · Anomalies**. Every table is sortable (click a header).
 The Overview tab's date range and category checkboxes apply globally; each
 tab's own filters stack on top.
 
 ![People tab](docs/images/people.png)
 
-- **People** — frequency, growing/fading relationships, an "events over
-  time" chart with a dropdown for who to plot and a draggable range slider
-  to zoom into a sub-range. All-day events are excluded everywhere hours
-  are counted, so a full-day placeholder doesn't inflate anyone's total.
+- **People** — one table per person consolidating time spent (a mini
+  bar), time since you last saw them (a ring that fills and shifts from
+  green to red the longer it's been), known since (a mini bar off their
+  earliest event, e.g. "8mo" or "2.3yr"), and growing/fading (a small
+  diverging bar, green/right for more often, red/left for less), plus an
+  "events over time" chart with a dropdown for who to plot and a
+  draggable range slider to zoom into a sub-range. All-day events are
+  excluded everywhere hours are counted, so a full-day placeholder
+  doesn't inflate anyone's total. A friend network graph plots everyone
+  as a node, linked to whoever they've shared a real, timed event with
+  (thicker link = more shared events, draggable to rearrange), scroll/pinch
+  to zoom and drag the background to pan. Node color is switchable via a
+  dropdown between time since last seen, known since, recent trend, or
+  time spent together, with a legend for whichever is selected.
 - **Habits & repeating events** — streaks/gaps for any category you pick,
   plus auto-detected recurring series (Book Club, Standup, ...) flagged
   active/slowing down/stopped against their own historical cadence.
+  Detected from a repeated title, not Calendar's own repeat-rule flag, so
+  a habit typed in fresh each time (a gym rotation like "Push Day"/"Pull
+  Day") is still picked up; a trailing "with A, B" guest list is stripped
+  first so "Dinner with Alice" and "Dinner with Bob" count as the same
+  series instead of two one-offs.
 
   ![Habits tab](docs/images/habits.png)
 - **Map & Travel** — click **Geocode locations** to plot everything
-  (OpenStreetMap Nominatim, cached to disk, ~1/sec). Nearby cities group
+  (OpenStreetMap Nominatim, cached to disk, ~1/sec). Pins color by
+  category by default, switchable via a dropdown to place type
+  (residential/commercial/public/recreational - a best-effort read of
+  Nominatim's own OSM tags for that spot, already returned in the same
+  geocoding response, so no extra requests), country, or state/region.
+  Nearby cities group
   into one metro area for trip-counting, with a neighborhood drill-down for
   your home area. Wrong pin? Fix it inline from the **Fix a location** card
-  — no re-geocoding needed.
+  — no re-geocoding needed. A location that can't be resolved on its own
+  but matches a campus/workplace anchor with known coordinates (see
+  `DEFAULT_LOCATION_ANCHORS` in `felinni/geocode.py`) is placed there
+  instead of left off the map — e.g. "Boelter 5800" (a UCLA room number,
+  not its own addressable point) lands at "UCLA, Los Angeles, CA." Before
+  giving up on an address, a few common calendar-export quirks are fixed
+  automatically: embedded newlines/extra whitespace, a missing comma
+  between street and city, a business name glued directly onto its own
+  house number ("101 Boxing Club 1714 Newbury Rd..." retries as "1714
+  Newbury Rd..."), a directional qualifier after the street suffix kept
+  with the street instead of getting absorbed into the city ("...4th St
+  NW Washington DC..." -> "...St NW, Washington, DC..." rather than
+  city "NW Washington") and, if that alone doesn't resolve it, dropped
+  from the street entirely ("...4th St NW..." -> "...4th St..." — Nominatim
+  often doesn't index the abbreviated direction at all), and a unit/suite/apartment/floor/room clause dropped
+  ("...Ave, Unit 1420, Los Angeles..." retries as "...Ave, Los
+  Angeles..."). If the street address still won't resolve at all, a
+  landmark's own name plus its city is tried on its own ("Balboa Park 1549
+  El Prado, San Diego..." retries as "Balboa Park, San Diego") - some
+  parks/campuses/plazas are indexed by name rather than mailing address.
+  A handful of well-known Los Angeles-area neighborhoods used as the
+  mailing city (Van Nuys, Pacific Palisades, Woodland Hills, ...) are also
+  retried against "Los Angeles" itself, since they're not their own
+  incorporated city. Anything that still fails, or was only placed
+  approximately, shows up with its reason in the **Geocoding notes** card,
+  instead of a bare "N not geocoded" count with no way to tell why.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server
   runs. Duplicate events across sources are matched and only counted once.
 - **Phases of Life** (Overview tab) — a Gantt-style timeline of which
   category was consistently active when.
-- **Future** — a skeleton for suggesting upcoming events (Eventbrite/Luma/
-  Meetup) ranked by fit with your habits. Not implemented — no API access
-  is configured for any of the three — just laid out for later.
-
 ### Or skip the browser
 
 ```bash
