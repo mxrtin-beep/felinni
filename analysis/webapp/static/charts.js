@@ -399,7 +399,13 @@ function timelineChart(container, groups) {
     container.innerHTML = '<p class="empty-note">No data yet.</p>';
     return;
   }
-  const rowLabelW = 110, rowH = 30, barH = 14, padTop = 10, padBottom = 24, padRight = 14;
+  // Sized to the longest label rather than a fixed guess - fine for short
+  // category names (Phases of Life: "Gym", "Dating", ...) but a "City,
+  // State"/"City, Country" region label (Trips away from home) routinely
+  // ran past a fixed 110px and got clipped by the SVG's own left edge,
+  // since the label is right-aligned ending just before the chart area.
+  const rowLabelW = Math.max(70, Math.min(220, 18 + Math.max(...groups.map(g => g.label.length)) * 6.2));
+  const rowH = 30, barH = 14, padTop = 10, padBottom = 24, padRight = 14;
   const width = container.clientWidth || 640;
   const chartW = width - rowLabelW - padRight;
   const height = padTop + groups.length * rowH + padBottom;
