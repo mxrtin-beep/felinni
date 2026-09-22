@@ -891,6 +891,27 @@ async function loadTravel() {
   statGrid.appendChild(statTile("Metro areas visited", data.region_visits.length));
   statGrid.appendChild(statTile("Trips away from home", data.region_trips.length));
 
+  // One row per metro area, a bar per trip there - the table below still
+  // has the exact dates/duration, but a timeline is what actually answers
+  // "when was I away, and where, at a glance" the way a bare list of rows
+  // sorted by date doesn't (same pattern as the Habits tab's Phases of
+  // Life timeline: most time-covered regions on top).
+  const tripsByRegion = new Map();
+  data.region_trips.forEach(t => {
+    if (!tripsByRegion.has(t.region)) tripsByRegion.set(t.region, []);
+    tripsByRegion.get(t.region).push({ start: t.start, end: t.end });
+  });
+  const regionColorVars = buildDynamicColorMap([...tripsByRegion.keys()]);
+  const tripGroups = [...tripsByRegion.entries()]
+    .map(([label, segments]) => ({
+      label,
+      segments,
+      color: cssVarSafe(regionColorVars[label]) || cssVarSafe("--series-1"),
+      totalDays: segments.reduce((sum, s) => sum + (new Date(s.end) - new Date(s.start)), 0),
+    }))
+    .sort((a, b) => b.totalDays - a.totalDays);
+  timelineChart(document.getElementById("travel-trips-timeline"), tripGroups);
+
   table(document.getElementById("travel-region-trips"),
     [
       { key: "region", label: "Metro area" },
