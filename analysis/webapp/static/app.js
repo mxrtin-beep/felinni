@@ -499,11 +499,6 @@ async function refreshOverviewStats() {
   statGrid.appendChild(statTile("Top category", summary.top_category || "-"));
   statGrid.appendChild(statTile("People tagged", summary.n_people));
 
-  const places = await api("places?limit=10");
-  horizontalBarChart(document.getElementById("overview-places-chart"),
-    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
-
-  await loadPhasesOfLife();
 }
 
 async function loadPhasesOfLife() {
@@ -574,22 +569,12 @@ function wireCategoryFilter() {
 async function reloadAll() {
   await Promise.all([
     refreshOverviewStats(),
-    loadPlaces(),
     refreshMap(),
     loadPeople(),
     refreshHabit(),
     loadTravel(),
-    loadTime(),
-    refreshSeasonality(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
   ]);
-}
-
-// --- Places ---
-async function loadPlaces() {
-  const places = await api("places?limit=20");
-  horizontalBarChart(document.getElementById("places-chart"),
-    places.map(p => ({ label: p.location, value: p.visits })), { valueLabel: "visits", addressLines: true });
 }
 
 // --- People ---
@@ -847,9 +832,10 @@ async function refreshHabit() {
       { key: "weeks", label: "Weeks", num: true },
     ], data.streaks.slice(0, 12));
 
-  // Independent of the category picker above - runs alongside it, but a
-  // failure here shouldn't take the rest of the tab down with it.
+  // Both independent of the category picker above - run alongside it, but
+  // a failure in either shouldn't take the rest of the tab down with it.
   loadRecurringEvents().catch(err => console.error("Recurring events section failed:", err));
+  loadPhasesOfLife().catch(err => console.error("Phases of Life section failed:", err));
 }
 
 async function loadRecurringEvents() {
@@ -905,6 +891,27 @@ async function loadTravel() {
   statGrid.appendChild(statTile("Metro areas visited", data.region_visits.length));
   statGrid.appendChild(statTile("Trips away from home", data.region_trips.length));
 
+  // One row per metro area, a bar per trip there - the table below still
+  // has the exact dates/duration, but a timeline is what actually answers
+  // "when was I away, and where, at a glance" the way a bare list of rows
+  // sorted by date doesn't (same pattern as the Habits tab's Phases of
+  // Life timeline: most time-covered regions on top).
+  const tripsByRegion = new Map();
+  data.region_trips.forEach(t => {
+    if (!tripsByRegion.has(t.region)) tripsByRegion.set(t.region, []);
+    tripsByRegion.get(t.region).push({ start: t.start, end: t.end });
+  });
+  const regionColorVars = buildDynamicColorMap([...tripsByRegion.keys()]);
+  const tripGroups = [...tripsByRegion.entries()]
+    .map(([label, segments]) => ({
+      label,
+      segments,
+      color: cssVarSafe(regionColorVars[label]) || cssVarSafe("--series-1"),
+      totalDays: segments.reduce((sum, s) => sum + (new Date(s.end) - new Date(s.start)), 0),
+    }))
+    .sort((a, b) => b.totalDays - a.totalDays);
+  timelineChart(document.getElementById("travel-trips-timeline"), tripGroups);
+
   table(document.getElementById("travel-region-trips"),
     [
       { key: "region", label: "Metro area" },
@@ -925,43 +932,6 @@ async function loadTravel() {
 
   populateTravelMetroSelect(data.region_visits, data.home_region);
   await refreshTravelNeighborhoods();
-}
-
-// --- Time & Spend ---
-async function loadTime() {
-  const rows = await api("time-by-category");
-  columnChart(document.getElementById("time-chart"),
-    rows.map(r => ({ label: r.category, value: r.total_hours })),
-    { valueLabel: "hours", highlight: d => categoryColors[d.label] || null });
-  table(document.getElementById("time-table"),
-    [
-      { key: "category", label: "Category" },
-      { key: "events", label: "Events", num: true },
-      { key: "total_hours", label: "Hours", num: true, format: v => Math.round(v) },
-      { key: "share_of_hours", label: "Share", num: true, format: fmtPct },
-      { key: "estimated_spend", label: "Est. spend", num: true, format: v => v == null ? "-" : `$${Math.round(v).toLocaleString()}` },
-    ], rows);
-}
-
-// --- Seasonality ---
-async function loadSeasonality(meta) {
-  const select = document.getElementById("season-category");
-  if (!select.dataset.populated) {
-    select.innerHTML += meta.categories.map(c => `<option value="${c}">${c}</option>`).join("");
-    select.dataset.populated = "1";
-    select.addEventListener("change", refreshSeasonality);
-  }
-  await refreshSeasonality();
-}
-
-async function refreshSeasonality() {
-  const category = document.getElementById("season-category").value;
-  const data = await api(`seasonality${category ? `?category=${encodeURIComponent(category)}` : ""}`);
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  columnChart(document.getElementById("season-month-chart"),
-    data.monthly.map(m => ({ label: monthNames[m.month - 1], value: m.avg_events_per_month })), { valueLabel: "avg events" });
-  columnChart(document.getElementById("season-season-chart"),
-    data.seasonal.map(s => ({ label: s.season, value: s.avg_events_per_season })), { valueLabel: "avg events" });
 }
 
 // --- Anomalies ---
@@ -1406,13 +1376,10 @@ async function refreshMap() {
   await loadCalendarSources();
   await refreshOverviewStats();
   await Promise.all([
-    loadPlaces(),
     loadMap(meta),
     loadPeople(),
     loadHabits(meta),
     loadTravel(),
-    loadTime(),
-    loadSeasonality(meta),
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();

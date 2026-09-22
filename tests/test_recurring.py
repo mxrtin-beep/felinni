@@ -109,6 +109,23 @@ def test_series_with_too_few_occurrences_is_skipped(tmp_path):
     assert "New Thing" not in result["title"].values
 
 
+def test_quarterly_and_yearly_series_are_filtered_out(tmp_path):
+    # An annual trip re-tagged with the same title each year technically
+    # clears min_occurrences given enough years of history, but at a
+    # yearly/quarterly interval the active/slowing-down/stopped status
+    # doesn't read as a meaningful habit signal - only daily through
+    # monthly cadences are kept.
+    start = pd.Timestamp("2015-01-01")
+    yearly_events = [_recurring_event(i, "Annual Ski Trip", start + pd.Timedelta(days=365 * i)) for i in range(6)]
+    quarterly_events = [_recurring_event(100 + i, "Quarterly Review", start + pd.Timedelta(days=90 * i)) for i in range(6)]
+    monthly_events = [_recurring_event(200 + i, "Book Club", start + pd.Timedelta(days=30 * i)) for i in range(6)]
+    df = _load(tmp_path, yearly_events + quarterly_events + monthly_events)
+    result = recurring.recurring_series(df, min_occurrences=4)
+    assert "Annual Ski Trip" not in result["title"].values
+    assert "Quarterly Review" not in result["title"].values
+    assert "Book Club" in result["title"].values
+
+
 def test_repeated_title_is_detected_even_without_native_recurring_flag(tmp_path):
     # A real habit (a gym rotation typed in fresh each time, e.g. "Push
     # Day") is often never set up as a formal Calendar repeat rule at all -

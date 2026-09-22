@@ -8,7 +8,9 @@ Per-city grouping (keyed off Nominatim's `city` field) is too fine for a
 top-level view of a real metro area - "Los Angeles", "Santa Monica",
 "Pasadena", and "Culver City" are all one trip-worth of geography, not four
 separate regions. So locations within METRO_AREA_RADIUS_KM of each other
-are clustered into one metro (labeled by its most-visited city), and
+are clustered into one metro (labeled by whichever city name covers the
+most distinct locations in the cluster, not just whichever single address
+you visit most often - see `_location_metro_map`), and
 `neighborhoods_for_metro` gives a finer breakdown within any one metro for
 drilling into your home area or another frequently-visited one.
 """
@@ -112,8 +114,10 @@ def region_for(entry: dict | None) -> str | None:
 def _location_metro_map(df: pd.DataFrame, coords: dict[str, dict | None]) -> dict[str, str]:
     """location -> metro label, for every geocoded location that appears in
     `df`. Locations within METRO_AREA_RADIUS_KM of each other are one
-    metro, labeled after whichever city in the cluster has the most visits
-    (with an optional friendly rename from METRO_AREA_NAMES)."""
+    metro, labeled after whichever city name is most representative of the
+    cluster (with an optional friendly rename from METRO_AREA_NAMES) - see
+    below for what "most representative" means and why.
+    """
     located = df.dropna(subset=["location"])
     if located.empty:
         return {}
@@ -129,16 +133,29 @@ def _location_metro_map(df: pd.DataFrame, coords: dict[str, dict | None]) -> dic
 
     cluster_of = _cluster_locations(points, METRO_AREA_RADIUS_KM)
 
-    best_in_cluster: dict[int, tuple[int, str]] = {}
+    # Picking the label from whichever single LOCATION has the most visits
+    # (the previous approach) means one recurring event at one specific
+    # venue in a smaller suburb - one address, visited weekly - outweighs a
+    # dozen different one-off addresses in the actual well-known regional
+    # hub, each visited once or twice: "National Harbor" instead of
+    # "Washington, DC", "Goleta" instead of "Santa Barbara" (both observed
+    # directly). What a metro's popular name is actually tracking is how
+    # much of your life happens somewhere recognizable as that city, not
+    # how often you return to any one single address - so this counts
+    # DISTINCT locations per city-level label instead, and only falls back
+    # to total visits to break a tie between two city labels with the same
+    # count of distinct places.
+    city_stats: dict[int, dict[str, list[int]]] = {}
     for loc, cid in cluster_of.items():
-        visits = int(visit_counts.get(loc, 0))
-        if cid not in best_in_cluster or visits > best_in_cluster[cid][0]:
-            best_in_cluster[cid] = (visits, loc)
+        raw_label = region_for(coords.get(loc)) or loc
+        stats = city_stats.setdefault(cid, {}).setdefault(raw_label, [0, 0])
+        stats[0] += 1  # distinct locations under this city label
+        stats[1] += int(visit_counts.get(loc, 0))  # their combined visits
 
     cluster_label = {}
-    for cid, (_visits, loc) in best_in_cluster.items():
-        raw_label = region_for(coords.get(loc)) or loc
-        cluster_label[cid] = METRO_AREA_NAMES.get(raw_label, raw_label)
+    for cid, labels in city_stats.items():
+        best_label = max(labels.items(), key=lambda kv: (kv[1][0], kv[1][1]))[0]
+        cluster_label[cid] = METRO_AREA_NAMES.get(best_label, best_label)
 
     return {loc: cluster_label[cid] for loc, cid in cluster_of.items()}
 

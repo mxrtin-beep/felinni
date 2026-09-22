@@ -36,7 +36,12 @@ def recurring_series(
       - "slowing down": within 3x
       - "stopped": longer than that, or no longer occurring at its old pace
     Series with fewer than `min_occurrences` are skipped - too little
-    history to infer a cadence from.
+    history to infer a cadence from. Capped at "monthly" cadence - a
+    "quarterly"/"yearly" series (e.g. an annual trip re-tagged with the
+    same title each year) is filtered out entirely, since at that
+    interval `min_occurrences` alone takes years of history to satisfy
+    and the active/slowing-down/stopped status reads as noise rather
+    than a meaningful habit signal.
 
     Defaults `as_of` to the real current time, not the dataset's latest
     event - a calendar export routinely contains events dated after
@@ -91,6 +96,7 @@ def recurring_series(
 
     result = pd.DataFrame(rows)
     result["cadence"] = result["median_interval_days"].apply(cadence_label)
+    result = result[~result["cadence"].isin(("quarterly", "yearly"))].reset_index(drop=True)
     result["_status_rank"] = result["status"].map(STATUS_ORDER)
     return (
         result.sort_values(["_status_rank", "days_since_last"], ascending=[True, False])

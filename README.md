@@ -47,8 +47,8 @@ don't contribute to analyses that need that field.
 
 ## What's in the dashboard
 
-Tabs: **Overview · Places · Map · People · Habits · Travel · Time & Spend ·
-Seasonality · Anomalies**. Every table is sortable (click a header).
+Tabs: **Overview · Places · People · Habits · Travel · Anomalies**. Every
+table is sortable (click a header).
 The Overview tab's date range and category checkboxes apply globally; each
 tab's own filters stack on top.
 
@@ -70,15 +70,19 @@ tab's own filters stack on top.
   time spent together, with a legend for whichever is selected.
 - **Habits & repeating events** — streaks/gaps for any category you pick,
   plus auto-detected recurring series (Book Club, Standup, ...) flagged
-  active/slowing down/stopped against their own historical cadence.
-  Detected from a repeated title, not Calendar's own repeat-rule flag, so
-  a habit typed in fresh each time (a gym rotation like "Push Day"/"Pull
-  Day") is still picked up; a trailing "with A, B" guest list is stripped
-  first so "Dinner with Alice" and "Dinner with Bob" count as the same
-  series instead of two one-offs.
+  active/slowing down/stopped against their own historical cadence -
+  capped at monthly cadence, so a quarterly/yearly series (an annual trip
+  re-tagged with the same title each year) is left out rather than
+  reporting a status that doesn't mean much at that interval. Detected
+  from a repeated title, not Calendar's own repeat-rule flag, so a habit
+  typed in fresh each time (a gym rotation like "Push Day"/"Pull Day") is
+  still picked up; a trailing "with A, B" guest list is stripped first so
+  "Dinner with Alice" and "Dinner with Bob" count as the same series
+  instead of two one-offs. Also has a Gantt-style **Phases of Life**
+  timeline of which category was consistently active when.
 
   ![Habits tab](docs/images/habits.png)
-- **Map & Travel** — click **Geocode locations** to plot everything
+- **Places & Travel** — click **Geocode locations** to plot everything
   (OpenStreetMap Nominatim, cached to disk, ~1/sec). Pins color by
   category by default, switchable via a dropdown to place type
   (residential/commercial/public/recreational - a best-effort read of
@@ -117,8 +121,7 @@ tab's own filters stack on top.
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server
   runs. Duplicate events across sources are matched and only counted once.
-- **Phases of Life** (Overview tab) — a Gantt-style timeline of which
-  category was consistently active when.
+
 ### Or skip the browser
 
 ```bash

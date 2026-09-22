@@ -15,13 +15,10 @@
 </header>
 <nav class="tabs" id="tabs">
   <button data-panel="overview" class="active">Overview</button>
-  <button data-panel="places">Places</button>
-  <button data-panel="map">Map</button>
+  <button data-panel="map">Places</button>
   <button data-panel="people">People</button>
   <button data-panel="habits">Habits</button>
   <button data-panel="travel">Travel</button>
-  <button data-panel="time">Time &amp; Spend</button>
-  <button data-panel="seasonality">Seasonality</button>
   <!-- Anomalies tab hidden for now - the flagging wasn't reading as useful
        signal in practice; felinni.anomalies/api/anomalies are still there,
        revisit before re-enabling this nav button + panel-anomalies below. -->
@@ -91,21 +88,6 @@
       <div id="category-filter-list" class="controls" style="flex-wrap:wrap"></div>
     </div>
     <div class="stat-grid" id="overview-stats"></div>
-    <div class="card">
-      <h2>Top places by visits</h2>
-      <div id="overview-places-chart"></div>
-    </div>
-    <div class="card">
-      <h2>Phases of Life</h2>
-      <div id="phases-list"></div>
-    </div>
-  </section>
-
-  <section class="panel" id="panel-places">
-    <div class="card">
-      <h2>Place frequency</h2>
-      <div id="places-chart"></div>
-    </div>
   </section>
 
   <section class="panel" id="panel-map">
@@ -233,6 +215,10 @@
       <h2>Repeating events</h2>
       <div id="recurring-table"></div>
     </div>
+    <div class="card">
+      <h2>Phases of Life</h2>
+      <div id="phases-list"></div>
+    </div>
   </section>
 
   <section class="panel" id="panel-travel">
@@ -240,8 +226,8 @@
     <div class="stat-grid" id="travel-stats"></div>
     <div class="card">
       <h2>Trips away from home</h2>
-      <p class="card-note">Any stretch of time spent in a region other than home - no Travel tag needed, just geocoded locations.</p>
-      <div id="travel-region-trips"></div>
+      <div id="travel-trips-timeline"></div>
+      <div id="travel-region-trips" style="margin-top:12px"></div>
     </div>
     <div class="card">
       <h2>All metro areas visited</h2>
@@ -255,28 +241,6 @@
       </div>
       <p class="card-note">A finer breakdown within one metro area - defaults to home.</p>
       <div id="travel-neighborhoods-table"></div>
-    </div>
-  </section>
-
-  <section class="panel" id="panel-time">
-    <div class="card">
-      <h2>Time by category</h2>
-      <div id="time-chart"></div>
-      <div id="time-table" style="margin-top:12px"></div>
-    </div>
-  </section>
-
-  <section class="panel" id="panel-seasonality">
-    <div class="card">
-      <div class="controls">
-        <label>Category <select id="season-category"><option value="">All</option></select></label>
-      </div>
-      <h2>Average events by month</h2>
-      <div id="season-month-chart"></div>
-    </div>
-    <div class="card">
-      <h2>Average events by season</h2>
-      <div id="season-season-chart"></div>
     </div>
   </section>
 

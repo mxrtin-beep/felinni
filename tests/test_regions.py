@@ -147,6 +147,43 @@ def test_metro_area_names_override_applies_friendly_label(tmp_path, monkeypatch)
     assert "Greater LA" in visits.index
 
 
+def _dc_area_coords():
+    return {
+        # National Harbor: one address, but a weekly recurring event there
+        # racks up far more individual visits than any single DC address.
+        "Weekly Meetup Spot": {"lat": 38.7823, "lon": -77.0166, "city": "National Harbor", "country": "United States",
+                                "display_name": "Weekly Meetup Spot, National Harbor, Maryland, United States"},
+        # DC proper: several different one-off addresses, each visited
+        # less often, but genuinely more of the metro's distinct places.
+        "Museum": {"lat": 38.8913, "lon": -77.0200, "city": "Washington", "country": "United States",
+                   "display_name": "Museum, Washington, DC, United States"},
+        "Friend's Apartment": {"lat": 38.9072, "lon": -77.0369, "city": "Washington", "country": "United States",
+                               "display_name": "Friend's Apartment, Washington, DC, United States"},
+        "Restaurant": {"lat": 38.9047, "lon": -77.0163, "city": "Washington", "country": "United States",
+                       "display_name": "Restaurant, Washington, DC, United States"},
+    }
+
+
+def test_metro_label_prefers_the_city_with_more_distinct_places_over_one_frequent_address(tmp_path):
+    # A real reported case: a single recurring event at one National
+    # Harbor venue outnumbered DC in raw visits, so the whole metro got
+    # labeled "National Harbor" - not what most of the actual geography
+    # of the trip was. The city covering more distinct locations (DC, 3
+    # addresses) should win over one single frequently-visited address
+    # (National Harbor, 1 address) even though it has fewer raw visits.
+    events = [_event(i, "Meetup", f"2024-01-{i:02d}T09:00:00Z", "Weekly Meetup Spot") for i in range(1, 6)]
+    events += [
+        _event(10, "Museum visit", "2024-02-01T09:00:00Z", "Museum"),
+        _event(11, "Dinner", "2024-02-02T09:00:00Z", "Friend's Apartment"),
+        _event(12, "Lunch", "2024-02-03T09:00:00Z", "Restaurant"),
+    ]
+    df = _load(tmp_path, events)
+    coords = _dc_area_coords()
+    visits = regions.visits_by_region(df, coords)
+    assert len(visits) == 1  # National Harbor is within METRO_AREA_RADIUS_KM of DC
+    assert visits.index[0] == "Washington, United States"
+
+
 def test_neighborhoods_for_metro_uses_neighbourhood_field(tmp_path):
     events = [
         _event(1, "Work", "2024-01-01T09:00:00Z", "Downtown Office"),
