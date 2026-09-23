@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, recommendations, recurring, regions, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -535,6 +535,33 @@ def anomalies_view():
     flagged = anomalies.anomalous_weeks(df, z).reset_index().rename(columns={"index": "week"})
     by_category = records(anomalies.category_anomalies(df, z))
     return jsonify({"weekly": records(weekly), "anomalies": records(flagged), "by_category": by_category})
+
+
+@app.get("/api/recommendations")
+def recommendations_view():
+    """The Future tab's history-based suggestions (see
+    felinni.recommendations): a ready-made plan for the coming week, people
+    you're overdue to see, and activities to plan with who to invite. `skip_categories` (comma-separated,
+    possibly empty to skip nothing) overrides the default of leaving out
+    Work events."""
+    if "skip_categories" in request.args:
+        skip = [c.strip() for c in request.args.get("skip_categories", "").split(",") if c.strip()]
+    else:
+        skip = list(recommendations.DEFAULT_SKIP_CATEGORIES)
+    df = _get_df()
+    # Busy time comes from the unfiltered dataset: a meeting you've hidden
+    # via a global filter still blocks that evening.
+    week = recommendations.week_plan(df, skip_categories=skip, busy_df=DF)
+    return jsonify({
+        "week": {
+            "start": week["week_start"].date().isoformat(),
+            "end": week["week_end"].date().isoformat(),
+            "plans": records(pd.DataFrame(week["plans"])),
+        },
+        "people": records(pd.DataFrame(recommendations.people_to_reconnect(df, skip_categories=skip))),
+        "ideas": records(pd.DataFrame(recommendations.event_ideas(df, skip_categories=skip))),
+        "skip_categories": skip,
+    })
 
 
 def _background_sync_loop(interval_seconds: float) -> None:

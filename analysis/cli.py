@@ -11,6 +11,7 @@ Usage:
     python cli.py time-by-category --events events.json
     python cli.py seasonality --events events.json --category Gym
     python cli.py anomalies --events events.json
+    python cli.py week --events events.json
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd
 
-from felinni import anomalies, habits, ingest, location, seasonality, social, spending, travel
+from felinni import anomalies, habits, ingest, location, recommendations, seasonality, social, spending, travel
 
 
 def _print(df_or_series, limit: int | None = 30):
@@ -55,6 +56,9 @@ def main():
 
     p_anom = sub.add_parser("anomalies", help="Unusually packed or empty weeks")
     p_anom.add_argument("--z-threshold", type=float, default=2.0)
+
+    p_week = sub.add_parser("week", help="A plan for next week: what's due, who to invite, and when")
+    p_week.add_argument("--include-work", action="store_true", help="Don't skip Work events")
 
     p_geo = sub.add_parser("geocode", help="Geocode every unique location via OpenStreetMap Nominatim (needs network; powers the dashboard's map)")
     p_geo.add_argument("--cache", default=None, help="Cache file path (default: data/geocode_cache.json)")
@@ -100,6 +104,15 @@ def main():
         _print(seasonality.seasonal_activity(df, args.category))
     elif args.command == "anomalies":
         _print(anomalies.anomalous_weeks(df, args.z_threshold))
+    elif args.command == "week":
+        skip = () if args.include_work else recommendations.DEFAULT_SKIP_CATEGORIES
+        week = recommendations.week_plan(df, skip_categories=skip)
+        print(f"Next week: {week['week_start']:%a %b %-d} - {week['week_end']:%a %b %-d}")
+        if not week["plans"]:
+            print("Nothing due - enjoy the free time.")
+        for plan in week["plans"]:
+            print(f"\n{plan['start']:%a %b %-d, %-I:%M%p}  {plan['activity']} with {', '.join(plan['invite'])}")
+            print(f"  {plan['reason']}")
     elif args.command == "geocode":
         from felinni import geocode
         cache_path = args.cache or geocode.DEFAULT_CACHE_PATH

@@ -455,6 +455,8 @@ th.sortable:hover {
 .badge.active { background: rgba(12, 163, 12, 0.15); color: var(--status-good); }
 .badge.slowing-down { background: rgba(250, 178, 25, 0.20); color: #9a6b00; }
 .badge.stopped { background: rgba(208, 59, 59, 0.15); color: var(--status-critical); }
+.badge.overdue { background: rgba(208, 59, 59, 0.15); color: var(--status-critical); }
+.badge.due { background: rgba(250, 178, 25, 0.20); color: #9a6b00; }
 .badge.planned { background: var(--grid); color: var(--text-secondary); font-weight: 500; margin-left: 8px; vertical-align: middle; }
 
 .last-seen-ring {
@@ -538,3 +540,8 @@ button:disabled {
   background: var(--series-1);
   transition: width 0.3s ease;
 }
+
+/* Future tab: one event idea per row */
+.idea { padding: 10px 0; border-top: 1px solid var(--grid); }
+.idea:first-child { border-top: none; padding-top: 0; }
+.idea .card-note { margin: 4px 0 0; }

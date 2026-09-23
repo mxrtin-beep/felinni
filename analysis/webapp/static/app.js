@@ -574,6 +574,7 @@ async function reloadAll() {
     refreshHabit(),
     loadTravel(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
+    loadFuture(),
   ]);
 }
 
@@ -965,6 +966,71 @@ async function loadAnomalies() {
       { key: "z_score", label: "Z-score", num: true, format: v => v?.toFixed(2) },
     ], data.by_category.slice(0, 30));
 }
+
+// --- Future ---
+// A rough human span for a day count: "12 days", "3 weeks", "5 months", "2 years".
+function fmtSpan(days) {
+  if (days == null) return "-";
+  const d = Math.round(days);
+  if (d < 14) return `${d} day${d === 1 ? "" : "s"}`;
+  if (d < 60) return `${Math.round(d / 7)} weeks`;
+  if (d < 730) return `${Math.round(d / 30.4)} months`;
+  return `${(d / 365).toFixed(1).replace(/\.0$/, "")} years`;
+}
+function fmtNames(names) { return names && names.length ? escapeHtml(names.join(", ")) : "-"; }
+
+async function loadFuture() {
+  const includeWork = document.getElementById("future-include-work").checked;
+  const recs = await api(`recommendations${includeWork ? "?skip_categories=" : ""}`);
+
+  const dayFmt = { weekday: "short", month: "short", day: "numeric" };
+  const timeFmt = { hour: "numeric", minute: "2-digit" };
+  // Naive local ISO strings from the server - `new Date` parses them as local time.
+  document.getElementById("future-week-range").textContent =
+    `${new Date(recs.week.start + "T00:00").toLocaleDateString(undefined, dayFmt)} – ` +
+    `${new Date(recs.week.end + "T00:00").toLocaleDateString(undefined, dayFmt)}`;
+  const week = document.getElementById("future-week");
+  week.innerHTML = recs.week.plans.length ? "" : '<p class="empty-note">Nothing due next week - enjoy the free time.</p>';
+  recs.week.plans.forEach(plan => {
+    const start = new Date(plan.start), end = new Date(plan.end);
+    const div = document.createElement("div");
+    div.className = "idea";
+    div.innerHTML = `
+      <span class="source-meta">${start.toLocaleDateString(undefined, dayFmt)},
+        ${start.toLocaleTimeString(undefined, timeFmt)}–${end.toLocaleTimeString(undefined, timeFmt)}</span><br>
+      <strong>${escapeHtml(plan.activity)}</strong> with ${fmtNames(plan.invite)}
+      ${plan.kind === "catch-up" ? '<span class="badge due">catch-up</span>' : ""}
+      <p class="card-note">${escapeHtml(plan.reason)}</p>`;
+    week.appendChild(div);
+  });
+
+  table(document.getElementById("future-reconnect"), [
+    { key: "person", label: "Person", format: escapeHtml },
+    { key: "status", label: "Status", format: v => `<span class="badge ${v}">${v}</span>` },
+    { key: "days_since", label: "Last seen", num: true, format: v => `${fmtSpan(v)} ago` },
+    { key: "typical_gap_days", label: "Usually every", num: true, format: fmtSpan },
+    { key: "events", label: "Events", num: true },
+    { key: "usual_activity", label: "Usually", format: escapeHtml },
+    { key: "usually_with", label: "Often with", format: fmtNames, sortable: false },
+  ], recs.people);
+
+  const ideas = document.getElementById("future-ideas");
+  ideas.innerHTML = recs.ideas.length ? "" : '<p class="empty-note">Nothing due right now.</p>';
+  recs.ideas.forEach(idea => {
+    const div = document.createElement("div");
+    div.className = "idea";
+    const others = idea.also_invited_before.length
+      ? ` Also came before: ${fmtNames(idea.also_invited_before)}.` : "";
+    div.innerHTML = `
+      <strong>${escapeHtml(idea.activity)}</strong> with ${fmtNames(idea.invite)}
+      <p class="card-note">
+        Done ${idea.times_done}× - usually every ${fmtSpan(idea.typical_gap_days)},
+        last ${fmtSpan(idea.days_since)} ago (${fmtDate(idea.last_done)}).${others}
+      </p>`;
+    ideas.appendChild(div);
+  });
+}
+document.getElementById("future-include-work").addEventListener("change", loadFuture);
 
 // --- Category colors (shared across Map, Habits, Time & Spend) ---
 let categoryColors = {};
@@ -1380,6 +1446,7 @@ async function refreshMap() {
     loadPeople(),
     loadHabits(meta),
     loadTravel(),
+    loadFuture(),
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();

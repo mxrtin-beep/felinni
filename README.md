@@ -47,7 +47,7 @@ don't contribute to analyses that need that field.
 
 ## What's in the dashboard
 
-Tabs: **Overview · Places · People · Habits · Travel · Anomalies**. Every
+Tabs: **Overview · Places · People · Habits · Travel · Future · Anomalies**. Every
 table is sortable (click a header).
 The Overview tab's date range and category checkboxes apply globally; each
 tab's own filters stack on top.
@@ -121,6 +121,14 @@ tab's own filters stack on top.
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server
   runs. Duplicate events across sources are matched and only counted once.
+- **Future** — a plan for next week, made automatically: which of your
+  usual activities are due (and who to invite), each placed on a free slot
+  on the day and time it usually happens, worked around what's already on
+  your calendar. Below it, who you're overdue to see — judged against how
+  often you *usually* see each person (weekly friend: overdue after a few
+  weeks; twice-a-year friend: not until well past six months) — and event
+  ideas with who to invite. Anyone already on your calendar ahead is left
+  out; Work events are skipped unless you tick "Include Work events".
 
 ### Or skip the browser
 
@@ -130,6 +138,7 @@ python cli.py --events ../events.json people
 python cli.py --events ../events.json habit --category Gym
 python cli.py --events ../events.json travel
 python cli.py --events ../events.json anomalies
+python cli.py --events ../events.json week    # next week's plan
 ```
 
 Or from a notebook: `felinni.ingest.load_events` returns a plain pandas

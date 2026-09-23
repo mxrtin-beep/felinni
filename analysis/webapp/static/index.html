@@ -19,6 +19,7 @@
   <button data-panel="people">People</button>
   <button data-panel="habits">Habits</button>
   <button data-panel="travel">Travel</button>
+  <button data-panel="future">Future</button>
   <!-- Anomalies tab hidden for now - the flagging wasn't reading as useful
        signal in practice; felinni.anomalies/api/anomalies are still there,
        revisit before re-enabling this nav button + panel-anomalies below. -->
@@ -265,6 +266,41 @@
     </div>
   </section>
   -->
+
+  <section class="panel" id="panel-future">
+    <div class="card">
+      <div class="controls" style="justify-content:space-between">
+        <h2 style="margin:0">Next week <span class="card-note" id="future-week-range"></span></h2>
+        <label><input type="checkbox" id="future-include-work"> Include Work events</label>
+      </div>
+      <p class="card-note">
+        Made automatically from everything below: who'll be due by the end of
+        the week, what you usually do with them, and a free slot on the day
+        and time it usually happens - worked around what's already on your
+        calendar. Group plans come first; nobody gets two one-on-ones.
+      </p>
+      <div id="future-week"></div>
+    </div>
+    <div class="card">
+      <h2>People to reconnect with</h2>
+      <p class="card-note">
+        Who you're due to see, judged against how often you <em>usually</em>
+        see each person - someone you see weekly is overdue after a few
+        weeks, someone you see twice a year not until well past six months.
+        Anyone you already have something scheduled with is left out.
+      </p>
+      <div id="future-reconnect"></div>
+    </div>
+    <div class="card">
+      <h2>Event ideas</h2>
+      <p class="card-note">
+        Things you've done with people before that are due again, and who to
+        invite - the activity's regulars you've gone longest without seeing,
+        as many as usually come.
+      </p>
+      <div id="future-ideas"></div>
+    </div>
+  </section>
 
 </main>
 <script src="vendor/leaflet/leaflet.js"></script>

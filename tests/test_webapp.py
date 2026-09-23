@@ -44,6 +44,8 @@ def client():
     "/api/breaks",
     "/api/recurring",
     "/api/sources",
+    "/api/recommendations",
+    "/api/recommendations?skip_categories=",
 ])
 def test_endpoint_returns_200_json(client, path):
     resp = client.get(path)
@@ -169,6 +171,15 @@ def test_exclude_categories_filter_applies_globally(client):
 
     places = client.get("/api/places?exclude_categories=Gym").get_json()
     assert all("Gym" not in p.get("categories", []) for p in places)
+
+
+def test_recommendations_skip_work_unless_asked(client):
+    default = client.get("/api/recommendations").get_json()
+    assert default["skip_categories"] == ["Work"]
+    assert all(p["person"] not in ("Priya Patel", "Sam Lee") for p in default["people"])
+    assert set(default["week"]) == {"start", "end", "plans"}
+    everything = client.get("/api/recommendations?skip_categories=").get_json()
+    assert everything["skip_categories"] == []
 
 
 def test_travel_returns_region_based_shape(client):
