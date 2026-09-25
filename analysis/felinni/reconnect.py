@@ -1,35 +1,32 @@
-"""Reconnect suggestions: which of your own recurring things have gone
-quiet and who to invite back to each one, and who to invite to events
-already sitting on your calendar in the next two weeks.
+"""Reconnect suggestions: who to invite to events already sitting on your
+calendar in the next two weeks.
 
-Both are capped at people last seen within MAX_DAYS_SINCE_SEEN (a flat
-threshold rather than a ratio against their own usual cadence - a ratio
-makes a rare, one-off contact from years ago look permanently "overdue"
-off a single data point). This is a ceiling, not a floor: someone you
-haven't shared an event with in a decade has likely drifted out of your
-life for a reason and isn't a useful "reconnect" suggestion, so they're
-excluded entirely rather than topping the list just for being the most
-overdue. Upcoming-event suggestions are further narrowed to people you've
-actually hung out with in that same category before (so a Work meeting
-doesn't get a purely-personal friend suggested) and, when the event's
-location is geocoded - or, failing that, when its address text names a
-city you already have other geocoded locations in - to people whose own
-usual hangout region matches where the event actually is (so a Bay Area
-friend doesn't get suggested for an LA dinner - and someone you've never
-actually shared a located event with anywhere near it, like a purely
-virtual contact, simply has no usual region to match in the first place).
+Narrowed to people you genuinely haven't seen in a while - specifically,
+within MAX_DAYS_SINCE_SEEN (a flat threshold rather than a ratio against
+their own usual cadence - a ratio makes a rare, one-off contact from years
+ago look permanently "overdue" off a single data point). This is a
+ceiling, not a floor: someone you haven't shared an event with in a
+decade has likely drifted out of your life for a reason and isn't a
+useful "reconnect" suggestion, so they're excluded entirely rather than
+topping the list just for being the most overdue. Further narrowed to
+people you've actually hung out with in that same category before (so a
+Work meeting doesn't get a purely-personal friend suggested) and, when
+the event's location is geocoded - or, failing that, when its address
+text names a city you already have other geocoded locations in - to
+people whose own usual hangout region matches where the event actually is
+(so a Bay Area friend doesn't get suggested for an LA dinner - and
+someone you've never actually shared a located event with anywhere near
+it simply has no usual region to match in the first place).
 
 Deliberately built entirely from your own calendar history (felinni.social,
-felinni.recurring, felinni.regions), unlike the old Future tab's external
-event search (felinni.future_events, removed - see git history) which
-depended on unreliable third-party search backends. Nothing here makes a
-network call."""
+felinni.regions), unlike the old Future tab's external event search
+(felinni.future_events, removed - see git history) which depended on
+unreliable third-party search backends. Nothing here makes a network call.
+"""
 from __future__ import annotations
 
 import pandas as pd
 
-from .ingest import strip_with_suffix
-from .recurring import recurring_series
 from .regions import guess_region_from_text, location_metro_map
 from .social import _exploded_people, person_frequency
 
@@ -83,69 +80,6 @@ def _person_usual_regions(df: pd.DataFrame, metro_map: dict[str, str]) -> dict[s
     return {person: region for person, (_, region) in top_region.items()}
 
 
-def events_to_revive(df: pd.DataFrame, as_of: pd.Timestamp | None = None, min_occurrences: int = 4) -> pd.DataFrame:
-    """Your own recurring things (felinni.recurring) that have gone quiet -
-    "slowing down" or fully "stopped" relative to their usual cadence -
-    the events worth putting back on the calendar."""
-    series = recurring_series(df, min_occurrences=min_occurrences, as_of=as_of)
-    if series.empty:
-        return series
-    return series[series["status"].isin(["slowing down", "stopped"])].reset_index(drop=True)
-
-
-def suggested_invites(
-    df: pd.DataFrame,
-    as_of: pd.Timestamp | None = None,
-    min_occurrences: int = 4,
-    top_attendees: int = 4,
-    max_days_since_seen: float = MAX_DAYS_SINCE_SEEN,
-) -> pd.DataFrame:
-    """One row per (fading recurring event, past regular) pairing, capped
-    to regulars last seen within `max_days_since_seen` days - so reviving
-    "Book Club" surfaces people you've actually drifted from recently, not
-    someone from a decade ago you likely haven't kept up with for a
-    reason - most overdue (within that cap) first."""
-    as_of = as_of or pd.Timestamp.now()
-    series = events_to_revive(df, as_of=as_of, min_occurrences=min_occurrences)
-    columns = [
-        "series_title", "series_category", "series_status", "series_cadence", "series_days_since_last",
-        "person", "times_attended", "days_since_seen",
-    ]
-    if series.empty:
-        return pd.DataFrame(columns=columns)
-
-    days_since_seen = _days_since_seen(df, as_of)
-    normalized = df.assign(_series_title=df["title"].apply(strip_with_suffix))
-
-    rows = []
-    for _, s in series.iterrows():
-        series_events = normalized[normalized["_series_title"] == s["title"]]
-        exploded = _exploded_people(series_events)
-        if exploded.empty:
-            continue
-        for person, count in exploded["person"].value_counts().head(top_attendees).items():
-            days = days_since_seen.get(person)
-            if days is None or pd.isna(days) or days > max_days_since_seen:
-                continue
-            rows.append({
-                "series_title": s["title"],
-                "series_category": s["category"],
-                "series_status": s["status"],
-                "series_cadence": s["cadence"],
-                "series_days_since_last": s["days_since_last"],
-                "person": person,
-                "times_attended": int(count),
-                "days_since_seen": float(days),
-            })
-
-    if not rows:
-        return pd.DataFrame(columns=columns)
-    result = pd.DataFrame(rows, columns=columns)
-    return result.sort_values(
-        ["series_days_since_last", "days_since_seen"], ascending=[False, False],
-    ).reset_index(drop=True)
-
-
 def upcoming_events(df: pd.DataFrame, as_of: pd.Timestamp | None = None, days_ahead: int = 14) -> pd.DataFrame:
     """Timed events already on your calendar in the near future (all-day
     placeholders excluded, same reasoning as felinni.social._exploded_people
@@ -191,6 +125,13 @@ def upcoming_invite_suggestions(
     category (an "Important events" catch-all, say) would win the top
     slots on every single event, and you'd see the same 5-10 names
     everywhere instead of the list actually covering different people.
+
+    Rows come back grouped by event, soonest event first - the order each
+    event's rows were built in (upcoming_events is itself start-sorted),
+    not re-sorted by any per-row field afterward. Re-sorting by
+    days_since_seen across the whole result would interleave rows from
+    different events that happen to share an exact start time, breaking
+    the per-event grouping the frontend relies on to show each event once.
 
     Each row carries a plain-English `reason` for why that person was
     picked."""
@@ -284,6 +225,4 @@ def upcoming_invite_suggestions(
 
     if not rows:
         return pd.DataFrame(columns=columns)
-    return pd.DataFrame(rows, columns=columns).sort_values(
-        ["event_start", "days_since_seen"], ascending=[True, False],
-    ).reset_index(drop=True)
+    return pd.DataFrame(rows, columns=columns)

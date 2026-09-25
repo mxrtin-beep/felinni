@@ -1,17 +1,15 @@
-"""Tests for felinni.reconnect: who to invite back to your own fading
-recurring events, and - for events already on your calendar in the next
-two weeks - who to invite. Both are capped at people last seen within two
+"""Tests for felinni.reconnect: for events already on your calendar in the
+next two weeks, who to invite. Capped at people last seen within two
 years (MAX_DAYS_SINCE_SEEN): a ceiling, not a floor, since someone you
 haven't shared an event with in years longer than that has likely drifted
 out of your life for a reason and isn't a useful "reconnect" suggestion.
-Upcoming events are further narrowed to people you've also hung out with
-before in that same category, and whose usual hangout region (where
-geocoded) matches where the event is."""
+Further narrowed to people you've also hung out with before in that same
+category, and whose usual hangout region (where geocoded) matches where
+the event is."""
 import sys
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "analysis"))
 
@@ -44,54 +42,6 @@ AS_OF = pd.Timestamp("2024-08-01")
 WITHIN_CAP = AS_OF - pd.Timedelta(days=400)  # comfortably under the 2-year (730-day) cap
 OVER_CAP = AS_OF - pd.Timedelta(days=1000)  # comfortably over it - a "drifted out of your life" contact
 
-
-@pytest.fixture
-def revive_df():
-    events = [
-        # Book Club: a recurring series with Alice and Bob attending, that
-        # stopped happening long ago. Alice hasn't been seen anywhere
-        # since (over the 2-year cap) - not a useful suggestion. Bob was
-        # also in Book Club, but has been seen more recently (within the
-        # cap) at something else, and should still show up.
-        _event(1, "Book Club", _iso(OVER_CAP - pd.Timedelta(weeks=3)), _iso(OVER_CAP - pd.Timedelta(weeks=3)), people=["Alice", "Bob"]),
-        _event(2, "Book Club", _iso(OVER_CAP - pd.Timedelta(weeks=2)), _iso(OVER_CAP - pd.Timedelta(weeks=2)), people=["Alice", "Bob"]),
-        _event(3, "Book Club", _iso(OVER_CAP - pd.Timedelta(weeks=1)), _iso(OVER_CAP - pd.Timedelta(weeks=1)), people=["Alice", "Bob"]),
-        _event(4, "Book Club", _iso(OVER_CAP), _iso(OVER_CAP), people=["Alice", "Bob"]),
-        _event(5, "Lunch", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Bob"]),
-    ]
-    return ingest.load_events_from_records(events)
-
-
-def test_suggested_invites_excludes_regulars_not_seen_within_the_cap(revive_df):
-    result = reconnect.suggested_invites(revive_df, as_of=AS_OF)
-    assert "Book Club" in result["series_title"].values
-    book_club = result[result["series_title"] == "Book Club"]
-    assert set(book_club["person"]) == {"Bob"}  # not Alice - over the 2-year cap
-
-
-def test_suggested_invites_ranks_more_overdue_regular_first():
-    events = [
-        _event(i, "Poker Night", _iso(AS_OF - pd.Timedelta(days=800) + pd.Timedelta(weeks=i)),
-               _iso(AS_OF - pd.Timedelta(days=800) + pd.Timedelta(weeks=i)), people=["Dave", "Erin"])
-        for i in range(4)
-    ] + [
-        # Dave: not seen since (further out, but still within the cap).
-        # Erin: seen more recently, also within the cap.
-        _event(10, "Coffee", _iso(AS_OF - pd.Timedelta(days=700)), _iso(AS_OF - pd.Timedelta(days=700)), people=["Dave"]),
-        _event(11, "Coffee", _iso(AS_OF - pd.Timedelta(days=100)), _iso(AS_OF - pd.Timedelta(days=100)), people=["Erin"]),
-    ]
-    df = ingest.load_events_from_records(events)
-    result = reconnect.suggested_invites(df, as_of=AS_OF)
-    poker = result[result["series_title"] == "Poker Night"]
-    assert list(poker["person"]) == ["Dave", "Erin"]
-
-
-def test_suggested_invites_empty_when_nothing_has_faded(revive_df):
-    result = reconnect.suggested_invites(revive_df, as_of=OVER_CAP + pd.Timedelta(days=4))
-    assert result.empty
-
-
-# --- upcoming_invite_suggestions ---
 
 LA_CACHE_ENTRY = {"lat": 34.05, "lon": -118.24, "city": "Los Angeles", "country": "United States"}
 BAY_CACHE_ENTRY = {"lat": 37.77, "lon": -122.42, "city": "San Francisco", "country": "United States"}
@@ -288,3 +238,32 @@ def test_upcoming_invite_suggestions_guesses_region_from_address_text():
     row = result[result["person"] == "Alice"].iloc[0]
     assert row["region"] == "Los Angeles, United States"
     assert "guessed from the address" in row["reason"]
+
+
+def test_upcoming_invite_suggestions_keeps_same_start_events_grouped_separately():
+    # Two different upcoming events (different categories, so their
+    # candidate pools don't overlap and don't interact with the
+    # already-suggested-elsewhere diversity logic) land on the exact same
+    # start time - each should still get its own contiguous block of
+    # rows. A final sort by days_since_seen across the whole result would
+    # interleave rows between these two events on that start-time tie
+    # (Work's 700-day P1, then Fun's 650-day P3, then Work's 100-day P2,
+    # then Fun's 50-day P4), splitting either one's rows apart in the
+    # output and breaking the frontend's event-row grouping, which merges
+    # consecutive same-event rows.
+    events = [
+        _event(1, "History1", _iso(AS_OF - pd.Timedelta(days=700)), _iso(AS_OF - pd.Timedelta(days=700)), people=["P1"], category="Work"),
+        _event(2, "History2", _iso(AS_OF - pd.Timedelta(days=100)), _iso(AS_OF - pd.Timedelta(days=100)), people=["P2"], category="Work"),
+        _event(3, "History3", _iso(AS_OF - pd.Timedelta(days=650)), _iso(AS_OF - pd.Timedelta(days=650)), people=["P3"], category="Fun"),
+        _event(4, "History4", _iso(AS_OF - pd.Timedelta(days=50)), _iso(AS_OF - pd.Timedelta(days=50)), people=["P4"], category="Fun"),
+        _event(5, "Alpha", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)), category="Work"),
+        _event(6, "Beta", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)), category="Fun"),
+    ]
+    df = ingest.load_events_from_records(events)
+    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF, top_n=2)
+    titles = result["event_title"].tolist()
+    assert set(titles) == {"Alpha", "Beta"}
+    for title in set(titles):
+        indices = [i for i, t in enumerate(titles) if t == title]
+        assert indices == list(range(indices[0], indices[0] + len(indices))), \
+            f"{title}'s rows aren't contiguous: {titles}"

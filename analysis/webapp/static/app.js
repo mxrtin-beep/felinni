@@ -905,15 +905,6 @@ async function loadFuture() {
   upcomingNote.textContent = data.message || "";
   upcomingNote.style.display = data.message ? "" : "none";
 
-  table(document.getElementById("reconnect-invites-table"),
-    [
-      { key: "series_title", label: "Event" },
-      { key: "series_status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
-      { key: "person", label: "Regular" },
-      { key: "times_attended", label: "Times attended", num: true },
-      { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
-    ], data.invites);
-
   renderUpcomingInviteTable(document.getElementById("reconnect-upcoming-table"), data.upcoming_invites);
 }
 

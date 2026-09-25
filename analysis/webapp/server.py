@@ -468,13 +468,12 @@ def recurring_view():
 
 @app.get("/api/reconnect")
 def reconnect_view():
-    """The Future tab: your own recurring events that have gone quiet and
-    who to invite back to each one, plus who to invite to events already
-    on your calendar in the near future (matched to shared event category,
-    and to geography where locations are geocoded - see
-    felinni.reconnect.upcoming_invite_suggestions). Everything here is
-    derived from your own calendar history; unlike the old Future tab,
-    nothing calls out to the network."""
+    """The Future tab: who to invite to events already on your calendar in
+    the near future (matched to shared event category, and to geography
+    where locations are geocoded - see
+    felinni.reconnect.upcoming_invite_suggestions). Derived entirely from
+    your own calendar history; unlike the old Future tab, nothing calls
+    out to the network."""
     df = _get_df()
     days_ahead = request.args.get("days_ahead", 14, type=int)
     cache = _load_geocode_cache()
@@ -485,7 +484,6 @@ def reconnect_view():
             "region yet. Click \"Geocode locations\" on the Map tab to add that."
         )
     return jsonify({
-        "invites": records(reconnect.suggested_invites(df)),
         "upcoming_invites": records(reconnect.upcoming_invite_suggestions(df, cache, days_ahead=days_ahead)),
         "message": message,
     })

@@ -118,33 +118,30 @@ tab's own filters stack on top.
   approximately, shows up with its reason in the **Geocoding notes** card,
   instead of a bare "N not geocoded" count with no way to tell why.
 - **Future** — reconnect suggestions built entirely from your own calendar
-  history (no network calls), both capped to people last seen within the
-  past two years - a ceiling, not a floor (a straight "days since last
-  seen" ranking, with no ceiling, would just put a decade-forgotten
-  contact permanently at the top of the list; they've likely drifted out
-  of your life for a reason and aren't a useful "reconnect" suggestion, so
-  they're excluded rather than surfaced). **Who to invite back** looks at
-  your own recurring events (from Habits' repeating-events detection) that
-  have slowed down or stopped, naming each one's regulars still within
-  that two-year window, most overdue first. **Who to invite to what's
-  already on your calendar** looks at events already scheduled in the next
-  two weeks and suggests who to invite to each one, further narrowed to
-  people you've also hung out with before in that same event category (so
-  a Work meeting doesn't get a purely-personal friend suggested), and,
-  where the event's own specific location has been geocoded - or, failing
-  that, where its address text names a city you already have other
-  geocoded locations in - whose own usual hangout region actually matches
-  where the event is (so a Bay Area friend doesn't get suggested for an LA
-  dinner just because they're otherwise overdue; someone you've never
-  shared a real, located event with anywhere has no usual region at all,
-  so they're excluded from a region-matched event the same way - no
-  separate check for a purely-virtual contact needed). A "Why" column on
-  each suggestion says whether region was actually part of the reasoning,
-  geocoded or guessed from the address text, or skipped entirely because
-  neither was available. Across the whole list, a person already
-  suggested for one event is only reused for another when nothing else
-  qualifies, so the list covers different people instead of the same
-  handful of most-overdue names showing up under every event.
+  history (no network calls): **Who to invite to what's already on your
+  calendar** looks at events already scheduled in the next two weeks and
+  suggests who to invite to each one - people you genuinely haven't seen
+  anywhere in the past two years (a ceiling, not a floor: a straight "days
+  since last seen" ranking, with no ceiling, would just put a
+  decade-forgotten contact permanently at the top of the list, and
+  they've likely drifted out of your life for a reason rather than being
+  a useful "reconnect" suggestion), further narrowed to people you've also
+  hung out with before in that same event category (so a Work meeting
+  doesn't get a purely-personal friend suggested), and, where the event's
+  own specific location has been geocoded - or, failing that, where its
+  address text names a city you already have other geocoded locations in
+  - whose own usual hangout region actually matches where the event is
+  (so a Bay Area friend doesn't get suggested for an LA dinner just
+  because they're otherwise overdue; someone you've never shared a real,
+  located event with anywhere has no usual region at all, so they're
+  excluded from a region-matched event the same way - no separate check
+  for a purely-virtual contact needed). A "Why" column on each suggestion
+  says whether region was actually part of the reasoning, geocoded or
+  guessed from the address text, or skipped entirely because neither was
+  available. Across the whole list, a person already suggested for one
+  event is only reused for another when nothing else qualifies, so the
+  list covers different people instead of the same handful of
+  most-overdue names showing up under every event.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server
