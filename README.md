@@ -131,9 +131,15 @@ tab's own filters stack on top.
   two weeks and suggests who to invite to each one, further narrowed to
   people you've also hung out with before in that same event category (so
   a Work meeting doesn't get a purely-personal friend suggested), and,
-  where the event's location is geocoded, whose own usual hangout region
-  actually matches where the event is (so a Bay Area friend doesn't get
-  suggested for an LA dinner just because they're otherwise overdue).
+  where the event's own specific location has been geocoded, whose own
+  usual hangout region actually matches where the event is (so a Bay Area
+  friend doesn't get suggested for an LA dinner just because they're
+  otherwise overdue - and a "Why" column on each suggestion says whether
+  region was actually part of the reasoning, or just skipped because that
+  location isn't geocoded yet). Across the whole list, a person already
+  suggested for one event is only reused for another when nothing else
+  qualifies, so the list covers different people instead of the same
+  handful of most-overdue names showing up under every event.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server

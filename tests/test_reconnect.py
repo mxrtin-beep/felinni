@@ -211,3 +211,36 @@ def test_upcoming_invite_suggestions_default_window_is_two_weeks():
     df = ingest.load_events_from_records(events)
     result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF)
     assert result.empty  # 20 days out, past the default 14-day window
+
+
+def test_upcoming_invite_suggestions_notes_when_the_events_own_location_isnt_geocoded():
+    events = [
+        _event(1, "Coffee", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Priya"], category="Work"),
+        _event(2, "Standup", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)),
+               category="Work", location="Some Untracked Office"),
+    ]
+    df = ingest.load_events_from_records(events)
+    # A non-empty cache that simply doesn't cover this event's own location.
+    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=GEO_CACHE, as_of=AS_OF)
+    row = result[result["person"] == "Priya"].iloc[0]
+    assert row["region"] is None
+    assert "isn't geocoded" in row["reason"]
+
+
+def test_upcoming_invite_suggestions_spreads_suggestions_across_events():
+    # Alice and Bob both share a Social history with you and are both
+    # within the 2-year cap, with Alice more overdue than Bob. Two
+    # upcoming Social events with no location (category is the only
+    # filter) should each get a different person, not both defaulting to
+    # Alice just because she's the single most-overdue candidate overall.
+    events = [
+        _event(1, "Coffee", _iso(AS_OF - pd.Timedelta(days=700)), _iso(AS_OF - pd.Timedelta(days=700)), people=["Alice"]),
+        _event(2, "Coffee", _iso(AS_OF - pd.Timedelta(days=200)), _iso(AS_OF - pd.Timedelta(days=200)), people=["Bob"]),
+        _event(3, "Dinner", _iso(AS_OF + pd.Timedelta(days=3)), _iso(AS_OF + pd.Timedelta(days=3))),
+        _event(4, "Party", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5))),
+    ]
+    df = ingest.load_events_from_records(events)
+    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF, top_n=1)
+    people_by_event = dict(zip(result["event_title"], result["person"]))
+    assert people_by_event["Dinner"] == "Alice"  # the sooner event gets first pick of the most overdue
+    assert people_by_event["Party"] == "Bob"  # Alice already used - Bob gets a turn instead of a repeat

@@ -165,10 +165,22 @@ def upcoming_invite_suggestions(
     unknown (most people, unless you've geocoded several shared-event
     locations with them) is excluded too, not let through by default, so
     this stays a real region check rather than one only rare conflicts
-    trip. Both signals are computed from history strictly before `as_of`,
-    so an event's own not-yet-real guest list can't skew either, and
-    anyone already on the event's guest list is skipped. Each row carries
-    a plain-English `reason` for why that person was picked."""
+    trip - when the event's own location just hasn't been geocoded yet,
+    there's nothing to check against and this falls back to category
+    alone (the `reason` says so, rather than silently pretending region
+    was considered). Both signals are computed from history strictly
+    before `as_of`, so an event's own not-yet-real guest list can't skew
+    either, and anyone already on the event's guest list is skipped.
+
+    Across the whole result, a person already suggested for one event is
+    only reused for another when nothing else qualifies for it - without
+    this, a handful of people who are both very overdue and share a broad
+    category (an "Important events" catch-all, say) would win the top
+    slots on every single event, and you'd see the same 5-10 names
+    everywhere instead of the list actually covering different people.
+
+    Each row carries a plain-English `reason` for why that person was
+    picked."""
     as_of = as_of or pd.Timestamp.now()
     columns = [
         "event_title", "event_category", "event_start", "event_location", "region",
@@ -185,12 +197,19 @@ def upcoming_invite_suggestions(
     metro_map = location_metro_map(past, geocode_cache) if geocode_cache else {}
     person_region = _person_usual_regions(past, metro_map) if metro_map else {}
 
+    # Tracks who's already been picked for an earlier (sooner) event, so
+    # later events prefer fresh names over re-nominating the same
+    # globally-most-overdue handful of people every time - see the
+    # docstring above.
+    already_suggested: set[str] = set()
+
     rows = []
     for _, event in events.iterrows():
         category = event["category"]
         already_invited = set(event["people"]) if isinstance(event["people"], list) else set()
         location = event["location"]
-        region = metro_map.get(location) if pd.notna(location) else None
+        has_location = pd.notna(location)
+        region = metro_map.get(location) if has_location else None
 
         candidates = [
             person for person, categories in categories_by_person.items()
@@ -213,12 +232,21 @@ def upcoming_invite_suggestions(
             if days is None or pd.isna(days) or days > max_days_since_seen:
                 continue
             scored.append((person, float(days)))
-        scored.sort(key=lambda t: t[1], reverse=True)
+        # Not-yet-suggested people first (most overdue first within that
+        # group), already-suggested-elsewhere people only as a fallback to
+        # fill remaining slots (also most overdue first within that group).
+        scored.sort(key=lambda t: (t[0] in already_suggested, -t[1]))
 
-        for person, days in scored[:top_n]:
+        picked = scored[:top_n]
+        for person, _ in picked:
+            already_suggested.add(person)
+
+        for person, days in picked:
             reason = f"You've been to {category} events with them before, last {round(days)} days ago"
-            if region and person_region.get(person) == region:
+            if region:
                 reason += f", usually around {region}"
+            elif has_location:
+                reason += " (that location isn't geocoded yet, so this wasn't narrowed by region)"
             rows.append({
                 "event_title": event["title"],
                 "event_category": category,
