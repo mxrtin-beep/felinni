@@ -9,14 +9,22 @@ ceiling, not a floor: someone you haven't shared an event with in a
 decade has likely drifted out of your life for a reason and isn't a
 useful "reconnect" suggestion, so they're excluded entirely rather than
 topping the list just for being the most overdue. Further narrowed to
-people you've actually hung out with in that same category before (so a
-Work meeting doesn't get a purely-personal friend suggested) and, when
-the event's location is geocoded - or, failing that, when its address
-text names a city you already have other geocoded locations in - to
-people whose own usual hangout region matches where the event actually is
-(so a Bay Area friend doesn't get suggested for an LA dinner - and
-someone you've never actually shared a located event with anywhere near
-it simply has no usual region to match in the first place).
+events that actually have a location (nothing to match a person's usual
+hangout region against otherwise), to people you've actually hung out
+with in that same category before (so a Work meeting doesn't get a
+purely-personal friend suggested), and, when the event's location is
+geocoded - or, failing that, when its address text names a city you
+already have other geocoded locations in - to people whose own usual
+hangout region matches where the event actually is (so a Bay Area friend
+doesn't get suggested for an LA dinner - and someone you've never
+actually shared a located event with anywhere near it simply has no
+usual region to match in the first place).
+
+Among whoever qualifies, the picks themselves are random rather than
+"most overdue first" - everyone left after the filters above is already a
+reasonable suggestion, and always picking the same most-overdue few would
+just mean the same handful of names every time; call again (the
+dashboard's Refresh button does exactly this) for a different random set.
 
 Deliberately built entirely from your own calendar history (felinni.social,
 felinni.regions), unlike the old Future tab's external event search
@@ -24,6 +32,8 @@ felinni.regions), unlike the old Future tab's external event search
 unreliable third-party search backends. Nothing here makes a network call.
 """
 from __future__ import annotations
+
+import random
 
 import pandas as pd
 
@@ -81,13 +91,16 @@ def _person_usual_regions(df: pd.DataFrame, metro_map: dict[str, str]) -> dict[s
 
 
 def upcoming_events(df: pd.DataFrame, as_of: pd.Timestamp | None = None, days_ahead: int = 14) -> pd.DataFrame:
-    """Timed events already on your calendar in the near future (all-day
-    placeholders excluded, same reasoning as felinni.social._exploded_people
-    - a full-day block isn't a "hang out" the way a timed event is)."""
+    """Timed events already on your calendar in the near future, with a
+    real location - all-day placeholders are excluded (same reasoning as
+    felinni.social._exploded_people: a full-day block isn't a "hang out"
+    the way a timed event is), and so is anything with no location at all,
+    since there'd be nothing to invite someone *to* in the geographic
+    sense this feature is built around."""
     as_of = as_of or pd.Timestamp.now()
     window_end = as_of + pd.Timedelta(days=days_ahead)
     upcoming = df[~df["is_all_day"] & (df["start"] > as_of) & (df["start"] <= window_end)]
-    return upcoming.sort_values("start")
+    return upcoming.dropna(subset=["location"]).sort_values("start")
 
 
 def upcoming_invite_suggestions(
@@ -97,39 +110,45 @@ def upcoming_invite_suggestions(
     days_ahead: int = 14,
     top_n: int = 5,
     max_days_since_seen: float = MAX_DAYS_SINCE_SEEN,
+    seed: int | None = None,
 ) -> pd.DataFrame:
-    """For each event already on your calendar in the next `days_ahead`
-    days (two weeks by default), who to invite: people you haven't shared
-    a real event with recently but still within `max_days_since_seen` days
-    (a cap, not a floor - someone from a decade ago has likely drifted out
-    of your life for a reason, so they're excluded rather than topping the
-    list) who you've also hung out with before in that event's own
-    category - so a Work meeting doesn't get a purely-personal friend
-    suggested just because they're otherwise overdue. When the event's own
-    location is geocoded, also requires the person's own usual hangout
-    region (their most common metro area across shared, geocoded events)
-    to actually match where the event is - a person whose usual region is
-    unknown (most people, unless you've geocoded several shared-event
-    locations with them) is excluded too, not let through by default, so
-    this stays a real region check rather than one only rare conflicts
-    trip - when the event's own location just hasn't been geocoded yet,
-    there's nothing to check against and this falls back to category
-    alone (the `reason` says so, rather than silently pretending region
-    was considered). Both signals are computed from history strictly
-    before `as_of`, so an event's own not-yet-real guest list can't skew
-    either, and anyone already on the event's guest list is skipped.
+    """For each located event already on your calendar in the next
+    `days_ahead` days (two weeks by default), who to invite: people you
+    haven't shared a real event with recently but still within
+    `max_days_since_seen` days (a cap, not a floor - someone from a decade
+    ago has likely drifted out of your life for a reason, so they're
+    excluded rather than topping the list) who you've also hung out with
+    before in that event's own category - so a Work meeting doesn't get a
+    purely-personal friend suggested just because they're otherwise
+    overdue. When the event's own location is geocoded, also requires the
+    person's own usual hangout region (their most common metro area across
+    shared, geocoded events) to actually match where the event is - a
+    person whose usual region is unknown (most people, unless you've
+    geocoded several shared-event locations with them) is excluded too,
+    not let through by default, so this stays a real region check rather
+    than one only rare conflicts trip - when the event's own location just
+    hasn't been geocoded yet, there's nothing to check against and this
+    falls back to category alone (the `reason` says so, rather than
+    silently pretending region was considered). Both signals are computed
+    from history strictly before `as_of`, so an event's own not-yet-real
+    guest list can't skew either, and anyone already on the event's guest
+    list is skipped.
 
-    Across the whole result, a person already suggested for one event is
-    only reused for another when nothing else qualifies for it - without
-    this, a handful of people who are both very overdue and share a broad
-    category (an "Important events" catch-all, say) would win the top
-    slots on every single event, and you'd see the same 5-10 names
-    everywhere instead of the list actually covering different people.
+    Among whoever qualifies for a given event, `top_n` are picked at
+    random (seed it for a reproducible pick, e.g. in a test - the
+    dashboard itself calls this unseeded, so a "Refresh" button just
+    re-requests and gets a different random set), rather than always the
+    most overdue - once someone clears every filter above they're already
+    a reasonable suggestion, and ranking by overdue-ness on top of that
+    would just mean the same most-overdue handful every time. A person
+    already picked for one event is preferred to sit out a later one
+    (used to fill it only when nothing else qualifies), so results spread
+    across more distinct people instead of the same few repeating.
 
     Rows come back grouped by event, soonest event first - the order each
     event's rows were built in (upcoming_events is itself start-sorted),
-    not re-sorted by any per-row field afterward. Re-sorting by
-    days_since_seen across the whole result would interleave rows from
+    not re-sorted by any per-row field afterward. Sorting by some
+    per-person field across the whole result would interleave rows from
     different events that happen to share an exact start time, breaking
     the per-event grouping the frontend relies on to show each event once.
 
@@ -144,6 +163,7 @@ def upcoming_invite_suggestions(
     if events.empty:
         return pd.DataFrame(columns=columns)
 
+    rng = random.Random(seed)
     past = df[df["start"] <= as_of]
     days_since_seen = _days_since_seen(past, as_of)
     categories_by_person = _categories_shared_with(past)
@@ -152,9 +172,8 @@ def upcoming_invite_suggestions(
     person_region = _person_usual_regions(past, metro_map) if metro_map else {}
 
     # Tracks who's already been picked for an earlier (sooner) event, so
-    # later events prefer fresh names over re-nominating the same
-    # globally-most-overdue handful of people every time - see the
-    # docstring above.
+    # later events prefer fresh names over re-nominating the same handful
+    # of people every time - see the docstring above.
     already_suggested: set[str] = set()
 
     rows = []
@@ -162,10 +181,9 @@ def upcoming_invite_suggestions(
         category = event["category"]
         already_invited = set(event["people"]) if isinstance(event["people"], list) else set()
         location = event["location"]
-        has_location = pd.notna(location)
-        region = metro_map.get(location) if has_location else None
+        region = metro_map.get(location)
         region_is_guessed = False
-        if region is None and has_location:
+        if region is None:
             # This exact address hasn't itself been geocoded, but its text
             # might still name a city you have other geocoded locations
             # in (e.g. "1903 Hyperion Ave Los Angeles, CA" naming a metro
@@ -189,18 +207,19 @@ def upcoming_invite_suggestions(
             # people I don't hang out with here" bug this guards against.
             candidates = [p for p in candidates if person_region.get(p) == region]
 
-        scored = []
+        eligible = []
         for person in candidates:
             days = days_since_seen.get(person)
             if days is None or pd.isna(days) or days > max_days_since_seen:
                 continue
-            scored.append((person, float(days)))
-        # Not-yet-suggested people first (most overdue first within that
-        # group), already-suggested-elsewhere people only as a fallback to
-        # fill remaining slots (also most overdue first within that group).
-        scored.sort(key=lambda t: (t[0] in already_suggested, -t[1]))
-
-        picked = scored[:top_n]
+            eligible.append((person, float(days)))
+        # Not-yet-suggested people preferred over already-suggested-elsewhere
+        # ones (the latter only fill remaining slots), random within each tier.
+        fresh = [c for c in eligible if c[0] not in already_suggested]
+        reused = [c for c in eligible if c[0] in already_suggested]
+        rng.shuffle(fresh)
+        rng.shuffle(reused)
+        picked = (fresh + reused)[:top_n]
         for person, _ in picked:
             already_suggested.add(person)
 
@@ -210,7 +229,7 @@ def upcoming_invite_suggestions(
                 reason += f", usually around {region} (guessed from the address text, not geocoded)"
             elif region:
                 reason += f", usually around {region}"
-            elif has_location:
+            else:
                 reason += " (that location isn't geocoded yet, so this wasn't narrowed by region)"
             rows.append({
                 "event_title": event["title"],

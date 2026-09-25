@@ -10,7 +10,15 @@ import pandas as pd
 
 def _clean(value):
     if isinstance(value, (pd.Timestamp,)):
-        return value.isoformat()
+        # Every Timestamp here is a naive UTC wall-clock time - felinni.ingest
+        # normalizes startDate/endDate via pd.to_datetime(..., utc=True)
+        # .dt.tz_convert(None), which converts to UTC and then drops the tz
+        # info, and everything else derives from that. Without a "Z" (or any
+        # offset), a JS Date parses an ISO string with no timezone as *local*
+        # time rather than UTC - so a plain isoformat() silently shifted
+        # every displayed time by the viewer's own UTC offset (e.g. 7 hours
+        # off in Pacific time) instead of converting it correctly.
+        return value.isoformat() + "Z"
     if isinstance(value, (np.integer,)):
         return int(value)
     if isinstance(value, (np.floating,)):

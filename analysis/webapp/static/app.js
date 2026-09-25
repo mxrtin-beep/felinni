@@ -899,6 +899,12 @@ function renderUpcomingInviteTable(container, rows) {
 
 // --- Future (reconnect suggestions) ---
 async function loadFuture() {
+  const refreshBtn = document.getElementById("reconnect-refresh-btn");
+  if (!refreshBtn.dataset.wired) {
+    refreshBtn.addEventListener("click", loadFuture);
+    refreshBtn.dataset.wired = "1";
+  }
+
   const data = await api("reconnect");
 
   const upcomingNote = document.getElementById("reconnect-upcoming-note");
