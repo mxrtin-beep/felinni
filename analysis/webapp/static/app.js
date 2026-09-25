@@ -853,14 +853,13 @@ async function loadRecurringEvents() {
     ], rows);
 }
 
-const RECONNECT_UPCOMING_DEFAULT_NOTE =
-  "People you haven't seen anywhere in at least two years, who you've also hung out with before in that same kind of event, and - where locations are geocoded - whose usual hangout region actually matches where the event is.";
-
 // --- Future (reconnect suggestions) ---
 async function loadFuture() {
   const data = await api("reconnect");
 
-  document.getElementById("reconnect-upcoming-note").textContent = data.message || RECONNECT_UPCOMING_DEFAULT_NOTE;
+  const upcomingNote = document.getElementById("reconnect-upcoming-note");
+  upcomingNote.textContent = data.message || "";
+  upcomingNote.style.display = data.message ? "" : "none";
 
   table(document.getElementById("reconnect-invites-table"),
     [

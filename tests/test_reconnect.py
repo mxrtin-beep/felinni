@@ -1,8 +1,9 @@
-"""Tests for felinni.reconnect: reconnect suggestions built purely from
-calendar history, narrowed to people you genuinely haven't seen anywhere
-in at least two years - and, for upcoming events, to people you've also
-hung out with before in that same category, and whose usual hangout
-region (where geocoded) matches where the event is."""
+"""Tests for felinni.reconnect: who to invite back to your own fading
+recurring events, and - for events already on your calendar in the next
+two weeks - who to invite, narrowed to people you genuinely haven't seen
+anywhere in at least two years, who you've also hung out with before in
+that same category, and whose usual hangout region (where geocoded)
+matches where the event is."""
 import sys
 from pathlib import Path
 
@@ -41,39 +42,37 @@ ONE_YEAR_AGO = AS_OF - pd.Timedelta(days=300)  # comfortably under it
 def revive_df():
     events = [
         # Book Club: a recurring series with Alice and Bob attending, that
-        # stopped happening a long time ago. Alice hasn't been seen since
-        # (over 2 years); Bob has been seen recently elsewhere.
+        # stopped happening a long time ago. Alice hasn't been seen since;
+        # Bob has been seen more recently elsewhere.
         _event(1, "Book Club", "2022-01-01T19:00:00Z", "2022-01-01T20:00:00Z", people=["Alice", "Bob"]),
         _event(2, "Book Club", "2022-01-08T19:00:00Z", "2022-01-08T20:00:00Z", people=["Alice", "Bob"]),
         _event(3, "Book Club", "2022-01-15T19:00:00Z", "2022-01-15T20:00:00Z", people=["Alice", "Bob"]),
         _event(4, "Book Club", "2022-01-22T19:00:00Z", "2022-01-22T20:00:00Z", people=["Alice", "Bob"]),
-        # Bob, seen recently at something unrelated.
+        # Bob, seen more recently at something unrelated (but still a
+        # while ago - the 2-year floor only applies to upcoming events).
         _event(5, "Lunch", ONE_YEAR_AGO.isoformat() + "Z", ONE_YEAR_AGO.isoformat() + "Z", people=["Bob"]),
     ]
     return ingest.load_events_from_records(events)
 
 
-def test_suggested_invites_names_book_clubs_regulars(revive_df):
+def test_suggested_invites_names_book_clubs_regulars_regardless_of_how_recently_seen(revive_df):
+    # No 2-year floor here (unlike upcoming_invite_suggestions) - both
+    # regulars are worth a text about reviving their own event.
     result = reconnect.suggested_invites(revive_df, as_of=AS_OF)
     assert "Book Club" in result["series_title"].values
     book_club = result[result["series_title"] == "Book Club"]
-    assert set(book_club["person"]) == {"Alice"}  # not Bob - seen too recently elsewhere
+    assert set(book_club["person"]) == {"Alice", "Bob"}
+
+
+def test_suggested_invites_ranks_more_overdue_regular_first(revive_df):
+    result = reconnect.suggested_invites(revive_df, as_of=AS_OF)
+    book_club = result[result["series_title"] == "Book Club"]
+    assert book_club.iloc[0]["person"] == "Alice"  # hasn't been seen at all since Book Club stopped
 
 
 def test_suggested_invites_empty_when_nothing_has_faded(revive_df):
     result = reconnect.suggested_invites(revive_df, as_of=pd.Timestamp("2022-01-25"))
     assert result.empty
-
-
-def test_suggested_invites_drops_people_seen_within_two_years():
-    events = [
-        _event(i, "Poker Night", (pd.Timestamp("2022-01-01") + pd.Timedelta(weeks=i)).isoformat() + "Z",
-               (pd.Timestamp("2022-01-01") + pd.Timedelta(weeks=i)).isoformat() + "Z", people=["Carol"])
-        for i in range(5)
-    ] + [_event(99, "Coffee", ONE_YEAR_AGO.isoformat() + "Z", ONE_YEAR_AGO.isoformat() + "Z", people=["Carol"])]
-    df = ingest.load_events_from_records(events)
-    result = reconnect.suggested_invites(df, as_of=AS_OF)
-    assert result.empty  # Carol was seen a year ago, well within the 2-year window
 
 
 # --- upcoming_invite_suggestions ---

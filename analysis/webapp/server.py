@@ -476,7 +476,7 @@ def reconnect_view():
     derived from your own calendar history; unlike the old Future tab,
     nothing calls out to the network."""
     df = _get_df()
-    days_ahead = request.args.get("days_ahead", 60, type=int)
+    days_ahead = request.args.get("days_ahead", 14, type=int)
     cache = _load_geocode_cache()
     message = None
     if not cache:
