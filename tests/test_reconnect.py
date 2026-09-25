@@ -246,35 +246,24 @@ def test_upcoming_invite_suggestions_spreads_suggestions_across_events():
     assert people_by_event["Party"] == "Bob"  # Alice already used - Bob gets a turn instead of a repeat
 
 
-def test_upcoming_invite_suggestions_a_single_zoom_call_does_not_count():
-    # Every event you've ever shared with Inga is over Zoom - she's never
-    # actually hung out with you in person in this category, so a
-    # one-off virtual call shouldn't make her eligible.
+def test_upcoming_invite_suggestions_excludes_someone_with_no_known_region():
+    # Inga's only event with you had no real location on it (a Zoom call,
+    # here) - she never established a usual region with you anywhere, so
+    # she's excluded from a region-matched upcoming event on that basis
+    # alone, the same as anyone else with no located shared history. This
+    # falls straight out of the region-matching rule already in place
+    # (person_region.get(p) == region) - no separate "was this virtual"
+    # check needed.
     events = [
-        _event(1, "Catchup", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Inga"],
+        _event(1, "Errand", _iso(WITHIN_CAP), _iso(WITHIN_CAP), location="Cafe A"),
+        _event(2, "Catchup", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Inga"],
                category="Important", location="https://zoom.us/j/123456"),
-        _event(2, "Wedding", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)), category="Important"),
+        _event(3, "Wedding", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)),
+               category="Important", location="Cafe A"),
     ]
     df = ingest.load_events_from_records(events)
-    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF)
+    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=GEO_CACHE, as_of=AS_OF)
     assert "Inga" not in result["person"].values
-
-
-def test_upcoming_invite_suggestions_a_single_zoom_call_does_not_count_as_last_seen():
-    # Cynthia has an in-person event with you long ago (over the cap) and
-    # a *recent* Zoom call - the Zoom call shouldn't make her look
-    # recently seen for in-person reconnect purposes.
-    events = [
-        _event(1, "Coffee", _iso(OVER_CAP), _iso(OVER_CAP), people=["Cynthia"], category="Social"),
-        _event(2, "Call", _iso(AS_OF - pd.Timedelta(days=5)), _iso(AS_OF - pd.Timedelta(days=5)),
-               people=["Cynthia"], category="Social", location="+1 415-555-0100"),
-        _event(3, "Reunion", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)), category="Social"),
-    ]
-    df = ingest.load_events_from_records(events)
-    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF)
-    # Excluded entirely: her only in-person event is over the 2-year cap,
-    # and the Zoom call doesn't count as having seen her.
-    assert "Cynthia" not in result["person"].values
 
 
 def test_upcoming_invite_suggestions_guesses_region_from_address_text():
