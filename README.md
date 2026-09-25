@@ -118,20 +118,22 @@ tab's own filters stack on top.
   approximately, shows up with its reason in the **Geocoding notes** card,
   instead of a bare "N not geocoded" count with no way to tell why.
 - **Future** — reconnect suggestions built entirely from your own calendar
-  history (no network calls). **Who to invite back** looks at your own
-  recurring events (from Habits' repeating-events detection) that have
-  slowed down or stopped, naming each one's regulars, most overdue first.
-  **Who to invite to what's already on your calendar** looks at events
-  already scheduled in the next two weeks and suggests who to invite to
-  each one - people you genuinely haven't seen anywhere in at least two
-  years (a flat threshold, not a ratio against how often you used to see
-  them - a ratio makes a single old contact look permanently "overdue"
-  off one data point) who you've also hung out with before in that same
-  event category (so a Work meeting doesn't get a purely-personal friend
-  suggested), and, where the event's location is geocoded, whose own
-  usual hangout region actually matches where the event is (so a Bay Area
-  friend doesn't get suggested for an LA dinner just because they're
-  otherwise overdue).
+  history (no network calls), both capped to people last seen within the
+  past two years - a ceiling, not a floor (a straight "days since last
+  seen" ranking, with no ceiling, would just put a decade-forgotten
+  contact permanently at the top of the list; they've likely drifted out
+  of your life for a reason and aren't a useful "reconnect" suggestion, so
+  they're excluded rather than surfaced). **Who to invite back** looks at
+  your own recurring events (from Habits' repeating-events detection) that
+  have slowed down or stopped, naming each one's regulars still within
+  that two-year window, most overdue first. **Who to invite to what's
+  already on your calendar** looks at events already scheduled in the next
+  two weeks and suggests who to invite to each one, further narrowed to
+  people you've also hung out with before in that same event category (so
+  a Work meeting doesn't get a purely-personal friend suggested), and,
+  where the event's location is geocoded, whose own usual hangout region
+  actually matches where the event is (so a Bay Area friend doesn't get
+  suggested for an LA dinner just because they're otherwise overdue).
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server

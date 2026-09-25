@@ -2,16 +2,19 @@
 quiet and who to invite back to each one, and who to invite to events
 already sitting on your calendar in the next two weeks.
 
-Upcoming-event suggestions are narrowed to people you genuinely haven't
-seen in a while (at least MIN_DAYS_SINCE_SEEN, a flat threshold rather
-than a ratio against their own usual cadence - a ratio makes a rare,
-one-off contact from years ago look permanently "overdue" off a single
-data point, which isn't a useful signal), further narrowed to people
-you've actually hung out with in that same category before (so a Work
-meeting doesn't get a purely-personal friend suggested) and, when the
-event's location is geocoded, to people whose own usual hangout region
-matches where the event actually is (so a Bay Area friend doesn't get
-suggested for an LA dinner).
+Both are capped at people last seen within MAX_DAYS_SINCE_SEEN (a flat
+threshold rather than a ratio against their own usual cadence - a ratio
+makes a rare, one-off contact from years ago look permanently "overdue"
+off a single data point). This is a ceiling, not a floor: someone you
+haven't shared an event with in a decade has likely drifted out of your
+life for a reason and isn't a useful "reconnect" suggestion, so they're
+excluded entirely rather than topping the list just for being the most
+overdue. Upcoming-event suggestions are further narrowed to people you've
+actually hung out with in that same category before (so a Work meeting
+doesn't get a purely-personal friend suggested) and, when the event's
+location is geocoded, to people whose own usual hangout region matches
+where the event actually is (so a Bay Area friend doesn't get suggested
+for an LA dinner).
 
 Deliberately built entirely from your own calendar history (felinni.social,
 felinni.recurring, felinni.regions), unlike the old Future tab's external
@@ -27,7 +30,7 @@ from .recurring import recurring_series
 from .regions import location_metro_map
 from .social import _exploded_people, person_frequency
 
-MIN_DAYS_SINCE_SEEN = 730  # ~2 years
+MAX_DAYS_SINCE_SEEN = 730  # ~2 years
 
 
 def _days_since_seen(df: pd.DataFrame, as_of: pd.Timestamp) -> pd.Series:
@@ -82,10 +85,13 @@ def suggested_invites(
     as_of: pd.Timestamp | None = None,
     min_occurrences: int = 4,
     top_attendees: int = 4,
+    max_days_since_seen: float = MAX_DAYS_SINCE_SEEN,
 ) -> pd.DataFrame:
-    """One row per (fading recurring event, past regular) pairing - so
-    reviving "Book Club" comes with a ready list of who used to show up,
-    most overdue (by raw days since you last saw them, anywhere) first."""
+    """One row per (fading recurring event, past regular) pairing, capped
+    to regulars last seen within `max_days_since_seen` days - so reviving
+    "Book Club" surfaces people you've actually drifted from recently, not
+    someone from a decade ago you likely haven't kept up with for a
+    reason - most overdue (within that cap) first."""
     as_of = as_of or pd.Timestamp.now()
     series = events_to_revive(df, as_of=as_of, min_occurrences=min_occurrences)
     columns = [
@@ -106,6 +112,8 @@ def suggested_invites(
             continue
         for person, count in exploded["person"].value_counts().head(top_attendees).items():
             days = days_since_seen.get(person)
+            if days is None or pd.isna(days) or days > max_days_since_seen:
+                continue
             rows.append({
                 "series_title": s["title"],
                 "series_category": s["category"],
@@ -114,14 +122,14 @@ def suggested_invites(
                 "series_days_since_last": s["days_since_last"],
                 "person": person,
                 "times_attended": int(count),
-                "days_since_seen": float(days) if days is not None and not pd.isna(days) else None,
+                "days_since_seen": float(days),
             })
 
     if not rows:
         return pd.DataFrame(columns=columns)
     result = pd.DataFrame(rows, columns=columns)
     return result.sort_values(
-        ["series_days_since_last", "days_since_seen"], ascending=[False, False], na_position="last",
+        ["series_days_since_last", "days_since_seen"], ascending=[False, False],
     ).reset_index(drop=True)
 
 
@@ -141,16 +149,18 @@ def upcoming_invite_suggestions(
     as_of: pd.Timestamp | None = None,
     days_ahead: int = 14,
     top_n: int = 5,
-    min_days_since_seen: float = MIN_DAYS_SINCE_SEEN,
+    max_days_since_seen: float = MAX_DAYS_SINCE_SEEN,
 ) -> pd.DataFrame:
     """For each event already on your calendar in the next `days_ahead`
-    days (two weeks by default), who to invite: people you've genuinely
-    lost touch with (haven't shared a real event with in at least
-    `min_days_since_seen` days) who you've also hung out with before in
-    that event's own category - so a Work meeting doesn't get a
-    purely-personal friend suggested just because they're otherwise
-    overdue. When the event's own location is geocoded, also requires the
-    person's own usual hangout region (their most common metro area across
+    days (two weeks by default), who to invite: people you haven't shared
+    a real event with recently but still within `max_days_since_seen` days
+    (a cap, not a floor - someone from a decade ago has likely drifted out
+    of your life for a reason, so they're excluded rather than topping the
+    list) who you've also hung out with before in that event's own
+    category - so a Work meeting doesn't get a purely-personal friend
+    suggested just because they're otherwise overdue. When the event's own
+    location is geocoded, also requires the person's own usual hangout
+    region (their most common metro area across
     shared, geocoded events) to match where the event actually is - but
     only when that region is actually known, so lacking geocoding for a
     person never excludes them on its own. Both signals are computed from
@@ -193,7 +203,7 @@ def upcoming_invite_suggestions(
         scored = []
         for person in candidates:
             days = days_since_seen.get(person)
-            if days is None or pd.isna(days) or days < min_days_since_seen:
+            if days is None or pd.isna(days) or days > max_days_since_seen:
                 continue
             scored.append((person, float(days)))
         scored.sort(key=lambda t: t[1], reverse=True)
