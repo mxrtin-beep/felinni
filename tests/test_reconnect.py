@@ -118,6 +118,8 @@ def test_upcoming_invite_suggestions_suggests_someone_from_the_same_category():
     df = ingest.load_events_from_records(events)
     result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF)
     assert "Priya" in result["person"].values
+    reason = result[result["person"] == "Priya"].iloc[0]["reason"]
+    assert "Work" in reason  # explains why Priya, not just that she's overdue
 
 
 def test_upcoming_invite_suggestions_excludes_people_not_seen_within_the_cap():
@@ -167,6 +169,9 @@ def test_upcoming_invite_suggestions_matches_region_when_geocoded():
     result = reconnect.upcoming_invite_suggestions(df, geocode_cache=GEO_CACHE, as_of=AS_OF)
     assert "Alice" in result["person"].values
     assert "Erin" not in result["person"].values
+    row = result[result["person"] == "Alice"].iloc[0]
+    assert row["event_location"] == "Cafe A"  # the raw calendar location, not just the derived region
+    assert "Los Angeles" in row["reason"]
 
 
 def test_upcoming_invite_suggestions_ignores_events_outside_the_window():

@@ -853,6 +853,50 @@ async function loadRecurringEvents() {
     ], rows);
 }
 
+// Groups consecutive rows for the same upcoming event (the API already
+// sorts by event_start) so the event/when/where cells can span every
+// suggested invite for that event instead of repeating per row.
+function renderUpcomingInviteTable(container, rows) {
+  if (!rows.length) {
+    container.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
+    return;
+  }
+  const groups = [];
+  for (const row of rows) {
+    const last = groups[groups.length - 1];
+    if (last && last.event_title === row.event_title && last.event_start === row.event_start) {
+      last.people.push(row);
+    } else {
+      groups.push({ event_title: row.event_title, event_start: row.event_start, where: row.event_location || row.region, people: [row] });
+    }
+  }
+
+  const personCellsHtml = row => `
+    <td>${escapeHtml(row.person)}</td>
+    <td>${escapeHtml(row.reason || "-")}</td>
+    <td>${miniLastSeenCellHtml(row.days_since_seen == null ? null : Math.round(row.days_since_seen))}</td>`;
+
+  const rowsHtml = groups.map(group => {
+    const span = group.people.length;
+    const firstRow = `<tr>
+      <td rowspan="${span}">${escapeHtml(group.event_title)}</td>
+      <td rowspan="${span}">${fmtDateTime(group.event_start)}</td>
+      <td rowspan="${span}">${escapeHtml(group.where || "-")}</td>
+      ${personCellsHtml(group.people[0])}
+    </tr>`;
+    const restRows = group.people.slice(1).map(row => `<tr>${personCellsHtml(row)}</tr>`).join("");
+    return firstRow + restRows;
+  }).join("");
+
+  container.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Upcoming event</th><th>When</th><th>Where</th><th>Invite</th><th>Why</th><th>Last seen them</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
 // --- Future (reconnect suggestions) ---
 async function loadFuture() {
   const data = await api("reconnect");
@@ -870,14 +914,7 @@ async function loadFuture() {
       { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
     ], data.invites);
 
-  table(document.getElementById("reconnect-upcoming-table"),
-    [
-      { key: "event_title", label: "Upcoming event" },
-      { key: "event_start", label: "When", format: fmtDateTime },
-      { key: "region", label: "Where" },
-      { key: "person", label: "Invite" },
-      { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
-    ], data.upcoming_invites);
+  renderUpcomingInviteTable(document.getElementById("reconnect-upcoming-table"), data.upcoming_invites);
 }
 
 // --- Travel ---

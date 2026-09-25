@@ -160,17 +160,17 @@ def upcoming_invite_suggestions(
     category - so a Work meeting doesn't get a purely-personal friend
     suggested just because they're otherwise overdue. When the event's own
     location is geocoded, also requires the person's own usual hangout
-    region (their most common metro area across
-    shared, geocoded events) to match where the event actually is - but
-    only when that region is actually known, so lacking geocoding for a
-    person never excludes them on its own. Both signals are computed from
-    history strictly before `as_of`, so an event's own not-yet-real guest
-    list can't skew either, and anyone already on the event's guest list
-    is skipped."""
+    region (their most common metro area across shared, geocoded events)
+    to match where the event actually is - but only when that region is
+    actually known, so lacking geocoding for a person never excludes them
+    on its own. Both signals are computed from history strictly before
+    `as_of`, so an event's own not-yet-real guest list can't skew either,
+    and anyone already on the event's guest list is skipped. Each row
+    carries a plain-English `reason` for why that person was picked."""
     as_of = as_of or pd.Timestamp.now()
     columns = [
         "event_title", "event_category", "event_start", "event_location", "region",
-        "person", "days_since_seen",
+        "person", "days_since_seen", "reason",
     ]
     events = upcoming_events(df, as_of=as_of, days_ahead=days_ahead)
     if events.empty:
@@ -209,6 +209,9 @@ def upcoming_invite_suggestions(
         scored.sort(key=lambda t: t[1], reverse=True)
 
         for person, days in scored[:top_n]:
+            reason = f"You've been to {category} events with them before, last {round(days)} days ago"
+            if region and person_region.get(person) == region:
+                reason += f", usually around {region}"
             rows.append({
                 "event_title": event["title"],
                 "event_category": category,
@@ -217,6 +220,7 @@ def upcoming_invite_suggestions(
                 "region": region,
                 "person": person,
                 "days_since_seen": days,
+                "reason": reason,
             })
 
     if not rows:
