@@ -94,3 +94,67 @@ def test_suggested_invites_names_book_clubs_regulars(df):
 def test_suggested_invites_empty_when_nothing_has_faded(df):
     result = reconnect.suggested_invites(df, as_of=pd.Timestamp("2023-01-25"))
     assert result.empty
+
+
+# --- upcoming_invite_suggestions: geography-aware invite suggestions for
+# events already on the calendar ---
+
+LA_CACHE_ENTRY = {"lat": 34.05, "lon": -118.24, "city": "Los Angeles", "country": "United States"}
+BAY_CACHE_ENTRY = {"lat": 37.77, "lon": -122.42, "city": "San Francisco", "country": "United States"}
+GEO_CACHE = {"Cafe A": LA_CACHE_ENTRY, "Cafe B": BAY_CACHE_ENTRY}
+
+
+def _located_event(idx, title, start, end, location, people=None, is_all_day=False, category="Social"):
+    event = _event(idx, title, start, end, people=people, is_all_day=is_all_day, category=category)
+    event["location"] = location
+    return event
+
+
+@pytest.fixture
+def geo_df():
+    events = [
+        # Alice: always hangs out at Cafe A, in LA.
+        _located_event(1, "Coffee", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z", "Cafe A", people=["Alice"]),
+        _located_event(2, "Coffee", "2024-01-08T09:00:00Z", "2024-01-08T10:00:00Z", "Cafe A", people=["Alice"]),
+        _located_event(3, "Coffee", "2024-01-15T09:00:00Z", "2024-01-15T10:00:00Z", "Cafe A", people=["Alice"]),
+        _located_event(4, "Coffee", "2024-01-22T09:00:00Z", "2024-01-22T10:00:00Z", "Cafe A", people=["Alice"]),
+        # Erin: always hangs out at Cafe B, in the Bay Area - just as overdue
+        # as Alice, but in the wrong place for an LA event.
+        _located_event(5, "Coffee", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z", "Cafe B", people=["Erin"]),
+        _located_event(6, "Coffee", "2024-01-08T09:00:00Z", "2024-01-08T10:00:00Z", "Cafe B", people=["Erin"]),
+        _located_event(7, "Coffee", "2024-01-15T09:00:00Z", "2024-01-15T10:00:00Z", "Cafe B", people=["Erin"]),
+        _located_event(8, "Coffee", "2024-01-22T09:00:00Z", "2024-01-22T10:00:00Z", "Cafe B", people=["Erin"]),
+        # An upcoming, already-scheduled dinner at Cafe A (LA).
+        _located_event(9, "Dinner", "2024-08-15T19:00:00Z", "2024-08-15T20:30:00Z", "Cafe A"),
+    ]
+    return ingest.load_events_from_records(events)
+
+
+def test_upcoming_invite_suggestions_matches_region_not_just_overdue(geo_df):
+    result = reconnect.upcoming_invite_suggestions(geo_df, GEO_CACHE, as_of=AS_OF)
+    dinner = result[result["event_title"] == "Dinner"]
+    assert "Alice" in dinner["person"].values  # usually seen at Cafe A, in LA - same region as the event
+    assert "Erin" not in dinner["person"].values  # usually seen at Cafe B, in the Bay Area - wrong region
+
+
+def test_upcoming_invite_suggestions_empty_without_geocode_cache(geo_df):
+    result = reconnect.upcoming_invite_suggestions(geo_df, {}, as_of=AS_OF)
+    assert result.empty
+
+
+def test_upcoming_invite_suggestions_excludes_already_invited(geo_df):
+    events = ingest.load_events_from_records([
+        _located_event(1, "Coffee", "2024-01-01T09:00:00Z", "2024-01-01T10:00:00Z", "Cafe A", people=["Alice"]),
+        _located_event(2, "Coffee", "2024-01-08T09:00:00Z", "2024-01-08T10:00:00Z", "Cafe A", people=["Alice"]),
+        _located_event(3, "Coffee", "2024-01-15T09:00:00Z", "2024-01-15T10:00:00Z", "Cafe A", people=["Alice"]),
+        _located_event(4, "Coffee", "2024-01-22T09:00:00Z", "2024-01-22T10:00:00Z", "Cafe A", people=["Alice"]),
+        # Alice is already on the upcoming event's own guest list.
+        _located_event(5, "Dinner", "2024-08-15T19:00:00Z", "2024-08-15T20:30:00Z", "Cafe A", people=["Alice"]),
+    ])
+    result = reconnect.upcoming_invite_suggestions(events, GEO_CACHE, as_of=AS_OF)
+    assert result.empty
+
+
+def test_upcoming_invite_suggestions_ignores_events_outside_the_window(geo_df):
+    result = reconnect.upcoming_invite_suggestions(geo_df, GEO_CACHE, as_of=AS_OF, days_ahead=5)
+    assert result.empty  # the dinner is ~14 days out, past a 5-day window

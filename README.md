@@ -124,7 +124,13 @@ tab's own filters stack on top.
   overdue after a month than a once-a-year contact does; which of your own
   recurring events (from Habits' repeating-events detection) have slowed
   down or stopped relative to their usual cadence; and, for each of those,
-  its regulars to invite back, most-overdue first.
+  its regulars to invite back, most-overdue first. Also looks at events
+  already sitting on your calendar in the near future and suggests who to
+  invite to each one - people who are overdue *and* whose own usual
+  hangout region (via the same location clustering the Travel tab uses)
+  actually matches where the event is, so an overdue Bay Area friend
+  doesn't get suggested for an LA dinner just because they're overdue in
+  the abstract. Needs locations geocoded first (Map tab).
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server

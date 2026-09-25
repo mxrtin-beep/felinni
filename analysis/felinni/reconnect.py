@@ -1,17 +1,22 @@
 """Reconnect suggestions: who's overdue to see again, which of your own
-recurring things have gone quiet, and - combining the two - who used to
-show up to a fading recurring event and might be worth inviting back.
+recurring things have gone quiet, who used to show up to a fading
+recurring event and might be worth inviting back, and who to invite to
+events already sitting on your calendar in the near future - filtered to
+people whose own usual hangout region matches where that event actually
+is, so a Bay Area friend doesn't get suggested for an LA dinner.
 
-Deliberately built entirely from your own calendar history (felinni.social
-and felinni.recurring), unlike the old Future tab's external event search
-(felinni.future_events, removed - see git history) which depended on
-unreliable third-party search backends. Nothing here makes a network call."""
+Deliberately built entirely from your own calendar history (felinni.social,
+felinni.recurring, felinni.regions), unlike the old Future tab's external
+event search (felinni.future_events, removed - see git history) which
+depended on unreliable third-party search backends. Nothing here makes a
+network call."""
 from __future__ import annotations
 
 import pandas as pd
 
 from .ingest import strip_with_suffix
 from .recurring import recurring_series
+from .regions import location_metro_map
 from .social import _exploded_people, person_frequency
 
 
@@ -106,4 +111,106 @@ def suggested_invites(
     result = pd.DataFrame(rows, columns=columns)
     return result.sort_values(
         ["series_days_since_last", "overdue_ratio"], ascending=[False, False], na_position="last",
+    ).reset_index(drop=True)
+
+
+def upcoming_events(df: pd.DataFrame, as_of: pd.Timestamp | None = None, days_ahead: int = 60) -> pd.DataFrame:
+    """Timed events already on your calendar in the near future (all-day
+    placeholders excluded, same reasoning as felinni.social._exploded_people
+    - a full-day block isn't a "hang out" the way a timed event is)."""
+    as_of = as_of or pd.Timestamp.now()
+    window_end = as_of + pd.Timedelta(days=days_ahead)
+    upcoming = df[~df["is_all_day"] & (df["start"] > as_of) & (df["start"] <= window_end)]
+    return upcoming.sort_values("start")
+
+
+def _person_usual_regions(df: pd.DataFrame, metro_map: dict[str, str]) -> dict[str, str]:
+    """Each person's most common region (metro area, via felinni.regions'
+    same location->metro clustering the Travel tab uses) across every
+    timed, geocoded event you've shared with them - the place you'd
+    actually invite them to, not just wherever any of your events happen
+    to fall. Ties/majority broken by number of distinct shared events in
+    that region, same as a person's overall event count elsewhere."""
+    located = df.dropna(subset=["location"])
+    exploded = _exploded_people(located)
+    if exploded.empty:
+        return {}
+    exploded = exploded.assign(region=exploded["location"].map(metro_map.get)).dropna(subset=["region"])
+    if exploded.empty:
+        return {}
+    top_region = exploded.groupby(["person", "region"]).size().groupby(level=0).idxmax()
+    return {person: region for person, (_, region) in top_region.items()}
+
+
+def upcoming_invite_suggestions(
+    df: pd.DataFrame,
+    geocode_cache: dict,
+    as_of: pd.Timestamp | None = None,
+    days_ahead: int = 60,
+    top_n: int = 5,
+    min_overdue_ratio: float = 1.0,
+) -> pd.DataFrame:
+    """For each upcoming, geocoded event already on your calendar, who to
+    invite: people who are overdue to see (`people_to_reconnect_with`)
+    *and* whose own usual hangout region matches where the event actually
+    is (`_person_usual_regions`) - so an overdue Bay Area friend doesn't
+    get suggested for an LA dinner just because they're overdue in the
+    abstract. Both the "overdue" and "usual region" signals are computed
+    from history strictly before `as_of`, so an event's own not-yet-real
+    guest list can't skew either. Needs geocoded locations (the Map tab's
+    "Geocode locations" button) - with nothing geocoded yet, there's no
+    region to match against and this returns empty."""
+    as_of = as_of or pd.Timestamp.now()
+    columns = [
+        "event_title", "event_start", "event_location", "region",
+        "person", "days_since_seen", "overdue_ratio",
+    ]
+    if not geocode_cache:
+        return pd.DataFrame(columns=columns)
+
+    events = upcoming_events(df, as_of=as_of, days_ahead=days_ahead).dropna(subset=["location"])
+    if events.empty:
+        return pd.DataFrame(columns=columns)
+
+    past = df[df["start"] <= as_of]
+    metro_map = location_metro_map(past, geocode_cache)
+    if not metro_map:
+        return pd.DataFrame(columns=columns)
+
+    person_region = _person_usual_regions(past, metro_map)
+    people_stats = people_to_reconnect_with(past, min_events=1, as_of=as_of).set_index("person")
+
+    rows = []
+    for _, event in events.iterrows():
+        region = metro_map.get(event["location"])
+        if not region:
+            continue
+        already_invited = set(event["people"]) if isinstance(event["people"], list) else set()
+        candidates = [p for p, r in person_region.items() if r == region and p not in already_invited]
+
+        scored = []
+        for person in candidates:
+            if person not in people_stats.index:
+                continue
+            ratio = people_stats.loc[person, "overdue_ratio"]
+            if pd.isna(ratio) or ratio < min_overdue_ratio:
+                continue
+            scored.append((person, float(ratio), float(people_stats.loc[person, "days_since_seen"])))
+        scored.sort(key=lambda t: t[1], reverse=True)
+
+        for person, ratio, days_since in scored[:top_n]:
+            rows.append({
+                "event_title": event["title"],
+                "event_start": event["start"],
+                "event_location": event["location"],
+                "region": region,
+                "person": person,
+                "days_since_seen": days_since,
+                "overdue_ratio": ratio,
+            })
+
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows, columns=columns).sort_values(
+        ["event_start", "overdue_ratio"], ascending=[True, False],
     ).reset_index(drop=True)

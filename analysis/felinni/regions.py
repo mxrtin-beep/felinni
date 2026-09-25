@@ -160,6 +160,15 @@ def _location_metro_map(df: pd.DataFrame, coords: dict[str, dict | None]) -> dic
     return {loc: cluster_label[cid] for loc, cid in cluster_of.items()}
 
 
+def location_metro_map(df: pd.DataFrame, coords: dict[str, dict | None]) -> dict[str, str]:
+    """Public wrapper over `_location_metro_map`, for callers outside this
+    module (felinni.reconnect, matching a person's usual hangout region
+    against an upcoming event's location) that want the same
+    location -> metro grouping the Travel tab uses, without duplicating
+    the clustering logic here."""
+    return _location_metro_map(df, coords)
+
+
 def _with_region(df: pd.DataFrame, coords: dict[str, dict | None]) -> pd.DataFrame:
     located = df.dropna(subset=["location"]).copy()
     metro_map = _location_metro_map(df, coords)

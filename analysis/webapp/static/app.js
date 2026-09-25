@@ -853,9 +853,14 @@ async function loadRecurringEvents() {
     ], rows);
 }
 
+const RECONNECT_UPCOMING_DEFAULT_NOTE =
+  "People overdue to see, filtered to whoever's usual hangout region actually matches where each upcoming event is - so a Bay Area friend doesn't show up for an LA dinner.";
+
 // --- Future (reconnect suggestions) ---
 async function loadFuture() {
   const data = await api("reconnect");
+
+  document.getElementById("reconnect-upcoming-note").textContent = data.message || RECONNECT_UPCOMING_DEFAULT_NOTE;
 
   table(document.getElementById("reconnect-people-table"),
     [
@@ -886,6 +891,16 @@ async function loadFuture() {
       { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
       { key: "overdue_ratio", label: "How overdue", num: true, format: v => v == null ? "-" : `${v.toFixed(1)}×` },
     ], data.invites);
+
+  table(document.getElementById("reconnect-upcoming-table"),
+    [
+      { key: "event_title", label: "Upcoming event" },
+      { key: "event_start", label: "When", format: fmtDateTime },
+      { key: "region", label: "Where" },
+      { key: "person", label: "Invite" },
+      { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
+      { key: "overdue_ratio", label: "How overdue", num: true, format: v => v == null ? "-" : `${v.toFixed(1)}×` },
+    ], data.upcoming_invites);
 }
 
 // --- Travel ---
