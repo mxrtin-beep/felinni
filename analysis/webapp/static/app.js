@@ -854,33 +854,13 @@ async function loadRecurringEvents() {
 }
 
 const RECONNECT_UPCOMING_DEFAULT_NOTE =
-  "People overdue to see, filtered to whoever's usual hangout region actually matches where each upcoming event is - so a Bay Area friend doesn't show up for an LA dinner.";
+  "People you haven't seen anywhere in at least two years, who you've also hung out with before in that same kind of event, and - where locations are geocoded - whose usual hangout region actually matches where the event is.";
 
 // --- Future (reconnect suggestions) ---
 async function loadFuture() {
   const data = await api("reconnect");
 
   document.getElementById("reconnect-upcoming-note").textContent = data.message || RECONNECT_UPCOMING_DEFAULT_NOTE;
-
-  table(document.getElementById("reconnect-people-table"),
-    [
-      { key: "person", label: "Person" },
-      { key: "events", label: "Events together", num: true },
-      { key: "days_since_seen", label: "Last seen", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
-      { key: "avg_interval_days", label: "Usual gap", num: true, format: fmtTenure },
-      { key: "overdue_ratio", label: "How overdue", num: true, format: v => v == null ? "-" : `${v.toFixed(1)}×` },
-      { key: "recent_events", label: "Recently", format: v => (v && v.length) ? escapeHtml(v.join(", ")) : "-" },
-    ], data.people);
-
-  table(document.getElementById("reconnect-events-table"),
-    [
-      { key: "title", label: "Event" },
-      { key: "category", label: "Category" },
-      { key: "cadence", label: "Usual cadence" },
-      { key: "last_seen", label: "Last seen", format: fmtDate },
-      { key: "days_since_last", label: "Days since", num: true, format: v => Math.round(v) },
-      { key: "status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
-    ], data.events);
 
   table(document.getElementById("reconnect-invites-table"),
     [
@@ -889,7 +869,6 @@ async function loadFuture() {
       { key: "person", label: "Regular" },
       { key: "times_attended", label: "Times attended", num: true },
       { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
-      { key: "overdue_ratio", label: "How overdue", num: true, format: v => v == null ? "-" : `${v.toFixed(1)}×` },
     ], data.invites);
 
   table(document.getElementById("reconnect-upcoming-table"),
@@ -899,7 +878,6 @@ async function loadFuture() {
       { key: "region", label: "Where" },
       { key: "person", label: "Invite" },
       { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
-      { key: "overdue_ratio", label: "How overdue", num: true, format: v => v == null ? "-" : `${v.toFixed(1)}×` },
     ], data.upcoming_invites);
 }
 
