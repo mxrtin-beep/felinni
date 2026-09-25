@@ -63,6 +63,25 @@ def _categories_shared_with(df: pd.DataFrame) -> dict[str, set[str]]:
     return exploded.groupby("person")["category"].agg(set).to_dict()
 
 
+def _last_event_with(df: pd.DataFrame) -> dict[str, dict]:
+    """Each person's most recent real, timed event with you - title, date,
+    and location - the concrete "last time we did something together"
+    context shown alongside each upcoming-event suggestion."""
+    exploded = _exploded_people(df)
+    if exploded.empty:
+        return {}
+    idx = exploded.groupby("person")["start"].idxmax()
+    latest = exploded.loc[idx].set_index("person")
+    return {
+        person: {
+            "title": row["title"],
+            "start": row["start"],
+            "location": row["location"] if pd.notna(row["location"]) else None,
+        }
+        for person, row in latest.iterrows()
+    }
+
+
 def _person_usual_regions(df: pd.DataFrame, metro_map: dict[str, str]) -> dict[str, str]:
     """Each person's most common region (metro area, via felinni.regions'
     same location->metro clustering the Travel tab uses) across every
@@ -126,13 +145,12 @@ def upcoming_invite_suggestions(
     person whose usual region is unknown (most people, unless you've
     geocoded several shared-event locations with them) is excluded too,
     not let through by default, so this stays a real region check rather
-    than one only rare conflicts trip - when the event's own location just
-    hasn't been geocoded yet, there's nothing to check against and this
-    falls back to category alone (the `reason` says so, rather than
-    silently pretending region was considered). Both signals are computed
-    from history strictly before `as_of`, so an event's own not-yet-real
-    guest list can't skew either, and anyone already on the event's guest
-    list is skipped.
+    than one only rare conflicts trip - when the event's own location
+    isn't geocoded (and its address text doesn't name a known city either),
+    there's nothing to check against and this falls back to category
+    alone. Both signals are computed from history strictly before `as_of`,
+    so an event's own not-yet-real guest list can't skew either, and
+    anyone already on the event's guest list is skipped.
 
     Among whoever qualifies for a given event, `top_n` are picked at
     random (seed it for a reproducible pick, e.g. in a test - the
@@ -152,12 +170,14 @@ def upcoming_invite_suggestions(
     different events that happen to share an exact start time, breaking
     the per-event grouping the frontend relies on to show each event once.
 
-    Each row carries a plain-English `reason` for why that person was
-    picked."""
+    Each row carries the title, date, and location of the last real event
+    you actually had with that person (`last_event_title`/`_date`/
+    `_location`), as concrete context for the suggestion in place of a
+    computed explanation."""
     as_of = as_of or pd.Timestamp.now()
     columns = [
-        "event_title", "event_category", "event_start", "event_location", "region",
-        "person", "days_since_seen", "reason",
+        "event_title", "event_category", "event_start", "event_location", "region", "person",
+        "days_since_seen", "last_event_title", "last_event_date", "last_event_location",
     ]
     events = upcoming_events(df, as_of=as_of, days_ahead=days_ahead)
     if events.empty:
@@ -167,6 +187,7 @@ def upcoming_invite_suggestions(
     past = df[df["start"] <= as_of]
     days_since_seen = _days_since_seen(past, as_of)
     categories_by_person = _categories_shared_with(past)
+    last_event_by_person = _last_event_with(past)
 
     metro_map = location_metro_map(past, geocode_cache) if geocode_cache else {}
     person_region = _person_usual_regions(past, metro_map) if metro_map else {}
@@ -181,16 +202,12 @@ def upcoming_invite_suggestions(
         category = event["category"]
         already_invited = set(event["people"]) if isinstance(event["people"], list) else set()
         location = event["location"]
-        region = metro_map.get(location)
-        region_is_guessed = False
-        if region is None:
-            # This exact address hasn't itself been geocoded, but its text
-            # might still name a city you have other geocoded locations
-            # in (e.g. "1903 Hyperion Ave Los Angeles, CA" naming a metro
-            # you already know from some other LA venue) - see
-            # felinni.regions.guess_region_from_text.
-            region = guess_region_from_text(location, metro_map)
-            region_is_guessed = region is not None
+        # This exact address might not itself be geocoded, but its text
+        # could still name a city you have other geocoded locations in
+        # (e.g. "1903 Hyperion Ave Los Angeles, CA" naming a metro you
+        # already know from some other LA venue) - see
+        # felinni.regions.guess_region_from_text.
+        region = metro_map.get(location) or guess_region_from_text(location, metro_map)
 
         candidates = [
             person for person, categories in categories_by_person.items()
@@ -224,13 +241,7 @@ def upcoming_invite_suggestions(
             already_suggested.add(person)
 
         for person, days in picked:
-            reason = f"You've been to {category} events with them before, last {round(days)} days ago"
-            if region and region_is_guessed:
-                reason += f", usually around {region} (guessed from the address text, not geocoded)"
-            elif region:
-                reason += f", usually around {region}"
-            else:
-                reason += " (that location isn't geocoded yet, so this wasn't narrowed by region)"
+            last_event = last_event_by_person.get(person) or {}
             rows.append({
                 "event_title": event["title"],
                 "event_category": category,
@@ -239,7 +250,9 @@ def upcoming_invite_suggestions(
                 "region": region,
                 "person": person,
                 "days_since_seen": days,
-                "reason": reason,
+                "last_event_title": last_event.get("title"),
+                "last_event_date": last_event.get("start"),
+                "last_event_location": last_event.get("location"),
             })
 
     if not rows:

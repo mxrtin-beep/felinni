@@ -89,15 +89,50 @@ def test_upcoming_invite_suggestions_requires_shared_category():
 
 def test_upcoming_invite_suggestions_suggests_someone_from_the_same_category():
     events = [
-        _event(1, "Standup", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Priya"], category="Work"),
+        _event(1, "Standup", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Priya"],
+               category="Work", location="Office"),
         _event(2, "Standup", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)),
                category="Work", location=SOME_VENUE),
     ]
     df = ingest.load_events_from_records(events)
     result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF, seed=0)
     assert "Priya" in result["person"].values
-    reason = result[result["person"] == "Priya"].iloc[0]["reason"]
-    assert "Work" in reason  # explains why Priya, not just that she's overdue
+    row = result[result["person"] == "Priya"].iloc[0]
+    # The last real event actually had with Priya, as concrete context.
+    assert row["last_event_title"] == "Standup"
+    assert row["last_event_location"] == "Office"
+    assert pd.Timestamp(row["last_event_date"]) == WITHIN_CAP
+
+
+def test_upcoming_invite_suggestions_last_event_location_is_none_when_unset():
+    events = [
+        _event(1, "Coffee", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Priya"], category="Work"),  # no location
+        _event(2, "Standup", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)),
+               category="Work", location=SOME_VENUE),
+    ]
+    df = ingest.load_events_from_records(events)
+    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF, seed=0)
+    row = result[result["person"] == "Priya"].iloc[0]
+    assert row["last_event_title"] == "Coffee"
+    assert row["last_event_location"] is None
+
+
+def test_upcoming_invite_suggestions_max_days_since_seen_is_adjustable():
+    events = [
+        _event(1, "Coffee", _iso(AS_OF - pd.Timedelta(days=100)), _iso(AS_OF - pd.Timedelta(days=100)),
+               people=["Priya"], category="Work"),
+        _event(2, "Standup", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)),
+               category="Work", location=SOME_VENUE),
+    ]
+    df = ingest.load_events_from_records(events)
+    # Default 2-year cap: 100 days ago is well within it.
+    default_result = reconnect.upcoming_invite_suggestions(df, geocode_cache=None, as_of=AS_OF, seed=0)
+    assert "Priya" in default_result["person"].values
+    # A shorter, caller-supplied cap excludes her.
+    short_cap_result = reconnect.upcoming_invite_suggestions(
+        df, geocode_cache=None, as_of=AS_OF, seed=0, max_days_since_seen=30,
+    )
+    assert short_cap_result.empty
 
 
 def test_upcoming_invite_suggestions_excludes_people_not_seen_within_the_cap():
@@ -196,18 +231,19 @@ def test_upcoming_invite_suggestions_default_window_is_two_weeks():
     assert result.empty  # 20 days out, past the default 14-day window
 
 
-def test_upcoming_invite_suggestions_notes_when_the_events_own_location_isnt_geocoded():
+def test_upcoming_invite_suggestions_falls_back_to_category_when_not_geocoded():
     events = [
         _event(1, "Coffee", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Priya"], category="Work"),
         _event(2, "Standup", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)),
                category="Work", location="Some Untracked Office"),
     ]
     df = ingest.load_events_from_records(events)
-    # A non-empty cache that simply doesn't cover this event's own location.
+    # A non-empty cache that simply doesn't cover this event's own location,
+    # and whose text doesn't name any known city either - Priya still
+    # qualifies on category alone.
     result = reconnect.upcoming_invite_suggestions(df, geocode_cache=GEO_CACHE, as_of=AS_OF, seed=0)
     row = result[result["person"] == "Priya"].iloc[0]
     assert row["region"] is None
-    assert "isn't geocoded" in row["reason"]
 
 
 def test_upcoming_invite_suggestions_spreads_suggestions_across_events():
@@ -286,7 +322,6 @@ def test_upcoming_invite_suggestions_guesses_region_from_address_text():
     assert "Erin" not in result["person"].values  # known Bay Area, excluded
     row = result[result["person"] == "Alice"].iloc[0]
     assert row["region"] == "Los Angeles, United States"
-    assert "guessed from the address" in row["reason"]
 
 
 def test_upcoming_invite_suggestions_keeps_same_start_events_grouped_separately():

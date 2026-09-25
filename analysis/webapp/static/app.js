@@ -871,9 +871,16 @@ function renderUpcomingInviteTable(container, rows) {
     }
   }
 
+  const lastEventCellHtml = row => {
+    if (!row.last_event_title) return "-";
+    const parts = [escapeHtml(row.last_event_title), fmtDate(row.last_event_date)];
+    if (row.last_event_location) parts.push(escapeHtml(row.last_event_location));
+    return parts.join(" — ");
+  };
+
   const personCellsHtml = row => `
     <td>${escapeHtml(row.person)}</td>
-    <td>${escapeHtml(row.reason || "-")}</td>
+    <td>${lastEventCellHtml(row)}</td>
     <td>${miniLastSeenCellHtml(row.days_since_seen == null ? null : Math.round(row.days_since_seen))}</td>`;
 
   const rowsHtml = groups.map(group => {
@@ -891,7 +898,7 @@ function renderUpcomingInviteTable(container, rows) {
   container.innerHTML = `
     <table>
       <thead><tr>
-        <th>Upcoming event</th><th>When</th><th>Where</th><th>Invite</th><th>Why</th><th>Last seen them</th>
+        <th>Upcoming event</th><th>When</th><th>Where</th><th>Invite</th><th>Last event with them</th><th>Last seen them</th>
       </tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
@@ -900,12 +907,15 @@ function renderUpcomingInviteTable(container, rows) {
 // --- Future (reconnect suggestions) ---
 async function loadFuture() {
   const refreshBtn = document.getElementById("reconnect-refresh-btn");
+  const maxDaysInput = document.getElementById("reconnect-max-days");
   if (!refreshBtn.dataset.wired) {
     refreshBtn.addEventListener("click", loadFuture);
+    maxDaysInput.addEventListener("change", loadFuture);
     refreshBtn.dataset.wired = "1";
   }
 
-  const data = await api("reconnect");
+  const maxDays = maxDaysInput.value || maxDaysInput.placeholder || 730;
+  const data = await api(`reconnect?max_days_since_seen=${encodeURIComponent(maxDays)}`);
 
   const upcomingNote = document.getElementById("reconnect-upcoming-note");
   upcomingNote.textContent = data.message || "";

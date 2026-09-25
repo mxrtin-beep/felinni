@@ -122,29 +122,31 @@ tab's own filters stack on top.
   calendar** looks at *located* events already scheduled in the next two
   weeks (nothing without a location - there'd be no place to match a
   region against) and suggests who to invite to each one - people you
-  genuinely haven't seen anywhere in the past two years (a ceiling, not a
-  floor: a straight "days since last seen" ranking, with no ceiling,
-  would just put a decade-forgotten contact permanently at the top of the
-  list, and they've likely drifted out of your life for a reason rather
-  than being a useful "reconnect" suggestion), further narrowed to people
-  you've also hung out with before in that same event category (so a Work
-  meeting doesn't get a purely-personal friend suggested), and, where the
-  event's own specific location has been geocoded - or, failing that,
-  where its address text names a city you already have other geocoded
-  locations in - whose own usual hangout region actually matches where
-  the event is (so a Bay Area friend doesn't get suggested for an LA
-  dinner just because they're otherwise overdue; someone you've never
-  shared a real, located event with anywhere has no usual region at all,
-  so they're excluded from a region-matched event the same way - no
-  separate check for a purely-virtual contact needed). A "Why" column on
-  each suggestion says whether region was actually part of the reasoning,
-  geocoded or guessed from the address text, or skipped entirely because
-  neither was available. Everyone who clears those filters is a
-  reasonable suggestion, so which `top_n` (5 by default) actually show up
-  is random rather than always the most overdue - click **Refresh** for a
-  new random set. A person already suggested for one event is preferred
-  to sit out a later one, so a single random draw still spreads across
-  different people instead of clustering on a few by chance.
+  genuinely haven't seen anywhere in at least the last "Haven't seen in at
+  least ___ days" setting (two years/730 by default, and yours to adjust
+  - a ceiling, not a floor: a straight "days since last seen" ranking,
+  with no ceiling, would just put a decade-forgotten contact permanently
+  at the top of the list, and they've likely drifted out of your life for
+  a reason rather than being a useful "reconnect" suggestion), further
+  narrowed to people you've also hung out with before in that same event
+  category (so a Work meeting doesn't get a purely-personal friend
+  suggested), and, where the event's own specific location has been
+  geocoded - or, failing that, where its address text names a city you
+  already have other geocoded locations in - whose own usual hangout
+  region actually matches where the event is (so a Bay Area friend
+  doesn't get suggested for an LA dinner just because they're otherwise
+  overdue; someone you've never shared a real, located event with
+  anywhere has no usual region at all, so they're excluded from a
+  region-matched event the same way - no separate check for a
+  purely-virtual contact needed). A "Last event with them" column shows
+  the title, date, and location of the last real event you actually had
+  with that person, as concrete context. Everyone who clears those
+  filters is a reasonable suggestion, so which `top_n` (5 by default)
+  actually show up is random rather than always the most overdue - click
+  **Refresh** for a new random set. A person already suggested for one
+  event is preferred to sit out a later one, so a single random draw
+  still spreads across different people instead of clustering on a few by
+  chance.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server
