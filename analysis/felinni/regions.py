@@ -160,6 +160,38 @@ def _location_metro_map(df: pd.DataFrame, coords: dict[str, dict | None]) -> dic
     return {loc: cluster_label[cid] for loc, cid in cluster_of.items()}
 
 
+def location_metro_map(df: pd.DataFrame, coords: dict[str, dict | None]) -> dict[str, str]:
+    """Public wrapper over `_location_metro_map`, for callers outside this
+    module (felinni.reconnect, matching a person's usual hangout region
+    against an upcoming event's location) that want the same
+    location -> metro grouping the Travel tab uses, without duplicating
+    the clustering logic here."""
+    return _location_metro_map(df, coords)
+
+
+def guess_region_from_text(location: str, metro_map: dict[str, str]) -> str | None:
+    """Best-effort region for an address that hasn't been individually
+    geocoded yet: if its text contains the name of a city you already have
+    OTHER geocoded locations in (any distinct label already present in
+    `metro_map`, e.g. "Los Angeles, United States" from a different venue
+    in that same metro), assume this address is in that metro too. Purely
+    a substring match against city names you've already established via
+    real geocoding - no network call, no new geocoding, and it can only
+    ever recognize a city you've already geocoded *something* in, never
+    invent one. Returns None (same as "no signal") when nothing matches,
+    or when more than one known city name matches and it'd be a guess
+    which one is right (e.g. "Portland" appearing in both an Oregon and a
+    Maine metro label - safer to say nothing than to pick wrong)."""
+    if not isinstance(location, str) or not location or not metro_map:
+        return None
+    location_lower = location.lower()
+    matches = {
+        label for label in set(metro_map.values())
+        if (city := label.rsplit(",", 1)[0].strip()) and city.lower() in location_lower
+    }
+    return matches.pop() if len(matches) == 1 else None
+
+
 def _with_region(df: pd.DataFrame, coords: dict[str, dict | None]) -> pd.DataFrame:
     located = df.dropna(subset=["location"]).copy()
     metro_map = _location_metro_map(df, coords)

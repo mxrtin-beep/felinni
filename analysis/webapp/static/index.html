@@ -19,6 +19,7 @@
   <button data-panel="people">People</button>
   <button data-panel="habits">Habits</button>
   <button data-panel="travel">Travel</button>
+  <button data-panel="future">Future</button>
   <!-- Anomalies tab hidden for now - the flagging wasn't reading as useful
        signal in practice; felinni.anomalies/api/anomalies are still there,
        revisit before re-enabling this nav button + panel-anomalies below. -->
@@ -241,6 +242,20 @@
       </div>
       <p class="card-note">A finer breakdown within one metro area - defaults to home.</p>
       <div id="travel-neighborhoods-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-future">
+    <div class="card">
+      <div class="controls">
+        <h2 style="margin:0">Who to invite to what's already on your calendar</h2>
+        <label>Haven't seen in at least
+          <input type="number" id="reconnect-max-days" min="0" step="1" value="730" style="width:70px"> days
+        </label>
+        <button type="button" id="reconnect-refresh-btn">Refresh</button>
+      </div>
+      <p class="card-note" id="reconnect-upcoming-note" style="display:none"></p>
+      <div id="reconnect-upcoming-table"></div>
     </div>
   </section>
 

@@ -573,6 +573,7 @@ async function reloadAll() {
     loadPeople(),
     refreshHabit(),
     loadTravel(),
+    loadFuture(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
   ]);
 }
@@ -850,6 +851,77 @@ async function loadRecurringEvents() {
       { key: "days_since_last", label: "Days since", num: true, format: v => Math.round(v) },
       { key: "status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
     ], rows);
+}
+
+// Groups consecutive rows for the same upcoming event (the API already
+// sorts by event_start) so the event/when/where cells can span every
+// suggested invite for that event instead of repeating per row.
+function renderUpcomingInviteTable(container, rows) {
+  if (!rows.length) {
+    container.innerHTML = '<p class="empty-note">Nothing here yet.</p>';
+    return;
+  }
+  const groups = [];
+  for (const row of rows) {
+    const last = groups[groups.length - 1];
+    if (last && last.event_title === row.event_title && last.event_start === row.event_start) {
+      last.people.push(row);
+    } else {
+      groups.push({ event_title: row.event_title, event_start: row.event_start, where: row.event_location || row.region, people: [row] });
+    }
+  }
+
+  const lastEventCellHtml = row => {
+    if (!row.last_event_title) return "-";
+    const parts = [escapeHtml(row.last_event_title), fmtDate(row.last_event_date)];
+    if (row.last_event_location) parts.push(escapeHtml(row.last_event_location));
+    return parts.join(" — ");
+  };
+
+  const personCellsHtml = row => `
+    <td>${escapeHtml(row.person)}</td>
+    <td>${lastEventCellHtml(row)}</td>
+    <td>${miniLastSeenCellHtml(row.days_since_seen == null ? null : Math.round(row.days_since_seen))}</td>`;
+
+  const rowsHtml = groups.map(group => {
+    const span = group.people.length;
+    const firstRow = `<tr>
+      <td rowspan="${span}">${escapeHtml(group.event_title)}</td>
+      <td rowspan="${span}">${fmtDateTime(group.event_start)}</td>
+      <td rowspan="${span}">${escapeHtml(group.where || "-")}</td>
+      ${personCellsHtml(group.people[0])}
+    </tr>`;
+    const restRows = group.people.slice(1).map(row => `<tr>${personCellsHtml(row)}</tr>`).join("");
+    return firstRow + restRows;
+  }).join("");
+
+  container.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Upcoming event</th><th>When</th><th>Where</th><th>Invite</th><th>Last event with them</th><th>Last seen them</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
+// --- Future (reconnect suggestions) ---
+async function loadFuture() {
+  const refreshBtn = document.getElementById("reconnect-refresh-btn");
+  const maxDaysInput = document.getElementById("reconnect-max-days");
+  if (!refreshBtn.dataset.wired) {
+    refreshBtn.addEventListener("click", loadFuture);
+    maxDaysInput.addEventListener("change", loadFuture);
+    refreshBtn.dataset.wired = "1";
+  }
+
+  const maxDays = maxDaysInput.value || maxDaysInput.placeholder || 730;
+  const data = await api(`reconnect?max_days_since_seen=${encodeURIComponent(maxDays)}`);
+
+  const upcomingNote = document.getElementById("reconnect-upcoming-note");
+  upcomingNote.textContent = data.message || "";
+  upcomingNote.style.display = data.message ? "" : "none";
+
+  renderUpcomingInviteTable(document.getElementById("reconnect-upcoming-table"), data.upcoming_invites);
 }
 
 // --- Travel ---
@@ -1380,6 +1452,7 @@ async function refreshMap() {
     loadPeople(),
     loadHabits(meta),
     loadTravel(),
+    loadFuture(),
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();

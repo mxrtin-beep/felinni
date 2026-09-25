@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, reconnect, recurring, regions, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -464,6 +464,35 @@ def habit():
 def recurring_view():
     df = _get_df()
     return jsonify(records(recurring.recurring_series(df)))
+
+
+@app.get("/api/reconnect")
+def reconnect_view():
+    """The Future tab: who to invite to events already on your calendar in
+    the near future (matched to shared event category, and to geography
+    where locations are geocoded - see
+    felinni.reconnect.upcoming_invite_suggestions). `max_days_since_seen`
+    lets the dashboard's own control adjust the default 2-year cap on how
+    long ago "last seen" can be before someone's no longer a reconnect
+    candidate. Derived entirely from your own calendar history; unlike the
+    old Future tab, nothing calls out to the network."""
+    df = _get_df()
+    days_ahead = request.args.get("days_ahead", 14, type=int)
+    max_days_since_seen = request.args.get("max_days_since_seen", reconnect.MAX_DAYS_SINCE_SEEN, type=int)
+    cache = _load_geocode_cache()
+    message = None
+    if not cache:
+        message = (
+            "No locations geocoded yet, so upcoming-event suggestions aren't narrowed by "
+            "region yet. Click \"Geocode locations\" on the Map tab to add that."
+        )
+    return jsonify({
+        "upcoming_invites": records(reconnect.upcoming_invite_suggestions(
+            df, cache, days_ahead=days_ahead, max_days_since_seen=max_days_since_seen,
+        )),
+        "message": message,
+        "max_days_since_seen": max_days_since_seen,
+    })
 
 
 @app.get("/api/travel")
