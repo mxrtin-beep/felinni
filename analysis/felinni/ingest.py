@@ -152,6 +152,18 @@ def _location_for(location: str | None, note_tags: dict[str, list[str]]) -> str 
     return resolved
 
 
+def _is_virtual_for(location: str | None, note_tags: dict[str, list[str]]) -> bool:
+    """Whether an event's location is a meeting link or phone number
+    (felinni.ingest._is_junk_location) rather than a real place - computed
+    before `_location_for` nulls that out, so downstream code that cares
+    about "did I actually see this person in person" (felinni.reconnect)
+    can still tell the difference between a Zoom call and an event that
+    simply never had a location typed in."""
+    tagged = note_tags.get("location")
+    resolved = tagged[0] if tagged else location
+    return isinstance(resolved, str) and _is_junk_location(resolved)
+
+
 def timed_events(df: pd.DataFrame) -> pd.DataFrame:
     """Events with a specific start/end time - excludes all-day entries
     (vacations, birthdays, holidays, ...) that don't carry a real duration
@@ -172,7 +184,7 @@ def load_events_from_records(raw: list[dict]) -> pd.DataFrame:
     (felinni.calendar_sources) into one dataset."""
     if not raw:
         return pd.DataFrame(columns=[
-            "id", "title", "notes", "location", "start", "end", "duration_hours",
+            "id", "title", "notes", "location", "is_virtual", "start", "end", "duration_hours",
             "is_all_day", "calendar", "category", "calendar_color", "people", "n_people",
             "is_recurring", "url", "year", "month", "week", "weekday", "season",
         ])
@@ -187,6 +199,9 @@ def load_events_from_records(raw: list[dict]) -> pd.DataFrame:
     note_tags = df["noteTags"].apply(lambda d: d or {})
     df["category"] = [
         _category_for(cal, tags) for cal, tags in zip(df["calendarTitle"], note_tags)
+    ]
+    df["is_virtual"] = [
+        _is_virtual_for(loc, tags) for loc, tags in zip(df["location"], note_tags)
     ]
     df["location"] = [
         _location_for(loc, tags) for loc, tags in zip(df["location"], note_tags)
@@ -213,7 +228,7 @@ def load_events_from_records(raw: list[dict]) -> pd.DataFrame:
     df["season"] = df["month"].map(SEASON_BY_MONTH)
 
     return df[[
-        "id", "title", "notes", "location", "start", "end", "duration_hours",
+        "id", "title", "notes", "location", "is_virtual", "start", "end", "duration_hours",
         "is_all_day", "calendar", "category", "calendar_color", "people", "n_people",
         "is_recurring", "url", "year", "month", "week", "weekday", "season",
     ]].sort_values("start").reset_index(drop=True)

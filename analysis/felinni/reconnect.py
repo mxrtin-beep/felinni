@@ -9,12 +9,17 @@ off a single data point). This is a ceiling, not a floor: someone you
 haven't shared an event with in a decade has likely drifted out of your
 life for a reason and isn't a useful "reconnect" suggestion, so they're
 excluded entirely rather than topping the list just for being the most
-overdue. Upcoming-event suggestions are further narrowed to people you've
-actually hung out with in that same category before (so a Work meeting
-doesn't get a purely-personal friend suggested) and, when the event's
-location is geocoded, to people whose own usual hangout region matches
-where the event actually is (so a Bay Area friend doesn't get suggested
-for an LA dinner).
+overdue. A virtual meeting (a Zoom/Meet/Teams/Webex link or phone number
+as the location) never counts as "having seen" someone for any of this -
+a standing Zoom call doesn't establish that you actually hang out with
+someone in person. Upcoming-event suggestions are further narrowed to
+people you've actually hung out with in person in that same category
+before (so a Work meeting doesn't get a purely-personal friend suggested,
+and a single Zoom call doesn't qualify someone either) and, when the
+event's location is geocoded - or, failing that, when its address text
+names a city you already have other geocoded locations in - to people
+whose own usual hangout region matches where the event actually is (so a
+Bay Area friend doesn't get suggested for an LA dinner).
 
 Deliberately built entirely from your own calendar history (felinni.social,
 felinni.recurring, felinni.regions), unlike the old Future tab's external
@@ -27,27 +32,43 @@ import pandas as pd
 
 from .ingest import strip_with_suffix
 from .recurring import recurring_series
-from .regions import location_metro_map
+from .regions import guess_region_from_text, location_metro_map
 from .social import _exploded_people, person_frequency
 
 MAX_DAYS_SINCE_SEEN = 730  # ~2 years
 
 
+def _in_person_only(df: pd.DataFrame) -> pd.DataFrame:
+    """Drops virtual meetings (a Zoom/Meet/Teams/Webex link or phone
+    number as the location - felinni.ingest's `is_virtual`) before working
+    out who you've actually hung out with, for reconnect purposes: a
+    one-off Zoom call doesn't establish that you actually see someone in a
+    given category or place the way an in-person event does, and
+    shouldn't read as "you saw them" either - it'd otherwise make someone
+    you only ever Zoom with look recently seen, or eligible for an
+    in-person event's category, off a single call. Older data without the
+    `is_virtual` column (loaded some other way) is passed through as-is."""
+    if "is_virtual" not in df.columns:
+        return df
+    return df[~df["is_virtual"]]
+
+
 def _days_since_seen(df: pd.DataFrame, as_of: pd.Timestamp) -> pd.Series:
-    """Days since you last shared a real, timed event with each person,
-    indexed by person."""
-    freq = person_frequency(df)
+    """Days since you last shared a real, in-person, timed event with each
+    person, indexed by person."""
+    freq = person_frequency(_in_person_only(df))
     if freq.empty:
         return pd.Series(dtype=float)
     return (as_of - freq["last_seen"]).dt.total_seconds() / 86400
 
 
 def _categories_shared_with(df: pd.DataFrame) -> dict[str, set[str]]:
-    """Every category you've shared a real, timed event in with each
-    person - the "have I ever hung out with them like this" check that
-    keeps an upcoming Work meeting from getting a purely-personal friend
-    suggested just because they're otherwise overdue."""
-    exploded = _exploded_people(df)
+    """Every category you've shared a real, in-person, timed event in with
+    each person - the "have I ever hung out with them like this" check
+    that keeps an upcoming Work meeting from getting a purely-personal
+    friend suggested just because they're otherwise overdue (or a single
+    Zoom call qualifying someone for an in-person category)."""
+    exploded = _exploded_people(_in_person_only(df))
     if exploded.empty:
         return {}
     return exploded.groupby("person")["category"].agg(set).to_dict()
@@ -56,14 +77,20 @@ def _categories_shared_with(df: pd.DataFrame) -> dict[str, set[str]]:
 def _person_usual_regions(df: pd.DataFrame, metro_map: dict[str, str]) -> dict[str, str]:
     """Each person's most common region (metro area, via felinni.regions'
     same location->metro clustering the Travel tab uses) across every
-    timed, geocoded event you've shared with them - the place you'd
+    timed, in-person event you've shared with them - the place you'd
     actually invite them to, not just wherever any of your events happen
-    to fall."""
-    located = df.dropna(subset=["location"])
+    to fall. Falls back to `guess_region_from_text` for a shared location
+    that hasn't itself been geocoded but names a city you have other
+    geocoded locations in - otherwise a person you've only ever met at
+    ungeocoded addresses would never get a usual region at all, no matter
+    how many of those addresses obviously named the same city."""
+    located = _in_person_only(df).dropna(subset=["location"])
     exploded = _exploded_people(located)
     if exploded.empty:
         return {}
-    exploded = exploded.assign(region=exploded["location"].map(metro_map.get)).dropna(subset=["region"])
+    exploded = exploded.assign(
+        region=exploded["location"].map(lambda loc: metro_map.get(loc) or guess_region_from_text(loc, metro_map))
+    ).dropna(subset=["region"])
     if exploded.empty:
         return {}
     top_region = exploded.groupby(["person", "region"]).size().groupby(level=0).idxmax()
@@ -210,6 +237,15 @@ def upcoming_invite_suggestions(
         location = event["location"]
         has_location = pd.notna(location)
         region = metro_map.get(location) if has_location else None
+        region_is_guessed = False
+        if region is None and has_location:
+            # This exact address hasn't itself been geocoded, but its text
+            # might still name a city you have other geocoded locations
+            # in (e.g. "1903 Hyperion Ave Los Angeles, CA" naming a metro
+            # you already know from some other LA venue) - see
+            # felinni.regions.guess_region_from_text.
+            region = guess_region_from_text(location, metro_map)
+            region_is_guessed = region is not None
 
         candidates = [
             person for person, categories in categories_by_person.items()
@@ -243,7 +279,9 @@ def upcoming_invite_suggestions(
 
         for person, days in picked:
             reason = f"You've been to {category} events with them before, last {round(days)} days ago"
-            if region:
+            if region and region_is_guessed:
+                reason += f", usually around {region} (guessed from the address text, not geocoded)"
+            elif region:
                 reason += f", usually around {region}"
             elif has_location:
                 reason += " (that location isn't geocoded yet, so this wasn't narrowed by region)"

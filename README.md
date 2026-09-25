@@ -129,14 +129,18 @@ tab's own filters stack on top.
   that two-year window, most overdue first. **Who to invite to what's
   already on your calendar** looks at events already scheduled in the next
   two weeks and suggests who to invite to each one, further narrowed to
-  people you've also hung out with before in that same event category (so
-  a Work meeting doesn't get a purely-personal friend suggested), and,
-  where the event's own specific location has been geocoded, whose own
+  people you've actually hung out with in person before in that same
+  event category (a one-off Zoom/Meet/Teams/Webex call never counts as
+  having seen someone, so it can't qualify them for an in-person category
+  or make them look recently seen), and, where the event's own specific
+  location has been geocoded - or, failing that, where its address text
+  names a city you already have other geocoded locations in - whose own
   usual hangout region actually matches where the event is (so a Bay Area
   friend doesn't get suggested for an LA dinner just because they're
   otherwise overdue - and a "Why" column on each suggestion says whether
-  region was actually part of the reasoning, or just skipped because that
-  location isn't geocoded yet). Across the whole list, a person already
+  region was actually part of the reasoning, geocoded or guessed from the
+  address text, or skipped entirely because neither was available).
+  Across the whole list, a person already
   suggested for one event is only reused for another when nothing else
   qualifies, so the list covers different people instead of the same
   handful of most-overdue names showing up under every event.
