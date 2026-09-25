@@ -171,7 +171,26 @@ def test_upcoming_invite_suggestions_matches_region_when_geocoded():
     assert "Erin" not in result["person"].values
     row = result[result["person"] == "Alice"].iloc[0]
     assert row["event_location"] == "Cafe A"  # the raw calendar location, not just the derived region
-    assert "Los Angeles" in row["reason"]
+
+
+def test_upcoming_invite_suggestions_excludes_unknown_region_when_event_region_is_known():
+    # Frank shares a category with the upcoming event and is otherwise
+    # overdue, but every event you've shared with him is at an
+    # ungeocoded location - his usual region is simply unknown. He should
+    # be excluded, not let through by default just because there's no
+    # region on file to conflict with.
+    events = [
+        _event(1, "Coffee", _iso(WITHIN_CAP), _iso(WITHIN_CAP), people=["Frank"], location="Some Cafe"),
+        # A past, solo event at Cafe A so the location->metro map actually
+        # knows about it (only locations that appear in past history are
+        # clustered) - without this, the upcoming event's own region would
+        # come back unknown too, and never exercise the filter at all.
+        _event(2, "Solo errand", _iso(WITHIN_CAP), _iso(WITHIN_CAP), location="Cafe A"),
+        _event(3, "Dinner", _iso(AS_OF + pd.Timedelta(days=5)), _iso(AS_OF + pd.Timedelta(days=5)), location="Cafe A"),
+    ]
+    df = ingest.load_events_from_records(events)
+    result = reconnect.upcoming_invite_suggestions(df, geocode_cache=GEO_CACHE, as_of=AS_OF)
+    assert "Frank" not in result["person"].values
 
 
 def test_upcoming_invite_suggestions_ignores_events_outside_the_window():

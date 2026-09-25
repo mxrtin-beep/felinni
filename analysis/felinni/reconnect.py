@@ -161,12 +161,14 @@ def upcoming_invite_suggestions(
     suggested just because they're otherwise overdue. When the event's own
     location is geocoded, also requires the person's own usual hangout
     region (their most common metro area across shared, geocoded events)
-    to match where the event actually is - but only when that region is
-    actually known, so lacking geocoding for a person never excludes them
-    on its own. Both signals are computed from history strictly before
-    `as_of`, so an event's own not-yet-real guest list can't skew either,
-    and anyone already on the event's guest list is skipped. Each row
-    carries a plain-English `reason` for why that person was picked."""
+    to actually match where the event is - a person whose usual region is
+    unknown (most people, unless you've geocoded several shared-event
+    locations with them) is excluded too, not let through by default, so
+    this stays a real region check rather than one only rare conflicts
+    trip. Both signals are computed from history strictly before `as_of`,
+    so an event's own not-yet-real guest list can't skew either, and
+    anyone already on the event's guest list is skipped. Each row carries
+    a plain-English `reason` for why that person was picked."""
     as_of = as_of or pd.Timestamp.now()
     columns = [
         "event_title", "event_category", "event_start", "event_location", "region",
@@ -195,10 +197,15 @@ def upcoming_invite_suggestions(
             if category in categories and person not in already_invited
         ]
         if region:
-            # Only drop a candidate when their usual region is actually
-            # known and conflicts - no known region isn't treated as a
-            # mismatch, since there's simply no signal either way.
-            candidates = [p for p in candidates if person_region.get(p, region) == region]
+            # Requires a known, matching region - a person whose usual
+            # hangout region we can't determine (most people, unless
+            # you've geocoded several shared-event locations with them)
+            # is excluded too, not let through by default. Letting unknown
+            # region default to "match" would pass nearly everyone, since
+            # most contacts won't have enough geocoded shared history to
+            # have a known region at all - exactly the "why am I getting
+            # people I don't hang out with here" bug this guards against.
+            candidates = [p for p in candidates if person_region.get(p) == region]
 
         scored = []
         for person in candidates:
