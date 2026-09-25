@@ -19,6 +19,7 @@
   <button data-panel="people">People</button>
   <button data-panel="habits">Habits</button>
   <button data-panel="travel">Travel</button>
+  <button data-panel="future">Future</button>
   <!-- Anomalies tab hidden for now - the flagging wasn't reading as useful
        signal in practice; felinni.anomalies/api/anomalies are still there,
        revisit before re-enabling this nav button + panel-anomalies below. -->
@@ -241,6 +242,30 @@
       </div>
       <p class="card-note">A finer breakdown within one metro area - defaults to home.</p>
       <div id="travel-neighborhoods-table"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-future">
+    <p class="card-note">
+      Built entirely from your own calendar history - who's overdue for a
+      get-together relative to how often you used to see them, which of
+      your own recurring things have quietly stopped happening, and who to
+      invite back to each one.
+    </p>
+    <div class="card">
+      <h2>People to reconnect with</h2>
+      <p class="card-note">Ranked by how overdue they are relative to how often you used to see them - not just raw days since last seen.</p>
+      <div id="reconnect-people-table"></div>
+    </div>
+    <div class="card">
+      <h2>Things you used to do</h2>
+      <p class="card-note">Recurring events that have slowed down or stopped, relative to their own usual cadence.</p>
+      <div id="reconnect-events-table"></div>
+    </div>
+    <div class="card">
+      <h2>Who to invite back</h2>
+      <p class="card-note">For each fading recurring event, its regulars - most overdue first.</p>
+      <div id="reconnect-invites-table"></div>
     </div>
   </section>
 

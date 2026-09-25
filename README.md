@@ -47,7 +47,7 @@ don't contribute to analyses that need that field.
 
 ## What's in the dashboard
 
-Tabs: **Overview · Places · People · Habits · Travel · Anomalies**. Every
+Tabs: **Overview · Places · People · Habits · Travel · Future · Anomalies**. Every
 table is sortable (click a header).
 The Overview tab's date range and category checkboxes apply globally; each
 tab's own filters stack on top.
@@ -117,6 +117,14 @@ tab's own filters stack on top.
   incorporated city. Anything that still fails, or was only placed
   approximately, shows up with its reason in the **Geocoding notes** card,
   instead of a bare "N not geocoded" count with no way to tell why.
+- **Future** — reconnect suggestions built entirely from your own calendar
+  history (no network calls): who's overdue for a get-together, ranked by
+  how long it's been *relative to how often you used to see them* rather
+  than raw days since last seen, so someone you saw weekly reads as more
+  overdue after a month than a once-a-year contact does; which of your own
+  recurring events (from Habits' repeating-events detection) have slowed
+  down or stopped relative to their usual cadence; and, for each of those,
+  its regulars to invite back, most-overdue first.
 - **Import calendars** (Overview tab) — pull in Google/Outlook/a second
   Apple calendar via their "secret ICS link" (no OAuth), or upload a file.
   ICS-link sources refresh automatically every 30 min while the server

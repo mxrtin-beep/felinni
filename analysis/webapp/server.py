@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 from flask import Flask, jsonify, request, send_from_directory
 
-from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, recurring, regions, seasonality, social, spending, travel, location
+from felinni import anomalies, breaks, calendar_sources, geocode, habits, ingest, reconnect, recurring, regions, seasonality, social, spending, travel, location
 from webapp.serialize import records
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -464,6 +464,21 @@ def habit():
 def recurring_view():
     df = _get_df()
     return jsonify(records(recurring.recurring_series(df)))
+
+
+@app.get("/api/reconnect")
+def reconnect_view():
+    """The Future tab: people overdue for a get-together relative to how
+    often you used to see them, your own recurring events that have gone
+    quiet, and - combining the two - who to actually invite back to each
+    one. Everything here is derived from your own calendar history; unlike
+    the old Future tab, nothing calls out to the network."""
+    df = _get_df()
+    return jsonify({
+        "people": records(reconnect.people_to_reconnect_with(df)),
+        "events": records(reconnect.events_to_revive(df)),
+        "invites": records(reconnect.suggested_invites(df)),
+    })
 
 
 @app.get("/api/travel")

@@ -573,6 +573,7 @@ async function reloadAll() {
     loadPeople(),
     refreshHabit(),
     loadTravel(),
+    loadFuture(),
     // Anomalies tab is hidden for now (see index.html) - skip its fetch too.
   ]);
 }
@@ -850,6 +851,41 @@ async function loadRecurringEvents() {
       { key: "days_since_last", label: "Days since", num: true, format: v => Math.round(v) },
       { key: "status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
     ], rows);
+}
+
+// --- Future (reconnect suggestions) ---
+async function loadFuture() {
+  const data = await api("reconnect");
+
+  table(document.getElementById("reconnect-people-table"),
+    [
+      { key: "person", label: "Person" },
+      { key: "events", label: "Events together", num: true },
+      { key: "days_since_seen", label: "Last seen", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
+      { key: "avg_interval_days", label: "Usual gap", num: true, format: fmtTenure },
+      { key: "overdue_ratio", label: "How overdue", num: true, format: v => v == null ? "-" : `${v.toFixed(1)}×` },
+      { key: "recent_events", label: "Recently", format: v => (v && v.length) ? escapeHtml(v.join(", ")) : "-" },
+    ], data.people);
+
+  table(document.getElementById("reconnect-events-table"),
+    [
+      { key: "title", label: "Event" },
+      { key: "category", label: "Category" },
+      { key: "cadence", label: "Usual cadence" },
+      { key: "last_seen", label: "Last seen", format: fmtDate },
+      { key: "days_since_last", label: "Days since", num: true, format: v => Math.round(v) },
+      { key: "status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
+    ], data.events);
+
+  table(document.getElementById("reconnect-invites-table"),
+    [
+      { key: "series_title", label: "Event" },
+      { key: "series_status", label: "Status", format: v => `<span class="badge ${v.replace(/\s+/g, "-")}">${v}</span>` },
+      { key: "person", label: "Regular" },
+      { key: "times_attended", label: "Times attended", num: true },
+      { key: "days_since_seen", label: "Last seen them", format: v => miniLastSeenCellHtml(v == null ? null : Math.round(v)) },
+      { key: "overdue_ratio", label: "How overdue", num: true, format: v => v == null ? "-" : `${v.toFixed(1)}×` },
+    ], data.invites);
 }
 
 // --- Travel ---
@@ -1380,6 +1416,7 @@ async function refreshMap() {
     loadPeople(),
     loadHabits(meta),
     loadTravel(),
+    loadFuture(),
   ]);
   wireGlobalDateFilter();
   wireCategoryFilter();
