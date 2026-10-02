@@ -211,6 +211,7 @@ def visits_by_region(df: pd.DataFrame, coords: dict[str, dict | None]) -> pd.Dat
         first_seen=("start", "min"),
         last_seen=("start", "max"),
         n_locations=("location", "nunique"),
+        last_seen=("start", "max"),
     ).sort_values("visits", ascending=False)
 
 
@@ -271,13 +272,13 @@ def neighborhoods_for_metro(
     location string."""
     located = df.dropna(subset=["location"]).copy()
     if located.empty:
-        return pd.DataFrame(columns=["neighborhood", "visits", "total_hours", "n_locations"])
+        return pd.DataFrame(columns=["neighborhood", "visits", "total_hours", "n_locations", "last_seen"])
 
     metro_map = _location_metro_map(df, coords)
     located["metro"] = located["location"].map(metro_map.get)
     in_metro = located[located["metro"] == metro]
     if in_metro.empty:
-        return pd.DataFrame(columns=["neighborhood", "visits", "total_hours", "n_locations"])
+        return pd.DataFrame(columns=["neighborhood", "visits", "total_hours", "n_locations", "last_seen"])
 
     in_metro = in_metro.copy()
     in_metro["neighborhood"] = in_metro["location"].map(lambda loc: _neighborhood_label(loc, coords))
@@ -285,4 +286,5 @@ def neighborhoods_for_metro(
         visits=("id", "count"),
         total_hours=("duration_hours", "sum"),
         n_locations=("location", "nunique"),
+        last_seen=("start", "max"),
     ).sort_values("visits", ascending=False)

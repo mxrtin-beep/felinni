@@ -948,6 +948,7 @@ async function refreshTravelNeighborhoods() {
       { key: "visits", label: "Events", num: true },
       { key: "total_hours", label: "Hours", num: true, format: v => Math.round(v) },
       { key: "n_locations", label: "Places", num: true },
+      { key: "last_seen", label: "Most recent event", format: fmtDate },
     ], data.neighborhoods);
 }
 
@@ -992,7 +993,7 @@ async function loadTravel() {
       { key: "total_hours", label: "Hours", num: true, format: v => Math.round(v) },
       { key: "n_locations", label: "Places", num: true },
       { key: "first_seen", label: "First seen", format: fmtDate },
-      { key: "last_seen", label: "Last seen", format: fmtDate },
+      { key: "last_seen", label: "Most recent event", format: fmtDate },
     ], [...data.region_visits].sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen)));
 
   populateTravelMetroSelect(data.region_visits, data.home_region);
