@@ -985,14 +985,6 @@ async function loadTravel() {
     .sort((a, b) => b.lastEnd - a.lastEnd);
   timelineChart(document.getElementById("travel-trips-timeline"), tripGroups);
 
-  table(document.getElementById("travel-region-trips"),
-    [
-      { key: "region", label: "Metro area" },
-      { key: "start", label: "Start", format: fmtDate },
-      { key: "end", label: "End", format: fmtDate },
-      { key: "duration_days", label: "Days", num: true, format: v => v?.toFixed(1) },
-    ], data.region_trips);
-
   table(document.getElementById("travel-regions-table"),
     [
       { key: "region", label: "Metro area" },
