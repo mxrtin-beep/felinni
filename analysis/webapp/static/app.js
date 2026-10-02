@@ -967,7 +967,8 @@ async function loadTravel() {
   // has the exact dates/duration, but a timeline is what actually answers
   // "when was I away, and where, at a glance" the way a bare list of rows
   // sorted by date doesn't (same pattern as the Habits tab's Phases of
-  // Life timeline: most time-covered regions on top).
+  // Life timeline, but ordered by recency: most recently visited on top,
+  // the ones not visited for the longest at the bottom).
   const tripsByRegion = new Map();
   data.region_trips.forEach(t => {
     if (!tripsByRegion.has(t.region)) tripsByRegion.set(t.region, []);
@@ -979,9 +980,9 @@ async function loadTravel() {
       label,
       segments,
       color: cssVarSafe(regionColorVars[label]) || cssVarSafe("--series-1"),
-      totalDays: segments.reduce((sum, s) => sum + (new Date(s.end) - new Date(s.start)), 0),
+      lastEnd: Math.max(...segments.map(s => new Date(s.end).getTime())),
     }))
-    .sort((a, b) => b.totalDays - a.totalDays);
+    .sort((a, b) => b.lastEnd - a.lastEnd);
   timelineChart(document.getElementById("travel-trips-timeline"), tripGroups);
 
   table(document.getElementById("travel-region-trips"),
@@ -1000,7 +1001,7 @@ async function loadTravel() {
       { key: "n_locations", label: "Places", num: true },
       { key: "first_seen", label: "First seen", format: fmtDate },
       { key: "last_seen", label: "Last seen", format: fmtDate },
-    ], data.region_visits);
+    ], [...data.region_visits].sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen)));
 
   populateTravelMetroSelect(data.region_visits, data.home_region);
   await refreshTravelNeighborhoods();
